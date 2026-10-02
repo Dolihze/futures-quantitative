@@ -56,15 +56,32 @@ def debug_login():
     session['logged_in'] = True
     session['username']  = '管理员'
     session['broker']    = ''
-    return redirect(url_for('index'))
+    return redirect(url_for('home'))
 
 
 @app.route('/')
-def index():
-    """主页 - 需要登录才能访问"""
+def home():
+    """首页 - 需要登录才能访问"""
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
-    return render_template('index.html', username=session.get('username', ''))
+    return render_template('home.html', username=session.get('username', ''))
+
+
+@app.route('/trading')
+def trading():
+    """交易页面 - 需要登录才能访问"""
+    if not session.get('logged_in'):
+        return redirect(url_for('login_page'))
+    return render_template('trading.html', username=session.get('username', ''))
+
+
+@app.route('/backtest')
+def backtest():
+    """回测页面 - 需要登录才能访问（暂未开发）"""
+    if not session.get('logged_in'):
+        return redirect(url_for('login_page'))
+    # 暂时返回首页，后续开发回测页面
+    return redirect(url_for('home'))
 
 
 @app.route('/logout', methods=['POST'])

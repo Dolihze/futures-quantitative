@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>期货量化交易系统 - 首页</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        /* 顶部导航栏 */
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+            padding: 0 24px;
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #3b82f6, #06b6d4);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-logo svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .nav-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f1f5f9;
+            letter-spacing: 1px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .user-avatar {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .logout-btn {
+            padding: 6px 14px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 6px;
+            color: #f87171;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        /* 主内容区 */
+        .main-content {
+            padding: 48px 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .welcome-section {
+            margin-bottom: 48px;
+            text-align: center;
+        }
+
+        .welcome-section h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 12px;
+        }
+
+        .welcome-section p {
+            font-size: 16px;
+            color: #94a3b8;
+        }
+
+        /* 功能卡片网格 */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 24px;
+            margin-top: 48px;
+        }
+
+        .feature-card {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 16px;
+            padding: 32px;
+            transition: all 0.3s;
+            cursor: pointer;
+            text-decoration: none;
+            display: block;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .feature-icon svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        .feature-icon.trading {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+        }
+
+        .feature-icon.trading svg {
+            color: #ef4444;
+        }
+
+        .feature-icon.backtest {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.05));
+        }
+
+        .feature-icon.backtest svg {
+            color: #22c55e;
+        }
+
+        .feature-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 12px;
+        }
+
+        .feature-description {
+            font-size: 14px;
+            color: #94a3b8;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .feature-arrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #3b82f6;
+            font-size: 14px;
+            font-weight: 500;
+            transition: gap 0.2s;
+        }
+
+        .feature-card:hover .feature-arrow {
+            gap: 12px;
+        }
+
+        .feature-arrow svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* 快捷统计 */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 48px;
+            padding-top: 48px;
+            border-top: 1px solid rgba(71, 85, 105, 0.3);
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <nav class="navbar">
+        <div class="nav-left">
+            <div class="nav-logo">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 20h18M3 20l4-8 4 4 4-10 4 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+            </div>
+            <span class="nav-title">期货量化交易系统</span>
+        </div>
+        <div class="nav-right">
+            <div class="user-info">
+                <div class="user-avatar">{{ username[0]|upper if username else 'U' }}</div>
+                <span>{{ username or '未登录' }}</span>
+            </div>
+            <button class="logout-btn" id="logoutBtn">退出登录</button>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+        <div class="welcome-section">
+            <h1>欢迎回来，{{ username or '交易员' }}</h1>
+            <p>选择您需要的功能模块，开始今天的交易</p>
+        </div>
+
+        <!-- 功能卡片 -->
+        <div class="feature-grid">
+            <!-- 交易卡片 -->
+            <a href="/trading" class="feature-card">
+                <div class="feature-icon trading">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                        <polyline points="16 7 22 7 22 13"/>
+                    </svg>
+                </div>
+                <div class="feature-title">下单交易</div>
+                <div class="feature-description">
+                    实时行情数据，支持买多、卖空、平仓、反手等操作，快捷下单功能
+                </div>
+                <div class="feature-arrow">
+                    <span>进入交易</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </div>
+            </a>
+
+            <!-- 量化回测卡片 -->
+            <div class="feature-card" onclick="showComingSoon('量化回测')">
+                <div class="feature-icon backtest">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                        <line x1="12" y1="22.08" x2="12" y2="12"/>
+                    </svg>
+                </div>
+                <div class="feature-title">量化回测</div>
+                <div class="feature-description">
+                    历史数据回测，策略验证，绩效分析，风险评估
+                </div>
+                <div class="feature-arrow">
+                    <span>即将上线</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快捷统计 -->
+        <div class="quick-stats">
+            <div class="stat-item">
+                <div class="stat-label">交易品种</div>
+                <div class="stat-value">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">今日交易</div>
+                <div class="stat-value">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">策略数量</div>
+                <div class="stat-value">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">运行天数</div>
+                <div class="stat-value">0</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 显示即将上线提示
+        function showComingSoon(featureName) {
+            alert(`${featureName}功能正在开发中，敬请期待！`);
+        }
+
+        // 退出登录
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            if (!confirm('确定要退出登录吗？')) return;
+            await fetch('/logout', { method: 'POST' });
+            window.location.href = '/login';
+        });
+    </script>
+</body>
+</html>
