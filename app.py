@@ -88,21 +88,36 @@ def get_kline_data():
     """获取K线数据API"""
     from datetime import datetime, timedelta
     import akshare as ak
+    import pandas as pd
     
     try:
-        # 获取燃料油FU2611的1分钟级别数据
-        # 使用akshare获取期货分钟数据
-        symbol = "FU2611"
+        # 获取前端传入的参数
+        symbol = request.args.get('symbol', 'FU2611')
+        period = request.args.get('period', '1')
+        days = int(request.args.get('days', 30))
         
-        # 获取近1个月的数据
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
+        print(f"[API] 请求参数: symbol={symbol}, period={period}, days={days}")
+        print(f"[API] 开始调用 akshare.futures_zh_minute_sina...")
         
         # 使用akshare获取期货分钟级别数据
-        # 注意：akshare可能需要特定的接口来获取分钟数据
-        df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+        df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
+        
+        print(f"[API] akshare 返回数据类型: {type(df)}")
+        print(f"[API] akshare 返回数据条数: {len(df) if df is not None else 0}")
         
         if df is not None and not df.empty:
+            print(f"[API] 数据列名: {df.columns.tolist()}")
+            print(f"[API] 前5行数据:\n{df.head()}")
+            
+            # 根据days过滤数据
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            # 确保datetime列是datetime类型
+            if 'datetime' in df.columns:
+                df['datetime'] = pd.to_datetime(df['datetime'])
+                df = df[df['datetime'] >= start_date]
+            
             # 数据格式转换
             data = []
             for _, row in df.iterrows():
@@ -112,25 +127,32 @@ def get_kline_data():
                     'high': float(row['high']),
                     'low': float(row['low']),
                     'close': float(row['close']),
-                    'volume': int(row['volume'])
+                    'volume': int(row['volume']) if 'volume' in row else 0
                 })
             
+            print(f"[API] 成功返回 {len(data)} 条数据")
             return jsonify({
                 'success': True,
                 'data': data,
-                'symbol': symbol
+                'symbol': symbol,
+                'count': len(data)
             })
         else:
+            print(f"[API] 未获取到数据")
             return jsonify({
                 'success': False,
                 'message': '未获取到数据'
             }), 404
             
     except Exception as e:
-        print(f"获取K线数据失败: {str(e)}")
+        print(f"[API] 获取K线数据失败: {str(e)}")
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"[API] 详细错误信息:\n{error_detail}")
         return jsonify({
             'success': False,
-            'message': f'获取数据失败: {str(e)}'
+            'message': f'获取数据失败: {str(e)}',
+            'error': error_detail  # 开发期间返回详细错误信息
         }), 500
 
 

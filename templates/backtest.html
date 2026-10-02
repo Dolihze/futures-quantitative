@@ -515,19 +515,32 @@
             loading.classList.add('show');
             
             try {
-                const response = await fetch(`/api/backtest/kline?symbol=${symbol}&period=${period}&days=${dateRange}`);
+                const url = `/api/backtest/kline?symbol=${symbol}&period=${period}&days=${dateRange}`;
+                console.log('请求URL:', url);
+                
+                const response = await fetch(url);
+                
+                // 检查HTTP状态码
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('HTTP错误:', response.status, errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
                 const result = await response.json();
+                console.log('API响应:', result);
                 
                 if (result.success && result.data) {
                     updateChart(result.data, symbol, period);
                     updateStats(result.data);
-                    showMessage('数据加载成功！', 'success');
+                    showMessage(`数据加载成功！共 ${result.count || result.data.length} 条数据`, 'success');
                 } else {
                     showMessage(result.message || '数据加载失败', 'error');
                 }
             } catch (error) {
                 console.error('加载数据失败:', error);
-                showMessage('网络请求失败', 'error');
+                const errorMsg = error.message || '网络请求失败';
+                showMessage(`加载失败: ${errorMsg}`, 'error');
             } finally {
                 loadBtn.disabled = false;
                 loading.classList.remove('show');
