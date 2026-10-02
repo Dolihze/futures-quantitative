@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>期货量化交易系统 - 登录</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 动态背景网格 */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.08) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridMove 20s linear infinite;
+        }
+
+        @keyframes gridMove {
+            0%   { transform: translate(0, 0); }
+            100% { transform: translate(40px, 40px); }
+        }
+
+        /* 浮动光点 */
+        .glow-dot {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.4);
+            filter: blur(2px);
+            animation: float 8s ease-in-out infinite;
+        }
+        .glow-dot:nth-child(1) { width: 6px; height: 6px; top: 20%; left: 15%; animation-delay: 0s; }
+        .glow-dot:nth-child(2) { width: 4px; height: 4px; top: 60%; left: 80%; animation-delay: 2s; }
+        .glow-dot:nth-child(3) { width: 8px; height: 8px; top: 80%; left: 25%; animation-delay: 4s; }
+        .glow-dot:nth-child(4) { width: 5px; height: 5px; top: 30%; left: 70%; animation-delay: 1s; }
+        .glow-dot:nth-child(5) { width: 3px; height: 3px; top: 70%; left: 50%; animation-delay: 3s; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+            50%       { transform: translateY(-30px) scale(1.5); opacity: 1; }
+        }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 420px;
+            padding: 0 20px;
+        }
+
+        /* Logo 区域 */
+        .logo-area {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px;
+            background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.4);
+        }
+
+        .logo-icon svg {
+            width: 36px;
+            height: 36px;
+        }
+
+        .logo-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #f1f5f9;
+            letter-spacing: 2px;
+        }
+
+        .logo-subtitle {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 6px;
+            letter-spacing: 1px;
+        }
+
+        /* 登录卡片 */
+        .login-card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 20px;
+            padding: 36px 32px;
+            backdrop-filter: blur(20px);
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .card-header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .card-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .card-header p {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 6px;
+        }
+
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            color: #475569;
+            pointer-events: none;
+            transition: color 0.2s;
+        }
+
+        .form-input {
+            width: 100%;
+            height: 46px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 10px;
+            padding: 0 14px 0 42px;
+            font-size: 14px;
+            color: #e2e8f0;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-input::placeholder {
+            color: #475569;
+        }
+
+        .form-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .input-wrapper:focus-within .input-icon {
+            color: #3b82f6;
+        }
+
+        /* 下拉框 */
+        .form-select {
+            width: 100%;
+            height: 46px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 10px;
+            padding: 0 14px 0 42px;
+            font-size: 14px;
+            color: #e2e8f0;
+            outline: none;
+            cursor: pointer;
+            appearance: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .input-wrapper:focus-within .select-icon {
+            color: #3b82f6;
+        }
+
+        .select-arrow {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: #475569;
+            pointer-events: none;
+        }
+
+        .form-select option {
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+
+        /* ── 自定义期货公司下拉框 ── */
+        .broker-dropdown {
+            position: relative;
+            width: 100%;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        .broker-dropdown .dropdown-trigger {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 46px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 10px;
+            padding: 0 38px 0 42px;
+            font-size: 13px;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            user-select: none;
+            outline: none;
+        }
+
+        .broker-dropdown .dropdown-trigger.placeholder {
+            color: #475569;
+        }
+
+        .broker-dropdown .dropdown-trigger:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        .broker-dropdown.open .dropdown-trigger {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .broker-dropdown .dropdown-trigger .trigger-text {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .broker-dropdown .trigger-arrow {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: #475569;
+            pointer-events: none;
+            transition: transform 0.25s ease, color 0.2s;
+        }
+
+        .broker-dropdown.open .trigger-arrow {
+            transform: translateY(-50%) rotate(180deg);
+            color: #3b82f6;
+        }
+
+        .broker-dropdown.open .input-icon {
+            color: #3b82f6;
+        }
+
+        /* 下拉面板 */
+        .dropdown-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            width: 100%;
+            background: #1e293b;
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            border-radius: 12px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+            z-index: 200;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-6px);
+            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+            overflow: hidden;
+        }
+
+        .broker-dropdown.open .dropdown-panel {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* 搜索框 */
+        .dropdown-search {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(71, 85, 105, 0.35);
+            background: rgba(15, 23, 42, 0.6);
+        }
+
+        .dropdown-search svg {
+            width: 14px;
+            height: 14px;
+            color: #475569;
+            flex-shrink: 0;
+        }
+
+        .dropdown-search input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 12px;
+            color: #e2e8f0;
+            padding: 0;
+        }
+
+        .dropdown-search input::placeholder {
+            color: #475569;
+        }
+
+        .dropdown-search .search-clear {
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            color: #475569;
+            display: none;
+            flex-shrink: 0;
+        }
+
+        .dropdown-search .search-clear:hover {
+            color: #94a3b8;
+        }
+
+        .dropdown-search .search-clear.visible {
+            display: block;
+        }
+
+        .dropdown-search .search-clear svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        /* 选项列表 */
+        .dropdown-options {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 6px 0;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(71, 85, 105, 0.5) transparent;
+        }
+
+        .dropdown-options::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .dropdown-options::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .dropdown-options::-webkit-scrollbar-thumb {
+            background: rgba(71, 85, 105, 0.5);
+            border-radius: 3px;
+        }
+
+        /* 分组标题 */
+        .dropdown-group-label {
+            padding: 6px 14px 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #475569;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            user-select: none;
+        }
+
+        /* 单个选项 */
+        .dropdown-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            color: #cbd5e1;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            user-select: none;
+        }
+
+        .dropdown-option:hover {
+            background: rgba(59, 130, 246, 0.12);
+            color: #f1f5f9;
+        }
+
+        .dropdown-option.selected {
+            background: rgba(59, 130, 246, 0.18);
+            color: #60a5fa;
+        }
+
+        .dropdown-option .option-check {
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .dropdown-option.selected .option-check {
+            opacity: 1;
+        }
+
+        .dropdown-option .option-name {
+            flex: 1;
+        }
+
+        .dropdown-option .option-tag {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            flex-shrink: 0;
+        }
+
+        .dropdown-option .option-tag.hot {
+            background: rgba(249, 115, 22, 0.15);
+            color: #fb923c;
+        }
+
+        /* 无结果 */
+        .dropdown-empty {
+            padding: 20px 14px;
+            text-align: center;
+            font-size: 12px;
+            color: #475569;
+        }
+
+        /* 隐藏原生 select */
+        .broker-dropdown .native-select-hidden {
+            position: absolute;
+            width: 0;
+            height: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* 密码可见切换 */
+        .toggle-password {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 20px;
+            color: #475569;
+            cursor: pointer;
+            transition: color 0.2s;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        .toggle-password:hover {
+            color: #94a3b8;
+        }
+
+        /* 记住密码 & 忘记密码 */
+        .form-options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox-wrapper input[type="checkbox"] {
+            display: none;
+        }
+
+        .custom-checkbox {
+            width: 16px;
+            height: 16px;
+            border: 1.5px solid #475569;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .custom-checkbox svg {
+            width: 10px;
+            height: 10px;
+            fill: none;
+            stroke: white;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.2s;
+        }
+
+        .checkbox-wrapper input:checked + .custom-checkbox {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .checkbox-wrapper input:checked + .custom-checkbox svg {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .checkbox-label {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .forgot-link {
+            font-size: 13px;
+            color: #3b82f6;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .forgot-link:hover {
+            color: #60a5fa;
+        }
+
+        /* 登录按钮 */
+        .login-btn {
+            width: 100%;
+            height: 48px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 加载动画 */
+        .btn-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .login-btn.loading .btn-text { display: none; }
+        .login-btn.loading .btn-spinner { display: block; }
+
+        /* 错误提示 */
+        .error-msg {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #f87171;
+        }
+
+        .error-msg.show {
+            display: flex;
+        }
+
+        .error-msg svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        /* 底部信息 */
+        .footer-info {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 12px;
+            color: #334155;
+        }
+
+        .footer-info a {
+            color: #475569;
+            text-decoration: none;
+        }
+
+        .footer-info a:hover {
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 浮动光点 -->
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+
+    <div class="login-wrapper">
+
+        <!-- Logo -->
+        <div class="logo-area">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 20h18M3 20l4-8 4 4 4-10 4 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+            </div>
+            <div class="logo-title">期货量化交易系统</div>
+            <div class="logo-subtitle">Futures Quantitative Trading</div>
+        </div>
+
+        <!-- 登录卡片 -->
+        <div class="login-card">
+            <div class="card-header">
+                <h2>账户登录</h2>
+                <p>请输入您的期货交易账户信息</p>
+            </div>
+
+            <!-- 错误提示 -->
+            <div class="error-msg" id="errorMsg">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="errorText">账号或密码错误</span>
+            </div>
+
+            <form id="loginForm" autocomplete="off">
+
+                <!-- 期货公司 -->
+                <div class="form-group">
+                    <label class="form-label">期货公司</label>
+                    <div class="input-wrapper">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 21h18"/>
+                            <path d="M5 21V7l7-4 7 4v14"/>
+                            <path d="M9 21v-6h6v6"/>
+                        </svg>
+
+                        <!-- 自定义下拉框 -->
+                        <div class="broker-dropdown" id="brokerDropdown">
+                            <!-- 隐藏的原生 select，用于表单提交 -->
+                            <select class="native-select-hidden" name="broker" id="broker" required>
+                                <option value="" disabled selected>请选择期货公司</option>
+                                <optgroup label="模拟环境">
+                                    <option value="ctp">CTP 模拟</option>
+                                    <option value="simnow">SimNow 仿真</option>
+                                </optgroup>
+                                <optgroup label="交易所直连">
+                                    <option value="cffex">中金所</option>
+                                    <option value="shfe">上期所</option>
+                                    <option value="dce">大商所</option>
+                                    <option value="czce">郑商所</option>
+                                    <option value="ine">上期能源</option>
+                                    <option value="gfex">广期所</option>
+                                </optgroup>
+                                <optgroup label="期货公司">
+                                    <option value="yinhua">银河期货</option>
+                                    <option value="zhongxin">中信期货</option>
+                                    <option value="guotai">国泰君安期货</option>
+                                    <option value="haihui">海汇期货</option>
+                                    <option value="yongan">永安期货</option>
+                                    <option value="huatai">华泰期货</option>
+                                    <option value="haotong">海通期货</option>
+                                    <option value="nanhua">南华期货</option>
+                                    <option value="dongfang">东方汇金期货</option>
+                                    <option value="other">其他</option>
+                                </optgroup>
+                            </select>
+
+                            <!-- 触发器 -->
+                            <div class="dropdown-trigger placeholder" id="dropdownTrigger" tabindex="0">
+                                <span class="trigger-text" id="triggerText">请选择期货公司</span>
+                                <svg class="trigger-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"/>
+                                </svg>
+                            </div>
+
+                            <!-- 下拉面板 -->
+                            <div class="dropdown-panel" id="dropdownPanel">
+                                <!-- 搜索框 -->
+                                <div class="dropdown-search">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                    </svg>
+                                    <input type="text" id="searchInput" placeholder="输入关键字搜索期货公司…" autocomplete="off">
+                                    <button type="button" class="search-clear" id="searchClear">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18"/>
+                                            <line x1="6" y1="6" x2="18" y2="18"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <!-- 选项列表 -->
+                                <div class="dropdown-options" id="dropdownOptions"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 账号 -->
+                <div class="form-group">
+                    <label class="form-label">交易账号</label>
+                    <div class="input-wrapper">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                        <input type="text" class="form-input" name="username" id="username" placeholder="请输入交易账号" required>
+                    </div>
+                </div>
+
+                <!-- 密码 -->
+                <div class="form-group">
+                    <label class="form-label">交易密码</label>
+                    <div class="input-wrapper">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        <input type="password" class="form-input" name="password" id="password" placeholder="请输入交易密码" required>
+                        <button type="button" class="toggle-password" id="togglePassword" tabindex="-1">
+                            <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 选项 -->
+                <div class="form-options">
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" name="remember" id="remember" checked>
+                        <span class="custom-checkbox">
+                            <svg viewBox="0 0 12 12">
+                                <polyline points="2 6 5 9 10 3"/>
+                            </svg>
+                        </span>
+                        <span class="checkbox-label">记住账号</span>
+                    </label>
+                    <a href="#" class="forgot-link">忘记密码？</a>
+                </div>
+
+                <!-- 登录按钮 -->
+                <button type="submit" class="login-btn" id="loginBtn">
+                    <span class="btn-text">安 全 登 录</span>
+                    <div class="btn-spinner"></div>
+                </button>
+            </form>
+        </div>
+
+        <div class="footer-info">
+            <p>本系统仅供合法期货交易使用 · 未经授权禁止访问</p>
+        </div>
+    </div>
+
+    <script>
+        // ── 期货公司数据（分组） ──
+        const BROKER_GROUPS = [
+            {
+                label: '模拟环境',
+                items: [
+                    { value: 'ctp',      name: 'CTP 模拟',     tag: '模拟' },
+                    { value: 'simnow',   name: 'SimNow 仿真',  tag: '模拟', tagType: 'hot' },
+                ]
+            },
+            {
+                label: '交易所直连',
+                items: [
+                    { value: 'cffex',  name: '中金所',  tag: '交易所' },
+                    { value: 'shfe',   name: '上期所',  tag: '交易所' },
+                    { value: 'dce',    name: '大商所',  tag: '交易所' },
+                    { value: 'czce',   name: '郑商所',  tag: '交易所' },
+                    { value: 'ine',    name: '上期能源', tag: '交易所' },
+                    { value: 'gfex',   name: '广期所',  tag: '交易所' },
+                ]
+            },
+            {
+                label: '期货公司',
+                items: [
+                    { value: 'yinhua',   name: '银河期货',       tag: '热门', tagType: 'hot' },
+                    { value: 'zhongxin', name: '中信期货',       tag: '热门', tagType: 'hot' },
+                    { value: 'guotai',   name: '国泰君安期货',   tag: '' },
+                    { value: 'haihui',   name: '海汇期货',       tag: '' },
+                    { value: 'yongan',   name: '永安期货',       tag: '' },
+                    { value: 'huatai',   name: '华泰期货',       tag: '' },
+                    { value: 'haotong',  name: '海通期货',       tag: '' },
+                    { value: 'nanhua',   name: '南华期货',       tag: '' },
+                    { value: 'dongfang', name: '东方汇金期货',   tag: '' },
+                    { value: 'other',    name: '其他',           tag: '' },
+                ]
+            }
+        ];
+
+        // ── DOM 引用 ──
+        const dropdown       = document.getElementById('brokerDropdown');
+        const trigger        = document.getElementById('dropdownTrigger');
+        const triggerText    = document.getElementById('triggerText');
+        const panel          = document.getElementById('dropdownPanel');
+        const optionsBox     = document.getElementById('dropdownOptions');
+        const searchInput    = document.getElementById('searchInput');
+        const searchClear    = document.getElementById('searchClear');
+        const nativeSelect   = document.getElementById('broker');
+
+        let selectedValue = '';
+
+        // ── 模糊匹配工具函数 ──
+        function fuzzyMatch(text, query) {
+            const lowerText  = text.toLowerCase();
+            const lowerQuery = query.toLowerCase();
+            // 包含匹配
+            if (lowerText.includes(lowerQuery)) return true;
+            // 拼音首字母模糊匹配（简单实现：逐字符顺序匹配）
+            let qi = 0;
+            for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
+                if (lowerText[i] === lowerQuery[qi]) qi++;
+            }
+            return qi === lowerQuery.length;
+        }
+
+        // ── 渲染选项列表 ──
+        function renderOptions(query = '') {
+            optionsBox.innerHTML = '';
+            let hasAny = false;
+
+            BROKER_GROUPS.forEach(group => {
+                const filtered = group.items.filter(item => fuzzyMatch(item.name, query));
+                if (filtered.length === 0) return;
+                hasAny = true;
+
+                // 分组标题
+                const groupLabel = document.createElement('div');
+                groupLabel.className = 'dropdown-group-label';
+                groupLabel.textContent = group.label;
+                optionsBox.appendChild(groupLabel);
+
+                // 选项
+                filtered.forEach(item => {
+                    const opt = document.createElement('div');
+                    opt.className = 'dropdown-option' + (item.value === selectedValue ? ' selected' : '');
+                    opt.dataset.value = item.value;
+                    opt.innerHTML = `
+                        <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        <span class="option-name">${item.name}</span>
+                        ${item.tag ? `<span class="option-tag ${item.tagType || ''}">${item.tag}</span>` : ''}
+                    `;
+                    opt.addEventListener('click', () => selectOption(item.value, item.name));
+                    optionsBox.appendChild(opt);
+                });
+            });
+
+            if (!hasAny) {
+                optionsBox.innerHTML = '<div class="dropdown-empty">未找到匹配的期货公司</div>';
+            }
+        }
+
+        // ── 选中某项 ──
+        function selectOption(value, name) {
+            selectedValue = value;
+            nativeSelect.value = value;
+            triggerText.textContent = name;
+            trigger.classList.remove('placeholder');
+            closeDropdown();
+        }
+
+        // ── 打开 / 关闭 ──
+        function openDropdown() {
+            dropdown.classList.add('open');
+            renderOptions(searchInput.value);
+            setTimeout(() => searchInput.focus(), 50);
+        }
+
+        function closeDropdown() {
+            dropdown.classList.remove('open');
+            searchInput.value = '';
+            searchClear.classList.remove('visible');
+        }
+
+        // ── 事件绑定 ──
+        trigger.addEventListener('click', () => {
+            dropdown.classList.contains('open') ? closeDropdown() : openDropdown();
+        });
+
+        trigger.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                dropdown.classList.contains('open') ? closeDropdown() : openDropdown();
+            }
+        });
+
+        // 搜索输入
+        searchInput.addEventListener('input', () => {
+            const val = searchInput.value;
+            searchClear.classList.toggle('visible', val.length > 0);
+            renderOptions(val);
+        });
+
+        // 清除搜索
+        searchClear.addEventListener('click', () => {
+            searchInput.value = '';
+            searchClear.classList.remove('visible');
+            renderOptions();
+            searchInput.focus();
+        });
+
+        // 点击外部关闭
+        document.addEventListener('click', (e) => {
+            if (!dropdown.contains(e.target)) closeDropdown();
+        });
+
+        // 密码显示/隐藏
+        const togglePassword = document.getElementById('togglePassword');
+        const passwordInput  = document.getElementById('password');
+        const eyeIcon        = document.getElementById('eyeIcon');
+
+        togglePassword.addEventListener('click', () => {
+            const isPassword = passwordInput.type === 'password';
+            passwordInput.type = isPassword ? 'text' : 'password';
+            eyeIcon.innerHTML = isPassword
+                ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+                : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+        });
+
+        // 表单提交
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn  = document.getElementById('loginBtn');
+        const errorMsg  = document.getElementById('errorMsg');
+        const errorText = document.getElementById('errorText');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMsg.classList.remove('show');
+            loginBtn.classList.add('loading');
+            loginBtn.disabled = true;
+
+            const formData = new FormData(loginForm);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // 记住账号
+                    if (document.getElementById('remember').checked) {
+                        localStorage.setItem('futures_username', document.getElementById('username').value);
+                        localStorage.setItem('futures_broker', document.getElementById('broker').value);
+                    } else {
+                        localStorage.removeItem('futures_username');
+                        localStorage.removeItem('futures_broker');
+                    }
+                    window.location.href = '/';
+                } else {
+                    errorText.textContent = result.message || '账号或密码错误';
+                    errorMsg.classList.add('show');
+                }
+            } catch (err) {
+                errorText.textContent = '网络连接失败，请检查网络后重试';
+                errorMsg.classList.add('show');
+            } finally {
+                loginBtn.classList.remove('loading');
+                loginBtn.disabled = false;
+            }
+        });
+
+        // 页面加载时恢复记住的账号
+        window.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('futures_username');
+            const savedBroker = localStorage.getItem('futures_broker');
+            if (saved) {
+                document.getElementById('username').value = saved;
+                document.getElementById('remember').checked = true;
+            }
+            if (savedBroker) {
+                nativeSelect.value = savedBroker;
+                // 找到对应名称并更新触发器显示
+                BROKER_GROUPS.forEach(group => {
+                    const found = group.items.find(i => i.value === savedBroker);
+                    if (found) {
+                        selectedValue = savedBroker;
+                        triggerText.textContent = found.name;
+                        trigger.classList.remove('placeholder');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>期货量化交易系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        /* 顶部导航栏 */
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+            padding: 0 24px;
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #3b82f6, #06b6d4);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-logo svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .nav-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f1f5f9;
+            letter-spacing: 1px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .user-avatar {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .logout-btn {
+            padding: 6px 14px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 6px;
+            color: #f87171;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        /* 主内容区 */
+        .main-content {
+            padding: 32px 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .welcome-section {
+            margin-bottom: 32px;
+        }
+
+        .welcome-section h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 8px;
+        }
+
+        .welcome-section p {
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        /* 数据卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .stat-value.positive { color: #22c55e; }
+        .stat-value.negative { color: #ef4444; }
+
+        .stat-change {
+            font-size: 12px;
+            margin-top: 4px;
+            color: #64748b;
+        }
+
+        /* 功能入口 */
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 16px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .feature-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 24px 16px;
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(71, 85, 105, 0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .feature-card:hover {
+            background: rgba(30, 41, 59, 0.7);
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .feature-icon svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .feature-icon.blue   { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .feature-icon.green  { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+        .feature-icon.purple { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+        .feature-icon.orange { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+
+        .feature-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <nav class="navbar">
+        <div class="nav-left">
+            <div class="nav-logo">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 20h18M3 20l4-8 4 4 4-10 4 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+            </div>
+            <span class="nav-title">期货量化交易系统</span>
+        </div>
+        <div class="nav-right">
+            <div class="user-info">
+                <div class="user-avatar">{{ username[0]|upper if username else 'U' }}</div>
+                <span>{{ username or '未登录' }}</span>
+            </div>
+            <button class="logout-btn" id="logoutBtn">退出登录</button>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+
+        <div class="welcome-section">
+            <h1>欢迎回来，{{ username or '交易员' }}</h1>
+            <p>今日市场概览 · 祝您交易顺利</p>
+        </div>
+
+        <!-- 数据统计 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">账户权益</div>
+                <div class="stat-value">¥ 0.00</div>
+                <div class="stat-change">暂无数据</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">今日盈亏</div>
+                <div class="stat-value positive">+¥ 0.00</div>
+                <div class="stat-change">暂无数据</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">持仓数量</div>
+                <div class="stat-value">0</div>
+                <div class="stat-change">当前无持仓</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">今日委托</div>
+                <div class="stat-value">0</div>
+                <div class="stat-change">暂无委托记录</div>
+            </div>
+        </div>
+
+        <!-- 功能入口 -->
+        <h2 class="section-title">快捷功能</h2>
+        <div class="feature-grid">
+            <a class="feature-card" href="#">
+                <div class="feature-icon blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </div>
+                <span class="feature-name">实时行情</span>
+            </a>
+            <a class="feature-card" href="#">
+                <div class="feature-icon green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                </div>
+                <span class="feature-name">下单交易</span>
+            </a>
+            <a class="feature-card" href="#">
+                <div class="feature-icon purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                </div>
+                <span class="feature-name">持仓查询</span>
+            </a>
+            <a class="feature-card" href="#">
+                <div class="feature-icon orange">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                </div>
+                <span class="feature-name">量化策略</span>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            if (!confirm('确定要退出登录吗？')) return;
+            await fetch('/logout', { method: 'POST' });
+            window.location.href = '/login';
+        });
+    </script>
+</body>
+</html>

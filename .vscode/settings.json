@@ -1,0 +1,4 @@
+{
+    // 禁用终端命令执行前的确认提示，解决AI插件终端命令卡死问题
+    "terminal.integrated.confirmBeforeRun": "never"
+}
