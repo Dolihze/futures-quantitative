@@ -1,16 +1,28 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 import webview
 import threading
+import json
 import os
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# 加载期货公司数据
+BROKER_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data', 'brokers.json')
+with open(BROKER_DATA_PATH, 'r', encoding='utf-8') as f:
+    BROKER_GROUPS = json.load(f)
 
 # 模拟账户数据（实际项目中应对接数据库）
 USERS = {
     "admin": {"password": "123456", "broker": "ctp"},
     "test":  {"password": "test123", "broker": "simnow"},
 }
+
+
+@app.route('/api/brokers')
+def get_brokers():
+    """提供期货公司列表数据"""
+    return jsonify(BROKER_GROUPS)
 
 
 @app.route('/login', methods=['GET'])

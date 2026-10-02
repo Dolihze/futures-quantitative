@@ -712,33 +712,9 @@
 
                         <!-- 自定义下拉框 -->
                         <div class="broker-dropdown" id="brokerDropdown">
-                            <!-- 隐藏的原生 select，用于表单提交 -->
+                            <!-- 隐藏的原生 select，用于表单提交（选项由 JS 动态填充） -->
                             <select class="native-select-hidden" name="broker" id="broker" required>
                                 <option value="" disabled selected>请选择期货公司</option>
-                                <optgroup label="模拟环境">
-                                    <option value="ctp">CTP 模拟</option>
-                                    <option value="simnow">SimNow 仿真</option>
-                                </optgroup>
-                                <optgroup label="交易所直连">
-                                    <option value="cffex">中金所</option>
-                                    <option value="shfe">上期所</option>
-                                    <option value="dce">大商所</option>
-                                    <option value="czce">郑商所</option>
-                                    <option value="ine">上期能源</option>
-                                    <option value="gfex">广期所</option>
-                                </optgroup>
-                                <optgroup label="期货公司">
-                                    <option value="yinhua">银河期货</option>
-                                    <option value="zhongxin">中信期货</option>
-                                    <option value="guotai">国泰君安期货</option>
-                                    <option value="haihui">海汇期货</option>
-                                    <option value="yongan">永安期货</option>
-                                    <option value="huatai">华泰期货</option>
-                                    <option value="haotong">海通期货</option>
-                                    <option value="nanhua">南华期货</option>
-                                    <option value="dongfang">东方汇金期货</option>
-                                    <option value="other">其他</option>
-                                </optgroup>
                             </select>
 
                             <!-- 触发器 -->
@@ -830,43 +806,6 @@
     </div>
 
     <script>
-        // ── 期货公司数据（分组） ──
-        const BROKER_GROUPS = [
-            {
-                label: '模拟环境',
-                items: [
-                    { value: 'ctp',      name: 'CTP 模拟',     tag: '模拟' },
-                    { value: 'simnow',   name: 'SimNow 仿真',  tag: '模拟', tagType: 'hot' },
-                ]
-            },
-            {
-                label: '交易所直连',
-                items: [
-                    { value: 'cffex',  name: '中金所',  tag: '交易所' },
-                    { value: 'shfe',   name: '上期所',  tag: '交易所' },
-                    { value: 'dce',    name: '大商所',  tag: '交易所' },
-                    { value: 'czce',   name: '郑商所',  tag: '交易所' },
-                    { value: 'ine',    name: '上期能源', tag: '交易所' },
-                    { value: 'gfex',   name: '广期所',  tag: '交易所' },
-                ]
-            },
-            {
-                label: '期货公司',
-                items: [
-                    { value: 'yinhua',   name: '银河期货',       tag: '热门', tagType: 'hot' },
-                    { value: 'zhongxin', name: '中信期货',       tag: '热门', tagType: 'hot' },
-                    { value: 'guotai',   name: '国泰君安期货',   tag: '' },
-                    { value: 'haihui',   name: '海汇期货',       tag: '' },
-                    { value: 'yongan',   name: '永安期货',       tag: '' },
-                    { value: 'huatai',   name: '华泰期货',       tag: '' },
-                    { value: 'haotong',  name: '海通期货',       tag: '' },
-                    { value: 'nanhua',   name: '南华期货',       tag: '' },
-                    { value: 'dongfang', name: '东方汇金期货',   tag: '' },
-                    { value: 'other',    name: '其他',           tag: '' },
-                ]
-            }
-        ];
-
         // ── DOM 引用 ──
         const dropdown       = document.getElementById('brokerDropdown');
         const trigger        = document.getElementById('dropdownTrigger');
@@ -878,14 +817,62 @@
         const nativeSelect   = document.getElementById('broker');
 
         let selectedValue = '';
+        let BROKER_GROUPS = [];
+
+        // ── 从 API 加载期货公司数据 ──
+        async function loadBrokerData() {
+            try {
+                const res = await fetch('/api/brokers');
+                if (!res.ok) throw new Error('加载失败');
+                BROKER_GROUPS = await res.json();
+                // 动态填充隐藏的原生 select
+                populateNativeSelect();
+                // 渲染选项列表
+                renderOptions(searchInput.value);
+                // 恢复记住的期货公司
+                restoreSavedBroker();
+            } catch (err) {
+                optionsBox.innerHTML = '<div class="dropdown-empty">期货公司数据加载失败，请刷新重试</div>';
+            }
+        }
+
+        // ── 动态填充原生 select ──
+        function populateNativeSelect() {
+            // 清空现有选项（保留默认占位项）
+            nativeSelect.innerHTML = '<option value="" disabled selected>请选择期货公司</option>';
+            BROKER_GROUPS.forEach(group => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = group.label;
+                group.items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.value;
+                    option.textContent = item.name;
+                    optgroup.appendChild(option);
+                });
+                nativeSelect.appendChild(optgroup);
+            });
+        }
+
+        // ── 恢复记住的期货公司 ──
+        function restoreSavedBroker() {
+            const savedBroker = localStorage.getItem('futures_broker');
+            if (!savedBroker) return;
+            nativeSelect.value = savedBroker;
+            BROKER_GROUPS.forEach(group => {
+                const found = group.items.find(i => i.value === savedBroker);
+                if (found) {
+                    selectedValue = savedBroker;
+                    triggerText.textContent = found.name;
+                    trigger.classList.remove('placeholder');
+                }
+            });
+        }
 
         // ── 模糊匹配工具函数 ──
         function fuzzyMatch(text, query) {
             const lowerText  = text.toLowerCase();
             const lowerQuery = query.toLowerCase();
-            // 包含匹配
             if (lowerText.includes(lowerQuery)) return true;
-            // 拼音首字母模糊匹配（简单实现：逐字符顺序匹配）
             let qi = 0;
             for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
                 if (lowerText[i] === lowerQuery[qi]) qi++;
@@ -896,6 +883,10 @@
         // ── 渲染选项列表 ──
         function renderOptions(query = '') {
             optionsBox.innerHTML = '';
+            if (BROKER_GROUPS.length === 0) {
+                optionsBox.innerHTML = '<div class="dropdown-empty">正在加载期货公司数据…</div>';
+                return;
+            }
             let hasAny = false;
 
             BROKER_GROUPS.forEach(group => {
@@ -903,13 +894,11 @@
                 if (filtered.length === 0) return;
                 hasAny = true;
 
-                // 分组标题
                 const groupLabel = document.createElement('div');
                 groupLabel.className = 'dropdown-group-label';
                 groupLabel.textContent = group.label;
                 optionsBox.appendChild(groupLabel);
 
-                // 选项
                 filtered.forEach(item => {
                     const opt = document.createElement('div');
                     opt.className = 'dropdown-option' + (item.value === selectedValue ? ' selected' : '');
@@ -965,14 +954,12 @@
             }
         });
 
-        // 搜索输入
         searchInput.addEventListener('input', () => {
             const val = searchInput.value;
             searchClear.classList.toggle('visible', val.length > 0);
             renderOptions(val);
         });
 
-        // 清除搜索
         searchClear.addEventListener('click', () => {
             searchInput.value = '';
             searchClear.classList.remove('visible');
@@ -980,7 +967,6 @@
             searchInput.focus();
         });
 
-        // 点击外部关闭
         document.addEventListener('click', (e) => {
             if (!dropdown.contains(e.target)) closeDropdown();
         });
@@ -1023,7 +1009,6 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    // 记住账号
                     if (document.getElementById('remember').checked) {
                         localStorage.setItem('futures_username', document.getElementById('username').value);
                         localStorage.setItem('futures_broker', document.getElementById('broker').value);
@@ -1045,27 +1030,15 @@
             }
         });
 
-        // 页面加载时恢复记住的账号
+        // ── 页面加载时初始化 ──
         window.addEventListener('DOMContentLoaded', () => {
+            // 恢复记住的账号
             const saved = localStorage.getItem('futures_username');
-            const savedBroker = localStorage.getItem('futures_broker');
             if (saved) {
                 document.getElementById('username').value = saved;
                 document.getElementById('remember').checked = true;
             }
-            if (savedBroker) {
-                nativeSelect.value = savedBroker;
-                // 找到对应名称并更新触发器显示
-                BROKER_GROUPS.forEach(group => {
-                    const found = group.items.find(i => i.value === savedBroker);
-                    if (found) {
-                        selectedValue = savedBroker;
-                        triggerText.textContent = found.name;
-                        trigger.classList.remove('placeholder');
-                    }
-                });
-            }
+            // 加载期货公司数据
+            loadBrokerData();
         });
     </script>
-</body>
-</html>
