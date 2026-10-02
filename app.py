@@ -42,14 +42,21 @@ def login():
     if not username or not password:
         return jsonify({"success": False, "message": "请输入账号和密码"}), 400
 
-    user = USERS.get(username)
-    if user and user["password"] == password:
-        session['logged_in'] = True
-        session['username']  = username
-        session['broker']    = broker
-        return jsonify({"success": True, "message": "登录成功"})
-    else:
-        return jsonify({"success": False, "message": "账号或密码错误，请重新输入"}), 401
+    # ====== 暂时放开账号密码验证，方便开发首页，后续恢复 ======
+    session['logged_in'] = True
+    session['username']  = username
+    session['broker']    = broker
+    return jsonify({"success": True, "message": "登录成功"})
+    # ==============================================================
+
+
+@app.route('/debug-login')
+def debug_login():
+    """调试模式：跳过登录验证，直接进入首页"""
+    session['logged_in'] = True
+    session['username']  = '管理员'
+    session['broker']    = ''
+    return redirect(url_for('index'))
 
 
 @app.route('/')

@@ -657,6 +657,26 @@
         .footer-info a:hover {
             color: #64748b;
         }
+
+        /* 调试模式按钮 */
+        .debug-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 28px;
+            background: rgba(249, 115, 22, 0.15);
+            border: 1px solid rgba(249, 115, 22, 0.4);
+            border-radius: 8px;
+            color: #fb923c;
+            font-size: 13px;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .debug-btn:hover {
+            background: rgba(249, 115, 22, 0.25);
+            border-color: rgba(249, 115, 22, 0.6);
+        }
+
     </style>
 </head>
 <body>
@@ -802,6 +822,11 @@
 
         <div class="footer-info">
             <p>本系统仅供合法期货交易使用 · 未经授权禁止访问</p>
+        </div>
+
+        <!-- 调试模式按钮（临时） -->
+        <div style="text-align: center;">
+            <a class="debug-btn" href="/debug-login">调试模式（跳过登录）</a>
         </div>
     </div>
 
@@ -1042,3 +1067,5 @@
             loadBrokerData();
         });
     </script>
+</body>
+</html>
