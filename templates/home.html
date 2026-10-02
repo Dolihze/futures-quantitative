@@ -244,6 +244,46 @@
             font-weight: 700;
             color: #f1f5f9;
         }
+
+        /* 加载遮罩层 */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading.show {
+            display: flex;
+        }
+
+        .spinner {
+            border: 4px solid #334155;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        .loading-text {
+            color: #3b82f6;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -339,12 +379,31 @@
         </div>
     </div>
 
+    <!-- 退出登录按钮后面添加加载遮罩层 -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">正在加载...</div>
+    </div>
+
     <script>
         // 退出登录
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             if (!confirm('确定要退出登录吗？')) return;
             await fetch('/logout', { method: 'POST' });
             window.location.href = '/login';
+        });
+
+        // 量化回测卡片点击时立即显示遮罩层
+        document.querySelectorAll('a[href="/backtest"]').forEach(card => {
+            card.addEventListener('click', function(e) {
+                e.preventDefault();
+                const loading = document.getElementById('loading');
+                loading.classList.add('show');
+                // 延迟跳转，确保遮罩层能显示出来
+                setTimeout(() => {
+                    window.location.href = '/backtest';
+                }, 100);
+            });
         });
     </script>
 </body>

@@ -147,6 +147,7 @@
             flex-direction: column;
             padding: 20px;
             background: #1a1a2e;
+            min-height: 0; /* 确保flex子元素能正确收缩 */
         }
 
         .chart-title {
@@ -154,6 +155,7 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
+            flex-shrink: 0; /* 标题不被压缩 */
         }
 
         .chart-title h2 {
@@ -182,36 +184,57 @@
         }
 
         #klineChart {
-            flex: 1;
+            flex: 3; /* 主K线图占据3份空间 */
             background: #16213e;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            min-height: 300px; /* 最小高度保证 */
+        }
+
+        #indicatorChart {
+            flex: 1; /* 副指标图表占据1份空间 */
+            background: #16213e;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            margin-top: 10px;
+            min-height: 150px; /* 最小高度保证 */
         }
 
         .loading {
-            display: none;
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            padding: 30px 50px;
-            border-radius: 10px;
-            z-index: 1000;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s ease;
         }
 
-        .loading.show {
-            display: block;
+        .loading.hide {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .spinner {
             border: 4px solid #333;
             border-top: 4px solid #00d4ff;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 60px;
+            height: 60px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 20px;
+        }
+
+        .loading-text {
+            color: #00d4ff;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
         }
 
         @keyframes spin {
@@ -373,16 +396,18 @@
                 </div>
             </div>
             <div id="klineChart"></div>
+            <div id="indicatorChart"></div>
         </div>
     </div>
 
     <div class="loading" id="loading">
         <div class="spinner"></div>
-        <div style="text-align: center; color: #00d4ff;">正在加载数据...</div>
+        <div class="loading-text">正在加载数据...</div>
     </div>
 
     <script>
         let chart = null;
+        let indicatorChart = null; // 附图指标图表
 
         // 初始化图表
         function initChart() {
@@ -431,8 +456,10 @@
                         }
                     },
                     axisLabel: {
-                        color: '#aaa',
-                        rotate: 45
+                        show: false // 隐藏X轴标签
+                    },
+                    axisTick: {
+                        show: false // 隐藏刻度线
                     }
                 },
                 yAxis: {
@@ -496,10 +523,128 @@
             
             chart.setOption(option);
             
-            // 响应式图表
+            // 初始化附图指标图表
+            initIndicatorChart();
+            
+            // 实现主副图表dataZoom联动
+            chart.on('dataZoom', function(params) {
+                const option = chart.getOption();
+                const start = option.dataZoom[0].start;
+                const end = option.dataZoom[0].end;
+                
+                // 同步副指标图表的缩放
+                const indicatorOption = indicatorChart.getOption();
+                indicatorOption.dataZoom[0].start = start;
+                indicatorOption.dataZoom[0].end = end;
+                if (indicatorOption.dataZoom[1]) {
+                    indicatorOption.dataZoom[1].start = start;
+                    indicatorOption.dataZoom[1].end = end;
+                }
+                indicatorChart.setOption(indicatorOption);
+            });
+            
+            indicatorChart.on('dataZoom', function(params) {
+                const option = indicatorChart.getOption();
+                const start = option.dataZoom[0].start;
+                const end = option.dataZoom[0].end;
+                
+                // 同步主K线图表的缩放
+                const mainOption = chart.getOption();
+                mainOption.dataZoom[0].start = start;
+                mainOption.dataZoom[0].end = end;
+                chart.setOption(mainOption);
+            });
+            
+            // 响应图表
             window.addEventListener('resize', function() {
                 chart.resize();
+                indicatorChart.resize();
             });
+        }
+
+        // 初始化附图指标图表
+        function initIndicatorChart() {
+            const indicatorDom = document.getElementById('indicatorChart');
+            indicatorChart = echarts.init(indicatorDom);
+            
+            const option = {
+                backgroundColor: '#16213e',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    borderColor: '#00d4ff',
+                    textStyle: {
+                        color: '#fff'
+                    }
+                },
+                grid: {
+                    left: '10%',
+                    right: '5%',
+                    top: '10%',
+                    bottom: '15%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: [],
+                    axisLine: {
+                        lineStyle: {
+                            color: '#333'
+                        }
+                    },
+                    axisLabel: {
+                        show: false // 隐藏X轴标签
+                    },
+                    axisTick: {
+                        show: false // 隐藏刻度线
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    scale: true,
+                    axisLine: {
+                        lineStyle: {
+                            color: '#333'
+                        }
+                    },
+                    axisLabel: {
+                        color: '#aaa'
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#2a2a3e'
+                        }
+                    }
+                },
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        xAxisIndex: [0],
+                        start: 70,
+                        end: 100
+                    }
+                ],
+                series: [
+                    {
+                        name: 'VAR9',
+                        type: 'bar',
+                        data: [],
+                        itemStyle: {
+                            color: '#22c55e' // 绿色
+                        }
+                    },
+                    {
+                        name: 'VAR9L',
+                        type: 'bar',
+                        data: [],
+                        itemStyle: {
+                            color: '#ef4444' // 红色
+                        }
+                    }
+                ]
+            };
+            
+            indicatorChart.setOption(option);
         }
 
         // 加载K线数据
@@ -512,7 +657,9 @@
             const loading = document.getElementById('loading');
             
             loadBtn.disabled = true;
-            loading.classList.add('show');
+            // 显示遮罩层
+            loading.style.display = 'flex';
+            loading.classList.remove('hide');
             
             try {
                 const url = `/api/backtest/kline?symbol=${symbol}&period=${period}&days=${dateRange}`;
@@ -543,8 +690,163 @@
                 showMessage(`加载失败: ${errorMsg}`, 'error');
             } finally {
                 loadBtn.disabled = false;
-                loading.classList.remove('show');
+                // 隐藏遮罩层
+                loading.classList.add('hide');
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                }, 300);
             }
+        }
+
+        // 同花顺指标计算辅助函数
+        // SMA函数：简单移动平均
+        function SMA(data, period, weight) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    result.push(0);
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < period; j++) {
+                        sum += data[i - j] * (weight || 1);
+                    }
+                    result.push(sum / period);
+                }
+            }
+            return result;
+        }
+
+        // EMA函数：指数移动平均
+        function EMA(data, period) {
+            const result = [];
+            const multiplier = 2 / (period + 1);
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i === 0) {
+                    result.push(data[0]);
+                } else {
+                    result.push((data[i] - result[i - 1]) * multiplier + result[i - 1]);
+                }
+            }
+            return result;
+        }
+
+        // REF函数：引用前N个数据
+        function REF(data, n) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < n) {
+                    result.push(data[i]);
+                } else {
+                    result.push(data[i - n]);
+                }
+            }
+            return result;
+        }
+
+        // HHV函数：取N个周期内的最高值
+        function HHV(data, period) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    result.push(data[i]);
+                } else {
+                    let max = data[i];
+                    for (let j = 1; j < period; j++) {
+                        max = Math.max(max, data[i - j]);
+                    }
+                    result.push(max);
+                }
+            }
+            return result;
+        }
+
+        // LLV函数：取N个周期内的最低值
+        function LLV(data, period) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    result.push(data[i]);
+                } else {
+                    let min = data[i];
+                    for (let j = 1; j < period; j++) {
+                        min = Math.min(min, data[i - j]);
+                    }
+                    result.push(min);
+                }
+            }
+            return result;
+        }
+
+        // ABS函数：取绝对值
+        function ABS(data) {
+            return data.map(v => Math.abs(v));
+        }
+
+        // MAX函数：取两个数组的最大值
+        function MAX(data1, data2) {
+            return data1.map((v, i) => Math.max(v, data2[i] || 0));
+        }
+
+        // IF函数：条件判断
+        function IF(condition, trueValue, falseValue) {
+            return condition.map((c, i) => c ? trueValue[i] : falseValue[i]);
+        }
+
+        // 计算同花顺指标
+        function calculateIndicator(data) {
+            const high = data.map(d => d.high);
+            const low = data.map(d => d.low);
+            const close = data.map(d => d.close);
+            
+            // 计算 VAR2 到 VAR9
+            const VAR2 = REF(high, 1);
+            const VAR3_temp1 = SMA(ABS(high.map((h, i) => h - VAR2[i])), 3, 1);
+            const VAR3_temp2 = SMA(MAX(VAR2.map((v, i) => v - high[i]), 0), 3, 1);
+            const VAR3 = VAR3_temp1.map((v, i) => VAR3_temp2[i] !== 0 ? (v / VAR3_temp2[i]) * 100 : 0);
+            
+            const VAR4_base = close.map((c, i) => c > 0.7 ? VAR3[i] * 10 : VAR3[i] / 10);
+            const VAR4 = EMA(VAR4_base, 3);
+            
+            const VAR5 = HHV(high, 50);
+            const VAR6 = LLV(VAR4, 50);
+            const VAR7 = close.map(c => 1); // MA(CLOSE,58) > 0 的条件，简化为1
+            
+            const VAR8_base = high.map((h, i) => {
+                if (h >= VAR5[i]) {
+                    return (VAR4[i] + VAR6[i] * 2) / 2;
+                }
+                return 0;
+            });
+            const VAR8 = EMA(VAR8_base, 3).map((v, i) => v / 1000 * VAR7[i]);
+            const VAR9 = VAR8.map(v => v > 100 ? 100 : v);
+            
+            // 计算 VAR2L 到 VAR9L
+            const VAR2L = REF(low, 1);
+            const VAR3L_temp1 = SMA(ABS(low.map((l, i) => l - VAR2L[i])), 3, 1);
+            const VAR3L_temp2 = SMA(MAX(low.map((l, i) => l - VAR2L[i]), 0), 3, 1);
+            const VAR3L = VAR3L_temp1.map((v, i) => VAR3L_temp2[i] !== 0 ? (v / VAR3L_temp2[i]) * 100 : 0);
+            
+            const VAR4L_base = close.map((c, i) => c > 1.3 ? VAR3L[i] * 10 : VAR3L[i] / 10);
+            const VAR4L = EMA(VAR4L_base, 3);
+            
+            const VAR5L = LLV(low, 50);
+            const VAR6L = HHV(VAR4L, 50);
+            const VAR7L = close.map(c => 1); // MA(CLOSE,58) > 0 的条件，简化为1
+            
+            const VAR8L_base = low.map((l, i) => {
+                if (l <= VAR5L[i]) {
+                    return (VAR4L[i] + VAR6L[i] * 2) / 2;
+                }
+                return 0;
+            });
+            const VAR8L = EMA(VAR8L_base, 3).map((v, i) => v / 1000 * VAR7L[i]);
+            const VAR9L = VAR8L.map(v => v > 100 ? 100 : v);
+            
+            return {
+                VAR9: VAR9,
+                VAR9L: VAR9L
+            };
         }
 
         // 更新图表
@@ -564,12 +866,24 @@
             document.getElementById('infoPeriod').textContent = period;
             document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
             
-            // 更新图表配置
+            // 更新K线图表配置
             const option = chart.getOption();
             option.xAxis[0].data = categoryData;
             option.series[0].data = klineData;
-            
             chart.setOption(option);
+            
+            // 计算并更新附图指标
+            const indicator = calculateIndicator(data);
+            updateIndicatorChart(categoryData, indicator);
+        }
+
+        // 更新附图指标图表
+        function updateIndicatorChart(categoryData, indicator) {
+            const option = indicatorChart.getOption();
+            option.xAxis[0].data = categoryData;
+            option.series[0].data = indicator.VAR9.map(v => -v); // VAR9取负值显示在下方
+            option.series[1].data = indicator.VAR9L;
+            indicatorChart.setOption(option);
         }
 
         // 更新统计信息
@@ -614,9 +928,24 @@
 
         // 页面加载完成后初始化图表
         window.addEventListener('load', function() {
-            initChart();
-            // 自动加载一次数据
-            loadKlineData();
+            const loading = document.getElementById('loading');
+            
+            // 确保遮罩层显示
+            loading.style.display = 'flex';
+            loading.classList.remove('hide');
+            
+            // 延迟初始化图表，确保页面能正常渲染
+            setTimeout(() => {
+                initChart();
+                // 自动加载一次数据
+                loadKlineData().then(() => {
+                    // 数据加载完成后，立即隐藏遮罩层
+                    loading.classList.add('hide');
+                    setTimeout(() => {
+                        loading.style.display = 'none';
+                    }, 300);
+                });
+            }, 100);
         });
     </script>
 </body>
