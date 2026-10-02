@@ -77,11 +77,61 @@ def trading():
 
 @app.route('/backtest')
 def backtest():
-    """回测页面 - 需要登录才能访问（暂未开发）"""
+    """回测页面 - 需要登录才能访问"""
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
-    # 暂时返回首页，后续开发回测页面
-    return redirect(url_for('home'))
+    return render_template('backtest.html', username=session.get('username', ''))
+
+
+@app.route('/api/backtest/kline')
+def get_kline_data():
+    """获取K线数据API"""
+    from datetime import datetime, timedelta
+    import akshare as ak
+    
+    try:
+        # 获取燃料油FU2611的1分钟级别数据
+        # 使用akshare获取期货分钟数据
+        symbol = "FU2611"
+        
+        # 获取近1个月的数据
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        # 使用akshare获取期货分钟级别数据
+        # 注意：akshare可能需要特定的接口来获取分钟数据
+        df = ak.futures_zh_minute_sina(symbol=symbol, period="1")
+        
+        if df is not None and not df.empty:
+            # 数据格式转换
+            data = []
+            for _, row in df.iterrows():
+                data.append({
+                    'time': row['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'open': float(row['open']),
+                    'high': float(row['high']),
+                    'low': float(row['low']),
+                    'close': float(row['close']),
+                    'volume': int(row['volume'])
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': data,
+                'symbol': symbol
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '未获取到数据'
+            }), 404
+            
+    except Exception as e:
+        print(f"获取K线数据失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'获取数据失败: {str(e)}'
+        }), 500
 
 
 @app.route('/logout', methods=['POST'])

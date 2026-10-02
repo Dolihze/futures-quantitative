@@ -297,7 +297,7 @@
             </a>
 
             <!-- 量化回测卡片 -->
-            <div class="feature-card" onclick="showComingSoon('量化回测')">
+            <a href="/backtest" class="feature-card">
                 <div class="feature-icon backtest">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -310,12 +310,12 @@
                     历史数据回测，策略验证，绩效分析，风险评估
                 </div>
                 <div class="feature-arrow">
-                    <span>即将上线</span>
+                    <span>进入回测</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"/>
                     </svg>
                 </div>
-            </div>
+            </a>
         </div>
 
         <!-- 快捷统计 -->
@@ -340,11 +340,6 @@
     </div>
 
     <script>
-        // 显示即将上线提示
-        function showComingSoon(featureName) {
-            alert(`${featureName}功能正在开发中，敬请期待！`);
-        }
-
         // 退出登录
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             if (!confirm('确定要退出登录吗？')) return;

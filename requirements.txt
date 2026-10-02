@@ -1,4 +1,5 @@
 flask>=2.3.0
 pywebview>=4.0.0
-vnpy>=3.9.0
-vnpy_ctp>=6.7.0
+akshare>=1.10.0
+vnpy-ctp>=6.6.9
+vnpy>=3.0.0
