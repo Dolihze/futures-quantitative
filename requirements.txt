@@ -1,2 +1,4 @@
-flask>=3.0.0
-pywebview>=5.0.0
+flask>=2.3.0
+pywebview>=4.0.0
+vnpy>=3.9.0
+vnpy_ctp>=6.7.0
