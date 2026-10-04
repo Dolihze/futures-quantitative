@@ -85,49 +85,81 @@ def backtest():
 
 @app.route('/api/backtest/kline')
 def get_kline_data():
-    """获取K线数据API"""
+    """获取K线数据API - 使用tushare获取真实数据"""
     from datetime import datetime, timedelta
-    import akshare as ak
+    import tushare as ts
     import pandas as pd
     
+    # tushare token配置 - 请替换为你自己的token
+    # 在 https://tushare.pro 注册后获取
+    TUSHARE_TOKEN = ''  # TODO: 请填入你的tushare token
+    
     try:
+        # 检查token是否配置
+        if not TUSHARE_TOKEN:
+            error_msg = '请先配置tushare token！在app.py中搜索TUSHARE_TOKEN并填入你的token'
+            print(f"[API] 错误: {error_msg}")
+            return jsonify({
+                'success': False,
+                'message': error_msg
+            }), 400
+        
+        # 初始化tushare
+        ts.set_token(TUSHARE_TOKEN)
+        pro = ts.pro_api()
+        
         # 获取前端传入的参数
         symbol = request.args.get('symbol', 'FU2611')
         period = request.args.get('period', '1')
         days = int(request.args.get('days', 30))
         
         print(f"[API] 请求参数: symbol={symbol}, period={period}, days={days}")
-        print(f"[API] 开始调用 akshare.futures_zh_minute_sina...")
+        print(f"[API] 开始调用 tushare.ft_mins...")
         
-        # 使用akshare获取期货分钟级别数据
-        df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
+        # 转换合约代码格式：FU2611 -> FU2611.SHF
+        ts_symbol = convert_to_tushare_symbol(symbol)
+        print(f"[API] 转换后的tushare合约代码: {ts_symbol}")
         
-        print(f"[API] akshare 返回数据类型: {type(df)}")
-        print(f"[API] akshare 返回数据条数: {len(df) if df is not None else 0}")
+        # 计算日期范围
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # 格式化日期为tushare格式 (YYYY-MM-DD HH:MM:SS)
+        start_date_str = start_date.strftime('%Y-%m-%d %H:%M:%S')
+        end_date_str = end_date.strftime('%Y-%m-%d %H:%M:%S')
+        
+        print(f"[API] 日期范围: {start_date_str} ~ {end_date_str}")
+        
+        # 使用tushare获取期货分钟级别数据
+        # ft_mins: 期货分钟级别行情数据
+        df = pro.ft_mins(
+            ts_code=ts_symbol,
+            freq=f'{period}min',
+            start_date=start_date_str,
+            end_date=end_date_str
+        )
+        
+        print(f"[API] tushare 返回数据类型: {type(df)}")
+        print(f"[API] tushare 返回数据条数: {len(df) if df is not None else 0}")
         
         if df is not None and not df.empty:
             print(f"[API] 数据列名: {df.columns.tolist()}")
             print(f"[API] 前5行数据:\n{df.head()}")
             
-            # 根据days过滤数据
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-            
-            # 确保datetime列是datetime类型
-            if 'datetime' in df.columns:
-                df['datetime'] = pd.to_datetime(df['datetime'])
-                df = df[df['datetime'] >= start_date]
+            # 按时间正序排列（tushare默认是倒序）
+            df = df.sort_values('trade_time', ascending=True).reset_index(drop=True)
             
             # 数据格式转换
             data = []
             for _, row in df.iterrows():
+                # tushare的trade_time格式: '2026-10-04 10:30:00'
                 data.append({
-                    'time': row['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'time': row['trade_time'],
                     'open': float(row['open']),
                     'high': float(row['high']),
                     'low': float(row['low']),
                     'close': float(row['close']),
-                    'volume': int(row['volume']) if 'volume' in row else 0
+                    'volume': int(row['vol']) if 'vol' in row else 0
                 })
             
             print(f"[API] 成功返回 {len(data)} 条数据")
@@ -141,7 +173,7 @@ def get_kline_data():
             print(f"[API] 未获取到数据")
             return jsonify({
                 'success': False,
-                'message': '未获取到数据'
+                'message': '未获取到数据，请检查合约代码是否正确或tushare权限是否足够'
             }), 404
             
     except Exception as e:
@@ -156,80 +188,77 @@ def get_kline_data():
         }), 500
 
 
-@app.route('/logout', methods=['POST'])
-def logout():
-    """退出登录"""
-    session.clear()
-    return jsonify({"success": True})
-
-
-@app.route('/api/quant-login', methods=['POST'])
-def quant_login():
-    """处理量化账号登录请求 - 后台自动登录"""
-    from vnpy_ctp import CtpGateway
-    from vnpy.trader.engine import MainEngine
-    from vnpy.trader.setting import SETTINGS
-    
-    # 中信建投账号配置
-    # ⚠️ 安全警告：建议迁移到环境变量或加密存储
-    QUANT_CONFIG = {
-        "account": "30522730",
-        "password": "Lx031260",  # 登录密码
-        "trade_password": "031260",  # 交易密码
-        "brokerid": "9999",  # 中信建投brokerid，需确认
-        "td_address": "tcp://180.168.146.187:10130",  # 中信建投交易服务器地址，需确认
-        "md_address": "tcp://180.168.146.187:10131",  # 中信建投行情服务器地址，需确认
-        "auth_code": "",  # 认证码，需申请
-        "user_product_info": ""  # 用户产品信息
+def convert_to_tushare_symbol(symbol):
+    """
+    转换合约代码为tushare格式
+    例如: FU2611 -> FU2611.SHF (上期所)
+    """
+    # 交易所映射规则
+    exchange_map = {
+        # 上海期货交易所 (SHF)
+        'FU': 'SHF',  # 燃料油
+        'RB': 'SHF',  # 螺纹钢
+        'CU': 'SHF',  # 铜
+        'AL': 'SHF',  # 铝
+        'AU': 'SHF',  # 黄金
+        'AG': 'SHF',  # 白银
+        'ZN': 'SHF',  # 锌
+        'PB': 'SHF',  # 铅
+        'NI': 'SHF',  # 镍
+        'SN': 'SHF',  # 锡
+        'SS': 'SHF',  # 不锈钢
+        'BU': 'SHF',  # 沥青
+        'RU': 'SHF',  # 天然橡胶
+        'SP': 'SHF',  # 纸浆
+        
+        # 大连商品交易所 (DCE)
+        'M': 'DCE',   # 豆粕
+        'Y': 'DCE',   # 豆油
+        'I': 'DCE',   # 铁矿石
+        'JM': 'DCE',  # 焦煤
+        'J': 'DCE',   # 焦炭
+        'A': 'DCE',   # 豆一
+        'B': 'DCE',   # 豆二
+        'C': 'DCE',   # 玉米
+        'CS': 'DCE',  # 玉米淀粉
+        'L': 'DCE',   # 聚乙烯
+        'V': 'DCE',   # 聚氯乙烯
+        'PP': 'DCE',  # 聚丙烯
+        'EB': 'DCE',  # 苯乙烯
+        'EG': 'DCE',  # 乙二醇
+        'PG': 'DCE',  # 液化石油气
+        
+        # 郑州商品交易所 (CZC)
+        'CF': 'CZC',  # 棉花
+        'SR': 'CZC',  # 白糖
+        'TA': 'CZC',  # PTA
+        'OI': 'CZC',  # 菜籽油
+        'RM': 'CZC',  # 菜籽粕
+        'MA': 'CZC',  # 甲醇
+        'FG': 'CZC',  # 玻璃
+        'SA': 'CZC',  # 纯碱
+        'SF': 'CZC',  # 硅铁
+        'SM': 'CZC',  # 锰硅
+        'AP': 'CZC',  # 苹果
+        'CJ': 'CZC',  # 红枣
+        'PK': 'CZC',  # 花生
+        
+        # 中国金融期货交易所 (CFX)
+        'IF': 'CFX',  # 沪深300股指期货
+        'IC': 'CFX',  # 中证500股指期货
+        'IH': 'CFX',  # 上证50股指期货
+        'T': 'CFX',   # 10年期国债期货
+        'TF': 'CFX',  # 5年期国债期货
+        'TS': 'CFX',  # 2年期国债期货
     }
     
-    try:
-        # 创建主引擎
-        main_engine = MainEngine()
-        
-        # 添加CTP网关
-        main_engine.add_gateway(CtpGateway)
-        
-        # 配置CTP连接参数
-        setting = {
-            "用户名": QUANT_CONFIG["account"],
-            "密码": QUANT_CONFIG["password"],
-            "经纪商代码": QUANT_CONFIG["brokerid"],
-            "交易服务器": QUANT_CONFIG["td_address"],
-            "行情服务器": QUANT_CONFIG["md_address"],
-            "产品名称": QUANT_CONFIG["user_product_info"],
-            "授权编码": QUANT_CONFIG["auth_code"],
-            "产品信息": ""
-        }
-        
-        # 连接CTP
-        main_engine.connect(setting, "CTP")
-        
-        # 等待连接（实际应该使用回调）
-        import time
-        time.sleep(2)
-        
-        # 检查连接状态
-        # 这里简化处理，实际应该检查网关的连接状态
-        print(f"量化账号登录请求: account={QUANT_CONFIG['account']}")
-        
-        return jsonify({
-            "success": True,
-            "message": "登录成功",
-            "data": {
-                "account": QUANT_CONFIG["account"],
-                "balance": 0.00,
-                "available": 0.00,
-                "frozen": 0.00
-            }
-        })
-        
-    except Exception as e:
-        print(f"量化登录失败: {str(e)}")
-        return jsonify({
-            "success": False,
-            "message": f"登录失败: {str(e)}"
-        }), 500
+    # 提取品种代码（去掉数字部分）
+    variety_code = ''.join([c for c in symbol if c.isalpha()])
+    
+    # 获取对应的交易所代码
+    exchange = exchange_map.get(variety_code.upper(), 'SHF')  # 默认使用SHF
+    
+    return f"{symbol}.{exchange}"
 
 
 def start_flask():
