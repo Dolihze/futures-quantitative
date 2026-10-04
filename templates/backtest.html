@@ -440,6 +440,7 @@
                     </div>
                 </div>
             </div>
+            
             <div id="klineChart"></div>
             <div id="indicatorChart"></div>
         </div>
@@ -472,18 +473,29 @@
                         color: '#fff'
                     },
                     formatter: function (params) {
-                        const data = params[0];
-                        if (!data) return '';
+                        if (!params || !params[0]) return '';
                         
-                        const values = data.data;
-                        // ECharts candlestick 数据格式: [开盘价, 收盘价, 最低价, 最高价]
-                        // values[0]=开盘价, values[1]=收盘价, values[2]=最低价, values[3]=最高价
+                        const param = params[0];
+                        // 使用encode映射来确保获取正确的数据
+                        // encode: { x: 0, y: [1, 2, 3, 4] } 对应 [开盘, 收盘, 最高, 最低]
+                        const seriesData = param.seriesData?.[0] || param.data;
+                        
+                        if (!seriesData || seriesData.length < 4) {
+                            return '';
+                        }
+                        
+                        // ECharts candlestick 数据格式: [开盘价, 收盘价, 最高价, 最低价]
+                        const openPrice = seriesData[1];  // encode.y[0] = 开盘价
+                        const closePrice = seriesData[2]; // encode.y[1] = 收盘价
+                        const highPrice = seriesData[3];  // encode.y[2] = 最高价
+                        const lowPrice = seriesData[4];   // encode.y[3] = 最低价
+                        
                         return `
-                            <div style="font-weight: bold; margin-bottom: 5px;">${data.axisValue}</div>
-                            <div>开盘: ${values[0]}</div>
-                            <div>收盘: ${values[1]}</div>
-                            <div>最低: ${values[2]}</div>
-                            <div>最高: ${values[3]}</div>
+                            <div style="font-weight: bold; margin-bottom: 5px;">${param.axisValue}</div>
+                            <div>开盘: ${openPrice.toFixed(2)}</div>
+                            <div>收盘: ${closePrice.toFixed(2)}</div>
+                            <div>最高: ${highPrice.toFixed(2)}</div>
+                            <div>最低: ${lowPrice.toFixed(2)}</div>
                         `;
                     }
                 },
@@ -563,6 +575,11 @@
                             color0: '#22c55e',       // 阴线颜色（绿色）
                             borderColor: '#ef4444',  // 阳线边框
                             borderColor0: '#22c55e'  // 阴线边框
+                        },
+                        // 明确指定数据维度映射
+                        encode: {
+                            x: 0,
+                            y: [1, 2, 3, 4]  // [开盘, 收盘, 最高, 最低]
                         }
                     }
                 ]
@@ -710,19 +727,16 @@
             
             try {
                 const url = `/api/backtest/kline?symbol=${symbol}&period=${period}&days=${dateRange}`;
-                console.log('请求URL:', url);
                 
                 const response = await fetch(url);
                 
                 // 检查HTTP状态码
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error('HTTP错误:', response.status, errorText);
                     throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
                 
                 const result = await response.json();
-                console.log('API响应:', result);
                 
                 if (result.success && result.data) {
                     updateChart(result.data, symbol, period);
@@ -899,12 +913,13 @@
         function updateChart(data, symbol, period) {
             // 准备K线数据
             const categoryData = []; // 时间轴
-            const klineData = [];    // K线数据 [开盘, 收盘, 最低, 最高]
+            const klineData = [];    // K线数据
             
             data.forEach(item => {
                 categoryData.push(item.time);
-                // ECharts candlestick 数据格式: [开盘价, 收盘价, 最低价, 最高价]
-                klineData.push([item.open, item.close, item.low, item.high]);
+                // ECharts candlestick 数据格式: [开盘价, 收盘价, 最高价, 最低价]
+                const kline = [item.open, item.close, item.high, item.low];
+                klineData.push(kline);
             });
             
             // 更新图表标题
