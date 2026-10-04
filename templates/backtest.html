@@ -273,41 +273,82 @@
             color: white;
         }
 
-        .stats-panel {
+        /* .stats-panel styles removed */
+
+        .backtest-result {
             background: #0f3460;
             border-radius: 10px;
             padding: 15px;
             margin-top: 20px;
+            display: none;
         }
 
-        .stats-panel h4 {
+        .backtest-result h4 {
             color: #00d4ff;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             font-size: 14px;
         }
 
-        .stats-grid {
+        .result-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
 
-        .stat-item {
+        .result-item {
             background: #16213e;
-            padding: 10px;
+            padding: 12px;
             border-radius: 5px;
+            text-align: center;
         }
 
-        .stat-label {
+        .result-label {
             color: #888;
             font-size: 12px;
+            margin-bottom: 5px;
         }
 
-        .stat-value {
+        .result-value {
             color: #00d4ff;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: bold;
-            margin-top: 5px;
+        }
+
+        .result-value.positive {
+            color: #ef4444;
+        }
+
+        .result-value.negative {
+            color: #22c55e;
+        }
+
+        .result-value.neutral {
+            color: #ffffff;
+        }
+
+        .backtest-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #e94560 0%, #c23152 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .backtest-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 69, 96, 0.4);
+        }
+
+        .backtest-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
         }
     </style>
 </head>
@@ -354,24 +395,28 @@
                 </button>
             </div>
 
-            <div class="stats-panel" id="statsPanel" style="display: none;">
-                <h4>📊 数据统计</h4>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-label">数据点数</div>
-                        <div class="stat-value" id="dataCount">0</div>
+            <button class="backtest-btn" id="backtestBtn" onclick="runBacktest()">
+                🔄 反转信号回测
+            </button>
+
+            <div class="backtest-result" id="backtestResult">
+                <h4>📊 回测结果</h4>
+                <div class="result-grid">
+                    <div class="result-item">
+                        <div class="result-label">开仓次数</div>
+                        <div class="result-value neutral" id="openCount">0</div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-label">最新价格</div>
-                        <div class="stat-value" id="latestPrice">0</div>
+                    <div class="result-item">
+                        <div class="result-label">胜率</div>
+                        <div class="result-value neutral" id="winRate">0%</div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-label">最高价格</div>
-                        <div class="stat-value" id="highPrice" style="color: #ef4444;">0</div>
+                    <div class="result-item">
+                        <div class="result-label">总盈亏</div>
+                        <div class="result-value neutral" id="totalProfit">0</div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-label">最低价格</div>
-                        <div class="stat-value" id="lowPrice" style="color: #22c55e;">0</div>
+                    <div class="result-item">
+                        <div class="result-label">跨越时间</div>
+                        <div class="result-value neutral" id="timeSpan">--</div>
                     </div>
                 </div>
             </div>
@@ -431,12 +476,14 @@
                         if (!data) return '';
                         
                         const values = data.data;
+                        // ECharts candlestick 数据格式: [开盘价, 收盘价, 最低价, 最高价]
+                        // values[0]=开盘价, values[1]=收盘价, values[2]=最低价, values[3]=最高价
                         return `
                             <div style="font-weight: bold; margin-bottom: 5px;">${data.axisValue}</div>
-                            <div>开盘: ${values[1]}</div>
-                            <div>收盘: ${values[2]}</div>
-                            <div>最低: ${values[3]}</div>
-                            <div>最高: ${values[4]}</div>
+                            <div>开盘: ${values[0]}</div>
+                            <div>收盘: ${values[1]}</div>
+                            <div>最低: ${values[2]}</div>
+                            <div>最高: ${values[3]}</div>
                         `;
                     }
                 },
@@ -679,7 +726,6 @@
                 
                 if (result.success && result.data) {
                     updateChart(result.data, symbol, period);
-                    updateStats(result.data);
                     showMessage(`数据加载成功！共 ${result.count || result.data.length} 条数据`, 'success');
                 } else {
                     showMessage(result.message || '数据加载失败', 'error');
@@ -857,6 +903,7 @@
             
             data.forEach(item => {
                 categoryData.push(item.time);
+                // ECharts candlestick 数据格式: [开盘价, 收盘价, 最低价, 最高价]
                 klineData.push([item.open, item.close, item.low, item.high]);
             });
             
@@ -886,21 +933,6 @@
             indicatorChart.setOption(option);
         }
 
-        // 更新统计信息
-        function updateStats(data) {
-            if (data.length === 0) return;
-            
-            const latestPrice = data[data.length - 1].close;
-            const highPrice = Math.max(...data.map(d => d.high));
-            const lowPrice = Math.min(...data.map(d => d.low));
-            
-            document.getElementById('statsPanel').style.display = 'block';
-            document.getElementById('dataCount').textContent = data.length;
-            document.getElementById('latestPrice').textContent = latestPrice.toFixed(2);
-            document.getElementById('highPrice').textContent = highPrice.toFixed(2);
-            document.getElementById('lowPrice').textContent = lowPrice.toFixed(2);
-        }
-
         // 显示消息
         function showMessage(text, type) {
             const message = document.createElement('div');
@@ -911,6 +943,71 @@
             setTimeout(() => {
                 message.remove();
             }, 3000);
+        }
+
+        // 运行回测
+        function runBacktest() {
+            const backtestBtn = document.getElementById('backtestBtn');
+            const backtestResult = document.getElementById('backtestResult');
+            
+            // 禁用按钮
+            backtestBtn.disabled = true;
+            backtestBtn.textContent = '⏳ 回测中...';
+            
+            // 模拟回测过程（实际策略待实现）
+            setTimeout(() => {
+                // 模拟回测结果数据
+                const mockResult = {
+                    openCount: 15,           // 开仓次数
+                    winCount: 9,             // 盈利次数
+                    lossCount: 6,            // 亏损次数
+                    winRate: 60.0,           // 胜率
+                    totalProfit: 12500,      // 总盈亏
+                    timeSpan: '2024-09-01 ~ 2024-10-01'  // 跨越时间
+                };
+                
+                // 更新回测结果
+                updateBacktestResult(mockResult);
+                
+                // 恢复按钮状态
+                backtestBtn.disabled = false;
+                backtestBtn.textContent = '🔄 反转信号回测';
+                
+                showMessage('回测完成！', 'success');
+            }, 1500);
+        }
+
+        // 更新回测结果
+        function updateBacktestResult(result) {
+            const backtestResult = document.getElementById('backtestResult');
+            
+            // 显示结果面板
+            backtestResult.style.display = 'block';
+            
+            // 更新各项数据
+            document.getElementById('openCount').textContent = result.openCount;
+            document.getElementById('openCount').className = 'result-value neutral';
+            
+            const winRateValue = result.winRate;
+            document.getElementById('winRate').textContent = winRateValue.toFixed(2) + '%';
+            if (winRateValue >= 50) {
+                document.getElementById('winRate').className = 'result-value positive';
+            } else {
+                document.getElementById('winRate').className = 'result-value negative';
+            }
+            
+            const profitValue = result.totalProfit;
+            document.getElementById('totalProfit').textContent = profitValue > 0 ? '+' + profitValue : profitValue;
+            if (profitValue > 0) {
+                document.getElementById('totalProfit').className = 'result-value positive';
+            } else if (profitValue < 0) {
+                document.getElementById('totalProfit').className = 'result-value negative';
+            } else {
+                document.getElementById('totalProfit').className = 'result-value neutral';
+            }
+            
+            document.getElementById('timeSpan').textContent = result.timeSpan;
+            document.getElementById('timeSpan').className = 'result-value neutral';
         }
 
         // 退出登录

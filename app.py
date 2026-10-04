@@ -234,15 +234,50 @@ def quant_login():
 
 def start_flask():
     """在后台线程启动 Flask 服务器"""
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+    # 添加启动完成标记
+    import time
+    from werkzeug.serving import make_server
+    
+    # 创建 Flask 服务器
+    server = make_server('127.0.0.1', 5000, app)
+    
+    # 标记服务器已就绪
+    global flask_ready
+    flask_ready = True
+    print("[启动] Flask 服务器已就绪")
+    
+    # 启动服务器
+    server.serve_forever()
 
 
 def start_app():
     """启动桌面应用"""
+    import time
+    
+    # 全局标记
+    global flask_ready
+    flask_ready = False
+    
     # 在后台线程启动 Flask
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
 
+    # 等待 Flask 服务器完全启动
+    print("[启动] 正在等待 Flask 服务器启动...")
+    max_wait = 5  # 最多等待5秒
+    wait_count = 0
+    while not flask_ready and wait_count < max_wait * 10:
+        time.sleep(0.1)
+        wait_count += 1
+    
+    if flask_ready:
+        print("[启动] Flask 服务器已就绪，创建桌面窗口...")
+    else:
+        print("[启动] 警告：Flask 服务器启动超时，尝试创建窗口...")
+    
+    # 额外等待一小段时间确保服务器完全就绪
+    time.sleep(0.5)
+    
     # 创建可缩放的桌面窗口
     window = webview.create_window(
         title='期货量化交易系统',
