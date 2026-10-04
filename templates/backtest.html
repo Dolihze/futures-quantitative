@@ -454,6 +454,55 @@
     <script>
         let chart = null;
         let indicatorChart = null; // 附图指标图表
+        
+        // 全局变量存储当前加载的数据
+        let currentKlineData = null;
+        let currentIndicatorData = null;
+        let currentSymbol = null;
+        
+        // 期货品种配置（最小跳动点数和合约乘数）
+        const INSTRUMENT_CONFIG = {
+            'IF': { tickSize: 0.2, multiplier: 300 },      // 沪深300股指期货
+            'IC': { tickSize: 0.2, multiplier: 200 },      // 中证500股指期货
+            'IH': { tickSize: 0.2, multiplier: 300 },      // 上证50股指期货
+            'AU': { tickSize: 0.02, multiplier: 1000 },    // 黄金
+            'AG': { tickSize: 1, multiplier: 15 },         // 白银
+            'CU': { tickSize: 10, multiplier: 5 },         // 铜
+            'RB': { tickSize: 1, multiplier: 10 },         // 螺纹钢
+            'I': { tickSize: 0.5, multiplier: 100 },       // 铁矿石
+            'MA': { tickSize: 1, multiplier: 10 },         // 甲醇
+            'SA': { tickSize: 1, multiplier: 20 },         // 纯碱
+            'FG': { tickSize: 1, multiplier: 20 },         // 玻璃
+            'CF': { tickSize: 5, multiplier: 5 },          // 棉花
+            'SR': { tickSize: 1, multiplier: 10 },         // 白糖
+            'TA': { tickSize: 2, multiplier: 5 },          // PTA
+            'M': { tickSize: 1, multiplier: 10 },          // 豆粕
+            'Y': { tickSize: 2, multiplier: 10 },          // 豆油
+            'P': { tickSize: 2, multiplier: 10 },          // 棕榈油
+            'AP': { tickSize: 1, multiplier: 10 },         // 苹果
+            'LH': { tickSize: 5, multiplier: 16 },         // 生猪
+            'JD': { tickSize: 1, multiplier: 10 },         // 鸡蛋
+            'SC': { tickSize: 0.1, multiplier: 1000 },     // 原油
+            'FU': { tickSize: 1, multiplier: 10 },         // 燃料油（1跳=10元）
+            'RU': { tickSize: 5, multiplier: 10 },         // 橡胶
+            'SP': { tickSize: 2, multiplier: 10 }          // 纸浆
+        };
+        
+        // 固定交易手数
+        const TRADE_LOTS = 5;
+        
+        // 获取品种配置
+        function getInstrumentConfig(symbol) {
+            // 提取品种代码（去掉数字）
+            const code = symbol.replace(/\d+/g, '').toUpperCase();
+            return INSTRUMENT_CONFIG[code] || { tickSize: 1, multiplier: 10 }; // 默认配置
+        }
+        
+        // 计算每跳价值（元）= 最小跳动 × 合约乘数
+        function getTickValue(symbol) {
+            const config = getInstrumentConfig(symbol);
+            return config.tickSize * config.multiplier;
+        }
 
         // 初始化图表
         function initChart() {
@@ -759,19 +808,27 @@
         }
 
         // 同花顺指标计算辅助函数
-        // SMA函数：简单移动平均
+        // SMA函数：同花顺标准递归加权移动平均 SMA(X,N,M)
         function SMA(data, period, weight) {
             const result = [];
+            const M = weight ?? 1;
+            const N = period;
+            let prevSma = null;
+
             for (let i = 0; i < data.length; i++) {
-                if (i < period - 1) {
-                    result.push(0);
-                } else {
-                    let sum = 0;
-                    for (let j = 0; j < period; j++) {
-                        sum += data[i - j] * (weight || 1);
-                    }
-                    result.push(sum / period);
+                const val = data[i];
+                // 如果是空值，直接填充NaN，不继续计算
+                if (isNaN(val) || val === null || val === undefined) {
+                    result.push(NaN);
+                    prevSma = null;
+                    continue;
                 }
+                if (prevSma === null) {
+                    prevSma = val;
+                } else {
+                    prevSma = (M * val + (N - M) * prevSma) / N;
+                }
+                result.push(prevSma);
             }
             return result;
         }
@@ -848,6 +905,23 @@
             return data1.map((v, i) => Math.max(v, data2[i] || 0));
         }
 
+        // MA函数：简单移动平均
+        function MA(data, period) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    result.push(data[i]);
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < period; j++) {
+                        sum += data[i - j];
+                    }
+                    result.push(sum / period);
+                }
+            }
+            return result;
+        }
+
         // IF函数：条件判断
         function IF(condition, trueValue, falseValue) {
             return condition.map((c, i) => c ? trueValue[i] : falseValue[i]);
@@ -865,12 +939,19 @@
             const VAR3_temp2 = SMA(MAX(VAR2.map((v, i) => v - high[i]), 0), 3, 1);
             const VAR3 = VAR3_temp1.map((v, i) => VAR3_temp2[i] !== 0 ? (v / VAR3_temp2[i]) * 100 : 0);
             
-            const VAR4_base = close.map((c, i) => c > 0.7 ? VAR3[i] * 10 : VAR3[i] / 10);
+            // 修正理解：IF(CLOSE*0.7, ...) 实际含义可能是 IF(CLOSE/REF(CLOSE,1) < 0.7, ...)
+            // 即价格下跌超过30%时放大信号，否则缩小信号
+            const closeRef = REF(close, 1);
+            const VAR4_base = close.map((c, i) => {
+                const ratio = i > 0 ? c / closeRef[i] : 1;
+                return ratio < 0.7 ? VAR3[i] * 10 : VAR3[i] / 10;
+            });
             const VAR4 = EMA(VAR4_base, 3);
             
             const VAR5 = HHV(high, 50);
             const VAR6 = LLV(VAR4, 50);
-            const VAR7 = close.map(c => 1); // MA(CLOSE,58) > 0 的条件，简化为1
+            const ma58 = MA(close, 58);
+            const VAR7 = ma58.map(v => v > 0 ? 1 : 0);
             
             const VAR8_base = high.map((h, i) => {
                 if (h >= VAR5[i]) {
@@ -887,12 +968,18 @@
             const VAR3L_temp2 = SMA(MAX(low.map((l, i) => l - VAR2L[i]), 0), 3, 1);
             const VAR3L = VAR3L_temp1.map((v, i) => VAR3L_temp2[i] !== 0 ? (v / VAR3L_temp2[i]) * 100 : 0);
             
-            const VAR4L_base = close.map((c, i) => c > 1.3 ? VAR3L[i] * 10 : VAR3L[i] / 10);
+            // 修正理解：IF(CLOSE*1.3, ...) 实际含义可能是 IF(CLOSE/REF(CLOSE,1) > 1.3, ...)
+            // 即价格上涨超过30%时放大信号，否则缩小信号
+            const VAR4L_base = close.map((c, i) => {
+                const ratio = i > 0 ? c / closeRef[i] : 1;
+                return ratio > 1.3 ? VAR3L[i] * 10 : VAR3L[i] / 10;
+            });
             const VAR4L = EMA(VAR4L_base, 3);
             
             const VAR5L = LLV(low, 50);
             const VAR6L = HHV(VAR4L, 50);
-            const VAR7L = close.map(c => 1); // MA(CLOSE,58) > 0 的条件，简化为1
+            const ma58L = MA(close, 58);
+            const VAR7L = ma58L.map(v => v > 0 ? 1 : 0);
             
             const VAR8L_base = low.map((l, i) => {
                 if (l <= VAR5L[i]) {
@@ -911,6 +998,10 @@
 
         // 更新图表
         function updateChart(data, symbol, period) {
+            // 保存数据到全局变量
+            currentKlineData = data;
+            currentSymbol = symbol;
+            
             // 准备K线数据
             const categoryData = []; // 时间轴
             const klineData = [];    // K线数据
@@ -936,6 +1027,7 @@
             
             // 计算并更新附图指标
             const indicator = calculateIndicator(data);
+            currentIndicatorData = indicator; // 保存指标数据
             updateIndicatorChart(categoryData, indicator);
         }
 
@@ -943,8 +1035,25 @@
         function updateIndicatorChart(categoryData, indicator) {
             const option = indicatorChart.getOption();
             option.xAxis[0].data = categoryData;
-            option.series[0].data = indicator.VAR9.map(v => -v); // VAR9取负值显示在下方
-            option.series[1].data = indicator.VAR9L;
+            
+            // STICKLINE(VAR9>-120, 0, -VAR9, 6, 0), COLORGREEN;
+            // 只有当VAR9 > -120时才显示柱状图，否则不显示（用null表示）
+            option.series[0].data = indicator.VAR9.map(v => {
+                if (v > -120) {
+                    return -v; // VAR9取负值显示在下方
+                }
+                return null; // 不满足条件时不显示
+            });
+            
+            // STICKLINE(VAR9L>-120, 0, VAR9L, 6, 1), COLORRED;
+            // 只有当VAR9L > -120时才显示柱状图，否则不显示
+            option.series[1].data = indicator.VAR9L.map(v => {
+                if (v > -120) {
+                    return v;
+                }
+                return null; // 不满足条件时不显示
+            });
+            
             indicatorChart.setOption(option);
         }
 
@@ -963,33 +1072,335 @@
         // 运行回测
         function runBacktest() {
             const backtestBtn = document.getElementById('backtestBtn');
-            const backtestResult = document.getElementById('backtestResult');
+            
+            // 检查是否有数据
+            if (!currentKlineData || !currentIndicatorData) {
+                showMessage('请先加载K线数据！', 'error');
+                return;
+            }
+            
+            // 检查是否为5分钟线
+            const period = document.getElementById('period').value;
+            if (period !== '5') {
+                showMessage('回测仅支持5分钟K线，请切换周期后再试！', 'error');
+                return;
+            }
             
             // 禁用按钮
             backtestBtn.disabled = true;
             backtestBtn.textContent = '⏳ 回测中...';
             
-            // 模拟回测过程（实际策略待实现）
+            // 使用setTimeout让UI有机会更新
             setTimeout(() => {
-                // 模拟回测结果数据
-                const mockResult = {
-                    openCount: 15,           // 开仓次数
-                    winCount: 9,             // 盈利次数
-                    lossCount: 6,            // 亏损次数
-                    winRate: 60.0,           // 胜率
-                    totalProfit: 12500,      // 总盈亏
-                    timeSpan: '2024-09-01 ~ 2024-10-01'  // 跨越时间
-                };
+                try {
+                    const result = executeBacktest();
+                    updateBacktestResult(result);
+                    showMessage('回测完成！', 'success');
+                } catch (error) {
+                    console.error('回测执行出错:', error);
+                    showMessage('回测执行出错：' + error.message, 'error');
+                } finally {
+                    // 恢复按钮状态
+                    backtestBtn.disabled = false;
+                    backtestBtn.textContent = '🔄 反转信号回测';
+                }
+            }, 100);
+        }
+
+        // 执行回测逻辑
+        function executeBacktest() {
+            const klineData = currentKlineData;
+            const indicator = currentIndicatorData;
+            const symbol = currentSymbol;
+            
+            // 初始资金1万元
+            let capital = 10000;
+            const initialCapital = 10000;
+            
+            // 交易统计
+            let trades = [];
+            let currentPosition = null; // 当前持仓 {type: 'long'|'short', entryPrice, entryTime, stopProfit, stopLoss}
+            
+            // 获取品种配置
+            const config = getInstrumentConfig(symbol);
+            const tickSize = config.tickSize;           // 最小跳动
+            const multiplier = config.multiplier;       // 合约乘数
+            const tickValue = tickSize * multiplier;    // 每跳价值（元）
+            
+            // 固定交易5手
+            const lots = TRADE_LOTS;
+            
+            // 计算10跳的价值（用于止盈止损）
+            const jumpValue = tickSize * 10;
+            
+            // 用于存储图表标记点
+            let markPoints = [];
+            
+            // 遍历所有K线数据
+            for (let i = 0; i < klineData.length; i++) {
+                const kline = klineData[i];
+                const time = kline.time;
+                const open = kline.open;
+                const high = kline.high;
+                const low = kline.low;
+                const close = kline.close;
                 
-                // 更新回测结果
-                updateBacktestResult(mockResult);
+                // 获取当前K线的指标值
+                const var9 = indicator.VAR9[i];
+                const var9L = indicator.VAR9L[i];
                 
-                // 恢复按钮状态
-                backtestBtn.disabled = false;
-                backtestBtn.textContent = '🔄 反转信号回测';
+                // 如果有持仓，检查是否触发止盈或止损
+                if (currentPosition) {
+                    let isClosed = false;
+                    let exitPrice = 0;
+                    let exitReason = '';
+                    
+                    if (currentPosition.type === 'long') {
+                        // 多头持仓
+                        // 检查是否触发止损（最低价 <= 止损价）
+                        if (low <= currentPosition.stopLoss) {
+                            isClosed = true;
+                            exitPrice = currentPosition.stopLoss;
+                            exitReason = '止损';
+                        }
+                        // 检查是否触发止盈（最高价 >= 止盈价）
+                        else if (high >= currentPosition.stopProfit) {
+                            isClosed = true;
+                            exitPrice = currentPosition.stopProfit;
+                            exitReason = '止盈';
+                        }
+                    } else if (currentPosition.type === 'short') {
+                        // 空头持仓
+                        // 检查是否触发止盈（最低价 <= 止盈价）
+                        if (low <= currentPosition.stopProfit) {
+                            isClosed = true;
+                            exitPrice = currentPosition.stopProfit;
+                            exitReason = '止盈';
+                        }
+                        // 检查是否触发止损（最高价 >= 止损价）
+                        else if (high >= currentPosition.stopLoss) {
+                            isClosed = true;
+                            exitPrice = currentPosition.stopLoss;
+                            exitReason = '止损';
+                        }
+                    }
+                    
+                    // 如果平仓，计算盈亏
+                    if (isClosed) {
+                        // 盈亏 = 价格变动 / 最小跳动 × 每跳价值 × 手数
+                        const priceDiff = currentPosition.type === 'long' 
+                            ? (exitPrice - currentPosition.entryPrice)
+                            : (currentPosition.entryPrice - exitPrice);
+                        
+                        const ticks = priceDiff / tickSize;  // 变动跳数
+                        const profit = ticks * tickValue * lots;  // 盈亏金额
+                        
+                        capital += profit;
+                        
+                        trades.push({
+                            entryTime: currentPosition.entryTime,
+                            exitTime: time,
+                            type: currentPosition.type,
+                            entryPrice: currentPosition.entryPrice,
+                            exitPrice: exitPrice,
+                            reason: exitReason,
+                            profit: profit,
+                            capital: capital
+                        });
+                        
+                        // 添加平仓标记点
+                        if (currentPosition.type === 'long') {
+                            // 平多：红色"卖"
+                            markPoints.push({
+                                name: '卖',
+                                coord: [time, exitPrice],
+                                value: '卖',
+                                itemStyle: {
+                                    color: '#ef4444'
+                                }
+                            });
+                        } else {
+                            // 平空：绿色"平"
+                            markPoints.push({
+                                name: '平',
+                                coord: [time, exitPrice],
+                                value: '平',
+                                itemStyle: {
+                                    color: '#22c55e'
+                                }
+                            });
+                        }
+                        
+                        currentPosition = null;
+                    }
+                }
                 
-                showMessage('回测完成！', 'success');
-            }, 1500);
+                // 如果没有持仓，检查开仓信号
+                if (!currentPosition) {
+                    // 多头开仓信号：红柱子且VAR9L > 0.5
+                    if (var9L > 0.5 && var9L !== null && !isNaN(var9L)) {
+                        // 在收盘价开多
+                        currentPosition = {
+                            type: 'long',
+                            entryPrice: close,
+                            entryTime: time,
+                            stopProfit: close + jumpValue, // 上方10跳止盈
+                            stopLoss: close - jumpValue    // 下方10跳止损
+                        };
+                        
+                        // 添加开仓标记点：红色"买"
+                        markPoints.push({
+                            name: '买',
+                            coord: [time, close],
+                            value: '买',
+                            itemStyle: {
+                                color: '#ef4444'
+                            }
+                        });
+                    }
+                    // 空头开仓信号：绿柱子且VAR9 < -0.5
+                    else if (var9 < -0.5 && var9 !== null && !isNaN(var9)) {
+                        // 在收盘价开空
+                        currentPosition = {
+                            type: 'short',
+                            entryPrice: close,
+                            entryTime: time,
+                            stopProfit: close - jumpValue, // 下方10跳止盈
+                            stopLoss: close + jumpValue    // 上方10跳止损
+                        };
+                        
+                        // 添加开仓标记点：绿色"卖"
+                        markPoints.push({
+                            name: '卖',
+                            coord: [time, close],
+                            value: '卖',
+                            itemStyle: {
+                                color: '#22c55e'
+                            }
+                        });
+                    }
+                }
+            }
+            
+            // 如果最后还有持仓，按最后一根K线收盘价强制平仓
+            if (currentPosition) {
+                const lastKline = klineData[klineData.length - 1];
+                const exitPrice = lastKline.close;
+                
+                // 盈亏 = 价格变动 / 最小跳动 × 每跳价值 × 手数
+                const priceDiff = currentPosition.type === 'long'
+                    ? (exitPrice - currentPosition.entryPrice)
+                    : (currentPosition.entryPrice - exitPrice);
+                
+                const ticks = priceDiff / tickSize;  // 变动跳数
+                const profit = ticks * tickValue * lots;  // 盈亏金额
+                
+                capital += profit;
+                
+                trades.push({
+                    entryTime: currentPosition.entryTime,
+                    exitTime: lastKline.time,
+                    type: currentPosition.type,
+                    entryPrice: currentPosition.entryPrice,
+                    exitPrice: exitPrice,
+                    reason: '强制平仓',
+                    profit: profit,
+                    capital: capital
+                });
+                
+                // 添加强制平仓标记点
+                if (currentPosition.type === 'long') {
+                    // 平多：红色"卖"
+                    markPoints.push({
+                        name: '卖',
+                        coord: [lastKline.time, exitPrice],
+                        value: '卖',
+                        itemStyle: {
+                            color: '#ef4444'
+                        }
+                    });
+                } else {
+                    // 平空：绿色"平"
+                    markPoints.push({
+                        name: '平',
+                        coord: [lastKline.time, exitPrice],
+                        value: '平',
+                        itemStyle: {
+                            color: '#22c55e'
+                        }
+                    });
+                }
+            }
+            
+            // 计算统计结果
+            const openCount = trades.length;
+            const winTrades = trades.filter(t => t.profit > 0);
+            const lossTrades = trades.filter(t => t.profit < 0);
+            const winCount = winTrades.length;
+            const lossCount = lossTrades.length;
+            const winRate = openCount > 0 ? (winCount / openCount * 100) : 0;
+            const totalProfit = capital - initialCapital;
+            
+            // 计算跨越时间
+            const startTime = klineData[0].time;
+            const endTime = klineData[klineData.length - 1].time;
+            const timeSpan = `${startTime.split(' ')[0]} ~ ${endTime.split(' ')[0]}`;
+            
+            // 在K线图上添加标记点
+            updateKlineMarkPoints(markPoints);
+            
+            return {
+                openCount: openCount,
+                winCount: winCount,
+                lossCount: lossCount,
+                winRate: winRate,
+                totalProfit: totalProfit,
+                timeSpan: timeSpan,
+                trades: trades
+            };
+        }
+
+        // 更新K线图标记点
+        function updateKlineMarkPoints(markPoints) {
+            console.log('标记点数量:', markPoints.length);
+            console.log('标记点数据:', markPoints);
+            
+            if (markPoints.length === 0) {
+                showMessage('本次回测没有产生任何交易信号', 'error');
+                return;
+            }
+            
+            const option = chart.getOption();
+            
+            // 为K线系列添加markPoint
+            option.series[0].markPoint = {
+                symbol: 'pin',
+                symbolSize: 50,
+                itemStyle: {
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                },
+                label: {
+                    show: true,
+                    formatter: '{b}',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 'bold'
+                },
+                data: markPoints.map(point => ({
+                    name: point.value,
+                    coord: point.coord,
+                    value: point.value,
+                    itemStyle: {
+                        color: point.itemStyle.color,
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }
+                }))
+            };
+            
+            chart.setOption(option);
+            console.log('K线图已更新标记点');
         }
 
         // 更新回测结果
@@ -1012,7 +1423,7 @@
             }
             
             const profitValue = result.totalProfit;
-            document.getElementById('totalProfit').textContent = profitValue > 0 ? '+' + profitValue : profitValue;
+            document.getElementById('totalProfit').textContent = profitValue > 0 ? '+' + profitValue.toFixed(2) : profitValue.toFixed(2);
             if (profitValue > 0) {
                 document.getElementById('totalProfit').className = 'result-value positive';
             } else if (profitValue < 0) {
@@ -1023,6 +1434,59 @@
             
             document.getElementById('timeSpan').textContent = result.timeSpan;
             document.getElementById('timeSpan').className = 'result-value neutral';
+            
+            // 添加买卖记录列表
+            updateTradeRecords(result.trades);
+        }
+
+        // 更新买卖记录列表
+        function updateTradeRecords(trades) {
+            // 创建或获取交易记录面板
+            let tradeRecordsPanel = document.getElementById('tradeRecordsPanel');
+            if (!tradeRecordsPanel) {
+                tradeRecordsPanel = document.createElement('div');
+                tradeRecordsPanel.id = 'tradeRecordsPanel';
+                tradeRecordsPanel.className = 'backtest-result';
+                tradeRecordsPanel.style.marginTop = '15px';
+                tradeRecordsPanel.style.maxHeight = '400px';
+                tradeRecordsPanel.style.overflowY = 'auto';
+                document.querySelector('.sidebar').appendChild(tradeRecordsPanel);
+            }
+            
+            if (trades.length === 0) {
+                tradeRecordsPanel.innerHTML = '<h4>📝 交易记录</h4><p style="color: #888; text-align: center; padding: 20px;">暂无交易记录</p>';
+                tradeRecordsPanel.style.display = 'block';
+                return;
+            }
+            
+            let html = '<h4>📝 交易记录</h4>';
+            html += '<div style="margin-top: 10px;">';
+            
+            trades.forEach((trade, index) => {
+                const typeLabel = trade.type === 'long' ? '多头' : '空头';
+                const typeColor = trade.type === 'long' ? '#ef4444' : '#22c55e';
+                const profitColor = trade.profit > 0 ? '#ef4444' : trade.profit < 0 ? '#22c55e' : '#fff';
+                const profitText = trade.profit > 0 ? `+${trade.profit.toFixed(2)}` : trade.profit.toFixed(2);
+                
+                html += `
+                    <div style="background: #16213e; padding: 10px; margin-bottom: 8px; border-radius: 5px; border-left: 3px solid ${typeColor};">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="color: ${typeColor}; font-weight: bold;">#${index + 1} ${typeLabel}</span>
+                            <span style="color: ${profitColor}; font-weight: bold;">${profitText}元</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888; line-height: 1.6;">
+                            <div>开仓: ${trade.entryTime}</div>
+                            <div>平仓: ${trade.exitTime}</div>
+                            <div>买点: ${trade.entryPrice.toFixed(2)} → 卖点: ${trade.exitPrice.toFixed(2)}</div>
+                            <div>原因: ${trade.reason}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            tradeRecordsPanel.innerHTML = html;
+            tradeRecordsPanel.style.display = 'block';
         }
 
         // 退出登录
