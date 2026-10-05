@@ -326,6 +326,12 @@
             color: #ffffff;
         }
 
+        #timeSpan {
+            font-size: 13px;
+            color: #999;
+            font-weight: normal;
+        }
+
         .backtest-btn {
             width: 100%;
             padding: 12px;
@@ -375,7 +381,7 @@
                     <label>数据周期</label>
                     <select id="period">
                         <option value="1">1分钟</option>
-                        <option value="5">5分钟</option>
+                        <option value="5" selected>5分钟</option>
                         <option value="15">15分钟</option>
                         <option value="30">30分钟</option>
                         <option value="60">60分钟</option>
@@ -960,7 +966,7 @@
                 return 0;
             });
             const VAR8 = EMA(VAR8_base, 3).map((v, i) => v / 1000 * VAR7[i]);
-            const VAR9 = VAR8.map(v => v > 100 ? 100 : v);
+            const VAR9_raw = VAR8.map(v => v > 100 ? 100 : v);
             
             // 计算 VAR2L 到 VAR9L
             const VAR2L = REF(low, 1);
@@ -988,7 +994,11 @@
                 return 0;
             });
             const VAR8L = EMA(VAR8L_base, 3).map((v, i) => v / 1000 * VAR7L[i]);
-            const VAR9L = VAR8L.map(v => v > 100 ? 100 : v);
+            const VAR9L_raw = VAR8L.map(v => v > 100 ? 100 : v);
+            
+            // 将不满足显示条件的值置为0
+            const VAR9 = VAR9_raw.map(v => v > -120 ? v : 0);
+            const VAR9L = VAR9L_raw.map(v => v > -120 ? v : 0);
             
             return {
                 VAR9: VAR9,
@@ -1037,21 +1047,21 @@
             option.xAxis[0].data = categoryData;
             
             // STICKLINE(VAR9>-120, 0, -VAR9, 6, 0), COLORGREEN;
-            // 只有当VAR9 > -120时才显示柱状图，否则不显示（用null表示）
+            // 只有当VAR9 > -120时才显示柱状图，否则置为0
             option.series[0].data = indicator.VAR9.map(v => {
                 if (v > -120) {
                     return -v; // VAR9取负值显示在下方
                 }
-                return null; // 不满足条件时不显示
+                return 0; // 不满足条件时置为0
             });
             
             // STICKLINE(VAR9L>-120, 0, VAR9L, 6, 1), COLORRED;
-            // 只有当VAR9L > -120时才显示柱状图，否则不显示
+            // 只有当VAR9L > -120时才显示柱状图，否则置为0
             option.series[1].data = indicator.VAR9L.map(v => {
                 if (v > -120) {
                     return v;
                 }
-                return null; // 不满足条件时不显示
+                return 0; // 不满足条件时置为0
             });
             
             indicatorChart.setOption(option);
@@ -1107,6 +1117,27 @@
             }, 100);
         }
 
+        // 检查时间是否在交易时段内（9:00-9:15 或 21:00-21:15）
+        function checkTradeTime(timeStr) {
+            // 时间格式： "2024-10-01 09:05:00" 或 "2024-10-01 21:10:00"
+            const timePart = timeStr.split(' ')[1];
+            if (!timePart) return false;
+            
+            const [hours, minutes] = timePart.split(':').map(Number);
+            
+            // 9:00 - 9:15
+            if (hours === 9 && minutes >= 0 && minutes <= 15) {
+                return true;
+            }
+            
+            // 21:00 - 21:15
+            if (hours === 21 && minutes >= 0 && minutes <= 15) {
+                return true;
+            }
+            
+            return false;
+        }
+
         // 执行回测逻辑
         function executeBacktest() {
             const klineData = currentKlineData;
@@ -1120,6 +1151,10 @@
             // 交易统计
             let trades = [];
             let currentPosition = null; // 当前持仓 {type: 'long'|'short', entryPrice, entryTime, stopProfit, stopLoss}
+            
+            // 每日交易时段控制：记录每个交易日在两个时段是否已交易
+            // 格式: { '2024-10-01': { morning: false, night: false } }
+            let dailyTradeRecord = {};
             
             // 获取品种配置
             const config = getInstrumentConfig(symbol);
@@ -1235,10 +1270,48 @@
                     }
                 }
                 
-                // 如果没有持仓，检查开仓信号
+                // 如果没有持仓,检查开仓信号
                 if (!currentPosition) {
-                    // 多头开仓信号：红柱子且VAR9L > 0.5
-                    if (var9L > 0.5 && var9L !== null && !isNaN(var9L)) {
+                    // 检查是否在允许的交易时间段内
+                    const isTradeTime = checkTradeTime(time);
+                    
+                    // 获取当前日期和时段标识
+                    const dateStr = time.split(' ')[0]; // "2024-10-01"
+                    const timePart = time.split(' ')[1]; // "09:05:00"
+                    const [hours, minutes] = timePart.split(':').map(Number);
+                    
+                    // 判断当前属于哪个时段
+                    let sessionKey = null;
+                    if (hours === 9 && minutes >= 0 && minutes <= 15) {
+                        sessionKey = 'morning';
+                    } else if (hours === 21 && minutes >= 0 && minutes <= 15) {
+                        sessionKey = 'night';
+                    }
+                    
+                    // 检查该时段是否已经交易过
+                    let canTradeInSession = false;
+                    if (isTradeTime && sessionKey) {
+                        // 初始化当日记录
+                        if (!dailyTradeRecord[dateStr]) {
+                            dailyTradeRecord[dateStr] = { morning: false, night: false };
+                        }
+                        
+                        // 检查该时段是否未交易
+                        if (!dailyTradeRecord[dateStr][sessionKey]) {
+                            canTradeInSession = true;
+                        }
+                    }
+                    
+                    // 判断红绿柱子是否存在
+                    const hasGreenBar = var9 < -0.1 && var9 !== null && !isNaN(var9);  // 绿柱子(做空信号)
+                    const hasRedBar = var9L > 0.1 && var9L !== null && !isNaN(var9L); // 红柱子(做多信号)
+                    
+                    // 如果红绿柱子同时存在,则不开仓
+                    if (hasGreenBar && hasRedBar) {
+                        // 跳过本次开仓
+                    }
+                    // 多头开仓信号:只有红柱子且VAR9L > 0.1,且在交易时间内,且该时段未交易过
+                    else if (hasRedBar && canTradeInSession) {
                         // 在收盘价开多
                         currentPosition = {
                             type: 'long',
@@ -1248,7 +1321,10 @@
                             stopLoss: close - jumpValue    // 下方10跳止损
                         };
                         
-                        // 添加开仓标记点：红色"买"
+                        // 标记该时段已交易
+                        dailyTradeRecord[dateStr][sessionKey] = true;
+                        
+                        // 添加开仓标记点:红色"买"
                         markPoints.push({
                             name: '买',
                             coord: [time, close],
@@ -1258,8 +1334,8 @@
                             }
                         });
                     }
-                    // 空头开仓信号：绿柱子且VAR9 < -0.5
-                    else if (var9 < -0.5 && var9 !== null && !isNaN(var9)) {
+                    // 空头开仓信号:只有绿柱子且VAR9 < -0.1,且在交易时间内,且该时段未交易过
+                    else if (hasGreenBar && canTradeInSession) {
                         // 在收盘价开空
                         currentPosition = {
                             type: 'short',
@@ -1269,7 +1345,10 @@
                             stopLoss: close + jumpValue    // 上方10跳止损
                         };
                         
-                        // 添加开仓标记点：绿色"卖"
+                        // 标记该时段已交易
+                        dailyTradeRecord[dateStr][sessionKey] = true;
+                        
+                        // 添加开仓标记点:绿色"卖"
                         markPoints.push({
                             name: '卖',
                             coord: [time, close],
@@ -1344,7 +1423,10 @@
             // 计算跨越时间
             const startTime = klineData[0].time;
             const endTime = klineData[klineData.length - 1].time;
-            const timeSpan = `${startTime.split(' ')[0]} ~ ${endTime.split(' ')[0]}`;
+            // 格式化时间为 YYYY/MM/DD
+            const startDate = startTime.split(' ')[0].replace(/-/g, '/');
+            const endDate = endTime.split(' ')[0].replace(/-/g, '/');
+            const timeSpan = `${startDate} ~ ${endDate}`;
             
             // 在K线图上添加标记点
             updateKlineMarkPoints(markPoints);
