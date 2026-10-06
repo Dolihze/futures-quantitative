@@ -166,70 +166,87 @@ def logout():
 @app.route('/api/quant-login', methods=['POST'])
 def quant_login():
     """处理量化账号登录请求 - 后台自动登录"""
-    from vnpy_ctp import CtpGateway
-    from vnpy.trader.engine import MainEngine
-    from vnpy.trader.setting import SETTINGS
+    # ====== 调试模式：暂时跳过实际登录，直接返回成功 ======
+    # 直接返回成功响应，跳过 CTP 连接验证
+    print(f"[调试模式] 量化账号登录请求 - 跳过实际验证")
     
-    # 中信建投账号配置
-    # ⚠️ 安全警告：建议迁移到环境变量或加密存储
-    QUANT_CONFIG = {
-        "account": "30522730",
-        "password": "Lx031260",  # 登录密码
-        "trade_password": "031260",  # 交易密码
-        "brokerid": "9999",  # 中信建投brokerid，需确认
-        "td_address": "tcp://180.168.146.187:10130",  # 中信建投交易服务器地址，需确认
-        "md_address": "tcp://180.168.146.187:10131",  # 中信建投行情服务器地址，需确认
-        "auth_code": "",  # 认证码，需申请
-        "user_product_info": ""  # 用户产品信息
-    }
-    
-    try:
-        # 创建主引擎
-        main_engine = MainEngine()
-        
-        # 添加CTP网关
-        main_engine.add_gateway(CtpGateway)
-        
-        # 配置CTP连接参数
-        setting = {
-            "用户名": QUANT_CONFIG["account"],
-            "密码": QUANT_CONFIG["password"],
-            "经纪商代码": QUANT_CONFIG["brokerid"],
-            "交易服务器": QUANT_CONFIG["td_address"],
-            "行情服务器": QUANT_CONFIG["md_address"],
-            "产品名称": QUANT_CONFIG["user_product_info"],
-            "授权编码": QUANT_CONFIG["auth_code"],
-            "产品信息": ""
+    return jsonify({
+        "success": True,
+        "message": "登录成功（调试模式）",
+        "data": {
+            "account": "30522730",
+            "balance": 100000.00,  # 模拟账户资金
+            "available": 80000.00,
+            "frozen": 20000.00
         }
+    })
+    # ============================================================
+    
+    # 以下是实际生产环境的登录逻辑（暂时注释掉）
+    # from vnpy_ctp import CtpGateway
+    # from vnpy.trader.engine import MainEngine
+    # from vnpy.trader.setting import SETTINGS
+    
+    # # 中信建投账号配置
+    # # ⚠️ 安全警告：建议迁移到环境变量或加密存储
+    # QUANT_CONFIG = {
+    #     "account": "30522730",
+    #     "password": "Lx031260",  # 登录密码
+    #     "trade_password": "031260",  # 交易密码
+    #     "brokerid": "9999",  # 中信建投brokerid，需确认
+    #     "td_address": "tcp://180.168.146.187:10130",  # 中信建投交易服务器地址，需确认
+    #     "md_address": "tcp://180.168.146.187:10131",  # 中信建投行情服务器地址，需确认
+    #     "auth_code": "",  # 认证码，需申请
+    #     "user_product_info": ""  # 用户产品信息
+    # }
+    
+    # try:
+    #     # 创建主引擎
+    #     main_engine = MainEngine()
         
-        # 连接CTP
-        main_engine.connect(setting, "CTP")
+    #     # 添加CTP网关
+    #     main_engine.add_gateway(CtpGateway)
         
-        # 等待连接（实际应该使用回调）
-        import time
-        time.sleep(2)
+    #     # 配置CTP连接参数
+    #     setting = {
+    #         "用户名": QUANT_CONFIG["account"],
+    #         "密码": QUANT_CONFIG["password"],
+    #         "经纪商代码": QUANT_CONFIG["brokerid"],
+    #         "交易服务器": QUANT_CONFIG["td_address"],
+    #         "行情服务器": QUANT_CONFIG["md_address"],
+    #         "产品名称": QUANT_CONFIG["user_product_info"],
+    #         "授权编码": QUANT_CONFIG["auth_code"],
+    #         "产品信息": ""
+    #     }
         
-        # 检查连接状态
-        # 这里简化处理，实际应该检查网关的连接状态
-        print(f"量化账号登录请求: account={QUANT_CONFIG['account']}")
+    #     # 连接CTP
+    #     main_engine.connect(setting, "CTP")
         
-        return jsonify({
-            "success": True,
-            "message": "登录成功",
-            "data": {
-                "account": QUANT_CONFIG["account"],
-                "balance": 0.00,
-                "available": 0.00,
-                "frozen": 0.00
-            }
-        })
+    #     # 等待连接（实际应该使用回调）
+    #     import time
+    #     time.sleep(2)
         
-    except Exception as e:
-        print(f"量化登录失败: {str(e)}")
-        return jsonify({
-            "success": False,
-            "message": f"登录失败: {str(e)}"
-        }), 500
+    #     # 检查连接状态
+    #     # 这里简化处理，实际应该检查网关的连接状态
+    #     print(f"量化账号登录请求: account={QUANT_CONFIG['account']}")
+        
+    #     return jsonify({
+    #         "success": True,
+    #         "message": "登录成功",
+    #         "data": {
+    #             "account": QUANT_CONFIG["account"],
+    #             "balance": 0.00,
+    #             "available": 0.00,
+    #             "frozen": 0.00
+    #         }
+    #     })
+        
+    # except Exception as e:
+    #     print(f"量化登录失败: {str(e)}")
+    #     return jsonify({
+    #         "success": False,
+    #         "message": f"登录失败: {str(e)}"
+    #     }), 500
 
 
 def start_flask():

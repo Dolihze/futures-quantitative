@@ -136,20 +136,24 @@
             margin: 0 auto;
         }
 
-        .welcome-section {
-            margin-bottom: 32px;
+        /* 交易区域布局 */
+        .trading-section {
+            display: flex;
+            gap: 24px;
+            margin-top: 16px;
+            align-items: flex-start;
         }
 
-        .welcome-section h1 {
-            font-size: 24px;
-            font-weight: 700;
-            color: #f1f5f9;
-            margin-bottom: 8px;
+        .trading-left {
+            flex: 1;
+            min-width: 0;
         }
 
-        .welcome-section p {
-            font-size: 14px;
-            color: #64748b;
+        .trading-right {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         /* 数据统计 */
@@ -205,46 +209,230 @@
             margin-bottom: 16px;
         }
 
-        /* 量化账号连接状态 */
-        .quant-account-status {
+        /* 操作记录模块 */
+        .operation-records-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .operation-records-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .operation-records-count {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .operation-records {
             background: rgba(30, 41, 59, 0.6);
             border: 1px solid rgba(71, 85, 105, 0.3);
             border-radius: 12px;
-            padding: 16px 20px;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .records-header {
+            display: none;
+        }
+
+        .records-list {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .records-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .records-list::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 3px;
+        }
+
+        .records-list::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.3);
+            border-radius: 3px;
+        }
+
+        .records-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(59, 130, 246, 0.5);
+        }
+
+        .record-item {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.2);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+
+        .record-item:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            background: rgba(15, 23, 42, 0.7);
+        }
+
+        .record-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .record-type {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 4px;
+        }
+
+        .record-type.open {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .record-type.close {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .record-time {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .record-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .record-field {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .record-label {
+            color: #64748b;
+        }
+
+        .record-value {
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+
+        .record-profit {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(71, 85, 105, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .profit-label {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .profit-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .profit-value.positive {
+            color: #ef4444;
+        }
+
+        .profit-value.negative {
+            color: #22c55e;
+        }
+
+        .empty-records {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .empty-records svg {
+            width: 64px;
+            height: 64px;
             margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        /* 量化账号连接状态 */
+        .quant-account-status {
+            position: fixed;
+            top: 88px;
+            right: 24px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(30, 41, 59, 0.7));
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 10px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 12px;
+            z-index: 90;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .quant-account-status:hover {
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.2);
+            transform: translateY(-1px);
         }
 
         .status-left {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
+            flex-shrink: 0;
         }
 
         .status-indicator {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: #ef4444;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
             animation: pulse 2s infinite;
+            flex-shrink: 0;
         }
 
         .status-indicator.connected {
             background: #22c55e;
-            box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+            box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
         }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
+            50% { opacity: 0.5; }
         }
 
         .status-text {
-            font-size: 13px;
+            font-size: 12px;
             color: #94a3b8;
+            white-space: nowrap;
+            line-height: 1;
         }
 
         .status-text.connected {
@@ -252,18 +440,19 @@
         }
 
         .connect-btn {
-            padding: 8px 16px;
+            padding: 6px 12px;
             background: rgba(59, 130, 246, 0.15);
             border: 1px solid rgba(59, 130, 246, 0.3);
             border-radius: 6px;
             color: #3b82f6;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
+            white-space: nowrap;
         }
 
         .connect-btn:hover {
@@ -279,8 +468,8 @@
         }
 
         .connect-btn svg {
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
         }
 
         /* 交易面板禁用状态 */
@@ -328,6 +517,7 @@
         .input-group {
             flex: 1;
             position: relative;
+            max-width: 200px;
         }
 
         .input-label {
@@ -636,11 +826,6 @@
     <!-- 主内容区 -->
     <div class="main-content">
 
-        <div class="welcome-section">
-            <h1>欢迎回来，{{ username or '交易者' }}</h1>
-            <p>今日市场概览 · 祝您交易顺利</p>
-        </div>
-
         <!-- 数据统计 -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -668,97 +853,124 @@
         <!-- 下单交易模块 -->
         <h2 class="section-title">下单交易</h2>
         
-        <!-- 量化账号连接状态 -->
-        <div class="quant-account-status">
-            <div class="status-left">
-                <div class="status-indicator" id="statusIndicator"></div>
-                <span class="status-text" id="statusText">未连接量化账号</span>
-            </div>
-            <button class="connect-btn" id="connectBtn" onclick="connectQuantAccount()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                </svg>
-                <span id="connectBtnText">连接账号</span>
-            </button>
-        </div>
-
-        <!-- 下单交易面板 -->
-        <div class="trading-panel disabled" id="tradingPanel">
-            <!-- 第一行：价格和手数 -->
-            <div class="trading-row">
-                <!-- 价格输入 -->
-                <div class="input-group">
-                    <div class="input-label">价格</div>
-                    <div class="input-wrapper" id="priceWrapper">
-                        <input type="text" id="priceInput" value="市价" readonly>
-                        <div class="input-btn-group">
-                            <button class="input-btn" onclick="adjustPrice(1)">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="18 15 12 9 6 15"/>
-                                </svg>
-                            </button>
-                            <button class="input-btn" onclick="adjustPrice(-1)">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"/>
-                                </svg>
-                            </button>
-                        </div>
+        <div class="trading-section">
+            <!-- 左侧：下单交易面板 -->
+            <div class="trading-left">
+                <!-- 量化账号连接状态 -->
+                <div class="quant-account-status">
+                    <div class="status-left">
+                        <div class="status-indicator" id="statusIndicator"></div>
+                        <span class="status-text" id="statusText">未连接量化账号</span>
                     </div>
-                    <!-- 价格类型下拉选择 -->
-                    <div class="price-type-selector" id="priceTypeSelector">
-                        <div class="price-type-option selected" data-type="latest" data-value="最新价">最新价</div>
-                        <div class="price-type-option" data-type="opponent" data-value="对手价">对手价</div>
-                        <div class="price-type-option" data-type="overprice" data-value="超价">超价</div>
-                        <div class="price-type-option" data-type="market" data-value="市价">市价</div>
-                    </div>
+                    <button class="connect-btn" id="connectBtn" onclick="connectQuantAccount()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span id="connectBtnText">连接账号</span>
+                    </button>
                 </div>
 
-                <!-- 手数输入 -->
-                <div class="input-group">
-                    <div class="input-label">手数</div>
-                    <div class="input-wrapper">
-                        <input type="number" id="volumeInput" value="1" min="1">
-                        <div class="input-btn-group">
-                            <button class="input-btn" onclick="adjustVolume(1)">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="18 15 12 9 6 15"/>
-                                </svg>
-                            </button>
-                            <button class="input-btn" onclick="adjustVolume(-1)">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"/>
-                                </svg>
-                            </button>
+                <!-- 下单交易面板 -->
+                <div class="trading-panel disabled" id="tradingPanel">
+                    <!-- 第一行：价格和手数 -->
+                    <div class="trading-row">
+                        <!-- 价格输入 -->
+                        <div class="input-group">
+                            <div class="input-label">价格</div>
+                            <div class="input-wrapper" id="priceWrapper">
+                                <input type="text" id="priceInput" value="市价" readonly>
+                                <div class="input-btn-group">
+                                    <button class="input-btn" onclick="adjustPrice(1)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="18 15 12 9 6 15"/>
+                                        </svg>
+                                    </button>
+                                    <button class="input-btn" onclick="adjustPrice(-1)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- 价格类型下拉选择 -->
+                            <div class="price-type-selector" id="priceTypeSelector">
+                                <div class="price-type-option selected" data-type="latest" data-value="最新价">最新价</div>
+                                <div class="price-type-option" data-type="opponent" data-value="对手价">对手价</div>
+                                <div class="price-type-option" data-type="overprice" data-value="超价">超价</div>
+                                <div class="price-type-option" data-type="market" data-value="市价">市价</div>
+                            </div>
                         </div>
+
+                        <!-- 手数输入 -->
+                        <div class="input-group">
+                            <div class="input-label">手数</div>
+                            <div class="input-wrapper">
+                                <input type="number" id="volumeInput" value="1" min="1">
+                                <div class="input-btn-group">
+                                    <button class="input-btn" onclick="adjustVolume(1)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="18 15 12 9 6 15"/>
+                                        </svg>
+                                    </button>
+                                    <button class="input-btn" onclick="adjustVolume(-1)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 第二行：交易操作 -->
+                    <div class="trading-row">
+                        <button class="trading-btn long" onclick="executeTrade('long')">
+                            买多
+                        </button>
+                        <button class="trading-btn short" onclick="executeTrade('short')">
+                            卖空
+                        </button>
+                        <button class="trading-btn close" onclick="executeTrade('close')">
+                            平仓
+                        </button>
+                        <button class="trading-btn reverse" onclick="executeTrade('reverse')">
+                            反手
+                        </button>
+                    </div>
+
+                    <!-- 第三行：快捷下单 -->
+                    <div class="quick-order-section">
+                        <button class="quick-order-btn" onclick="quickOrder()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                            一键快捷下单
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- 第二行：交易操作 -->
-            <div class="trading-row">
-                <button class="trading-btn long" onclick="executeTrade('long')">
-                    买多
-                </button>
-                <button class="trading-btn short" onclick="executeTrade('short')">
-                    卖空
-                </button>
-                <button class="trading-btn close" onclick="executeTrade('close')">
-                    平仓
-                </button>
-                <button class="trading-btn reverse" onclick="executeTrade('reverse')">
-                    反手
-                </button>
-            </div>
-
-            <!-- 第三行：快捷下单 -->
-            <div class="quick-order-section">
-                <button class="quick-order-btn" onclick="quickOrder()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                    </svg>
-                    一键快捷下单
-                </button>
+            <!-- 右侧：操作记录 -->
+            <div class="trading-right">
+                <div class="operation-records">
+                    <div class="records-header">
+                        <div class="records-title">操作记录</div>
+                        <div class="records-count" id="recordsCount">共 0 条记录</div>
+                    </div>
+                    <div class="records-list" id="recordsList">
+                        <div class="empty-records">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                                <polyline points="10 9 9 9 8 9"/>
+                            </svg>
+                            <span>暂无操作记录</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -780,6 +992,105 @@
     <script>
         // 量化账号连接状态管理
         let isQuantConnected = false;
+        
+        // 操作记录数据
+        let operationRecords = [];
+
+        // 添加操作记录
+        function addOperationRecord(type, symbol, direction, volume, price, profit = null) {
+            const record = {
+                id: Date.now(),
+                type: type, // 'open' 或 'close'
+                symbol: symbol,
+                direction: direction,
+                volume: volume,
+                price: price,
+                profit: profit,
+                time: new Date().toLocaleString('zh-CN', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                })
+            };
+            
+            operationRecords.unshift(record); // 新记录插入开头
+            
+            // 限制记录数量（最多保留50条）
+            if (operationRecords.length > 50) {
+                operationRecords = operationRecords.slice(0, 50);
+            }
+            
+            updateRecordsDisplay();
+        }
+
+        // 更新记录显示
+        function updateRecordsDisplay() {
+            const recordsList = document.getElementById('recordsList');
+            const recordsCount = document.getElementById('recordsCount');
+            
+            recordsCount.textContent = `共 ${operationRecords.length} 条记录`;
+            
+            if (operationRecords.length === 0) {
+                recordsList.innerHTML = `
+                    <div class="empty-records">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        <span>暂无操作记录</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            operationRecords.forEach(record => {
+                const typeClass = record.type === 'open' ? 'open' : 'close';
+                const typeText = record.type === 'open' ? '开仓' : '平仓';
+                
+                html += `
+                    <div class="record-item">
+                        <div class="record-header">
+                            <span class="record-type ${typeClass}">${typeText}</span>
+                            <span class="record-time">${record.time}</span>
+                        </div>
+                        <div class="record-details">
+                            <div class="record-field">
+                                <span class="record-label">品种:</span>
+                                <span class="record-value">${record.symbol}</span>
+                            </div>
+                            <div class="record-field">
+                                <span class="record-label">方向:</span>
+                                <span class="record-value">${record.direction}</span>
+                            </div>
+                            <div class="record-field">
+                                <span class="record-label">手数:</span>
+                                <span class="record-value">${record.volume}</span>
+                            </div>
+                            <div class="record-field">
+                                <span class="record-label">价格:</span>
+                                <span class="record-value">¥${record.price.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        ${record.profit !== null ? `
+                            <div class="record-profit">
+                                <span class="profit-label">盈亏:</span>
+                                <span class="profit-value ${record.profit >= 0 ? 'positive' : 'negative'}">
+                                    ${record.profit >= 0 ? '+' : ''}¥${record.profit.toFixed(2)}
+                                </span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            recordsList.innerHTML = html;
+        }
 
         // 连接量化账号 - 后台自动登录
         function connectQuantAccount() {
@@ -953,6 +1264,11 @@
             
             alert(`执行交易：${tradeTypes[type]}\n价格：${price}\n手数：${volume}`);
             
+            // 添加操作记录（示例数据）
+            const recordType = (type === 'close') ? 'close' : 'open';
+            const direction = tradeTypes[type];
+            const priceNum = parseFloat(price) || 5000;
+            addOperationRecord(recordType, 'IF2312', direction, parseInt(volume), priceNum, type === 'close' ? (Math.random() > 0.5 ? 1200 : -800) : null);
             // 这里可以添加实际的下单逻辑
             // 例如：发送请求到后端
         }
@@ -964,6 +1280,9 @@
             
             alert(`快捷下单\n价格：${price}\n手数：${volume}`);
             
+            // 添加操作记录
+            const priceNum = parseFloat(price) || 5000;
+            addOperationRecord('open', 'IF2312', '买多', parseInt(volume), priceNum, null);
             // 这里可以添加实际的快捷下单逻辑
         }
 
