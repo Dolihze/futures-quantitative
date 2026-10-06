@@ -20,46 +20,92 @@
             overflow: hidden;
         }
 
+        /* 顶部导航栏 */
         .header {
-            background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
-            padding: 15px 30px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid #0f3460;
+            justify-content: space-between;
+            height: 56px;
+            padding: 0 24px;
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        .header h1 {
-            font-size: 24px;
-            color: #00d4ff;
-            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            padding: 6px 14px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 6px;
+            color: #3b82f6;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+        }
+
+        .back-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        .back-btn svg {
+            width: 14px;
+            height: 14px;
         }
 
         .user-info {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
+        }
+
+        .user-avatar {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
         }
 
         .username {
-            color: #00d4ff;
-            font-size: 14px;
+            color: #94a3b8;
+            font-size: 13px;
         }
 
         .logout-btn {
-            padding: 8px 20px;
-            background: linear-gradient(135deg, #e94560 0%, #c23152 100%);
-            color: white;
-            border: none;
-            border-radius: 5px;
+            padding: 6px 14px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 6px;
+            color: #f87171;
+            font-size: 12px;
             cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s;
+            transition: all 0.2s;
         }
 
         .logout-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(233, 69, 96, 0.4);
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+            transform: translateY(0);
+            box-shadow: none;
         }
 
         .container {
@@ -360,10 +406,18 @@
 </head>
 <body>
     <div class="header">
-        <h1>📊 量化回测系统</h1>
+        <div class="nav-left">
+            <a href="/" class="back-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                返回首页
+            </a>
+        </div>
         <div class="user-info">
-            <span class="username">欢迎, {{ username }}</span>
-            <button class="logout-btn" onclick="logout()">退出登录</button>
+            <div class="user-avatar">{{ username[0]|upper if username else 'U' }}</div>
+            <span class="username">{{ username or '未登录' }}</span>
+            <button class="logout-btn" id="logoutBtn">退出登录</button>
         </div>
     </div>
 
@@ -1572,17 +1626,11 @@
         }
 
         // 退出登录
-        async function logout() {
-            try {
-                const response = await fetch('/logout', { method: 'POST' });
-                const result = await response.json();
-                if (result.success) {
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.error('退出失败:', error);
-            }
-        }
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            if (!confirm('确定要退出登录吗？')) return;
+            await fetch('/logout', { method: 'POST' });
+            window.location.href = '/login';
+        });
 
         // 页面加载完成后初始化图表
         window.addEventListener('load', function() {
