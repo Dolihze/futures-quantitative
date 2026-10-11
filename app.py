@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask_cors import CORS
 import webview
 import threading
 import json
@@ -6,6 +7,9 @@ import os
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# 启用 CORS 支持，允许前端跨域访问
+CORS(app, supports_credentials=True, origins=['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173', 'http://127.0.0.1:5173'])
 
 # 加载期货公司数据
 BROKER_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data', 'brokers.json')

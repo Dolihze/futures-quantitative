@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 import router from '@/router'
 
 const request = axios.create({
-  baseURL: 'http://127.0.0.1:5000',
+  baseURL: '',  // 使用相对路径，通过 Vite 代理转发
   timeout: 30000,
   withCredentials: true
 })
