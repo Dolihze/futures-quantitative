@@ -49,7 +49,7 @@
         </router-link>
 
         <!-- 量化回测卡片 -->
-        <router-link to="/backtest" class="feature-card">
+        <router-link to="/backtest" class="feature-card" @click="handleBacktestClick">
           <div class="feature-icon backtest">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -72,12 +72,10 @@
     </div>
 
     <!-- 加载遮罩层 -->
-    <el-overlay v-model="loading" :z-index="9999">
-      <div class="loading-content">
-        <div class="spinner"></div>
-        <div class="loading-text">正在加载...</div>
-      </div>
-    </el-overlay>
+    <div v-if="loading" class="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">正在加载...</div>
+    </div>
   </div>
 </template>
 
@@ -108,6 +106,16 @@ const handleLogout = async () => {
   } catch (error) {
     // 用户取消操作
   }
+}
+
+// 回测卡片点击处理（显示加载遮罩）
+const handleBacktestClick = (e) => {
+  e.preventDefault()
+  loading.value = true
+  // 延迟跳转，确保遮罩层能显示出来
+  setTimeout(() => {
+    router.push('/backtest')
+  }, 100)
 }
 </script>
 
@@ -301,12 +309,19 @@ const handleLogout = async () => {
 }
 
 /* 加载遮罩层 */
-.loading-content {
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.95);
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  backdrop-filter: blur(8px);
 }
 
 .spinner {
@@ -323,6 +338,7 @@ const handleLogout = async () => {
   color: #3b82f6;
   font-size: 18px;
   font-weight: 600;
+  letter-spacing: 1px;
 }
 
 @keyframes spin {

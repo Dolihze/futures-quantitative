@@ -27,72 +27,95 @@
         </div>
 
         <!-- 错误提示 -->
-        <el-alert
-          v-if="errorMsg"
-          :title="errorMsg"
-          type="error"
-          show-icon
-          closable
-          @close="errorMsg = ''"
-          style="margin-bottom: 20px"
-        />
+        <div v-if="errorMsg" class="error-msg show">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>{{ errorMsg }}</span>
+        </div>
 
         <el-form
           ref="loginFormRef"
           :model="loginForm"
           :rules="loginRules"
           autocomplete="off"
+          @submit.prevent="handleLogin"
         >
           <!-- 期货公司 -->
           <el-form-item label="期货公司" prop="broker">
-            <el-select
-              v-model="loginForm.broker"
-              placeholder="请选择期货公司"
-              filterable
-              style="width: 100%"
-            >
-              <el-option-group
-                v-for="(brokers, group) in brokerGroups"
-                :key="group"
-                :label="group"
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 21h18"/>
+                <path d="M5 21V7l7-4 7 4v14"/>
+                <path d="M9 21v-6h6v6"/>
+              </svg>
+              <el-select
+                v-model="loginForm.broker"
+                placeholder="请选择期货公司"
+                filterable
+                class="custom-broker-select"
               >
-                <el-option
-                  v-for="broker in brokers"
-                  :key="broker.id"
-                  :label="broker.name"
-                  :value="broker.id"
+                <el-option-group
+                  v-for="group in brokerGroups"
+                  :key="group.label"
+                  :label="group.label"
                 >
-                  <span>{{ broker.name }}</span>
-                  <el-tag v-if="broker.hot" type="warning" size="small" style="float: right">热门</el-tag>
-                </el-option>
-              </el-option-group>
-            </el-select>
+                  <el-option
+                    v-for="item in group.items"
+                    :key="item.value"
+                    :label="item.name"
+                    :value="item.value"
+                  >
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <span>{{ item.name }}</span>
+                      <span v-if="item.tag" :class="['option-tag', item.tagType || '']">{{ item.tag }}</span>
+                    </div>
+                  </el-option>
+                </el-option-group>
+              </el-select>
+            </div>
           </el-form-item>
 
           <!-- 账号 -->
           <el-form-item label="交易账号" prop="username">
-            <el-input
-              v-model="loginForm.username"
-              placeholder="请输入交易账号"
-              :prefix-icon="User"
-            />
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              <el-input
+                v-model="loginForm.username"
+                placeholder="请输入交易账号"
+                class="custom-input"
+              />
+            </div>
           </el-form-item>
 
           <!-- 密码 -->
           <el-form-item label="交易密码" prop="password">
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              placeholder="请输入交易密码"
-              :prefix-icon="Lock"
-              show-password
-              @keyup.enter="handleLogin"
-            />
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <el-input
+                v-model="loginForm.password"
+                type="password"
+                placeholder="请输入交易密码"
+                show-password
+                class="custom-input"
+                @keyup.enter="handleLogin"
+              />
+            </div>
           </el-form-item>
 
           <!-- 记住密码 & 忘记密码 -->
           <div class="form-options">
-            <el-checkbox v-model="rememberPassword">记住密码</el-checkbox>
+            <label class="checkbox-wrapper">
+              <el-checkbox v-model="rememberAccount">记住账号</el-checkbox>
+            </label>
             <a href="#" class="forgot-link">忘记密码？</a>
           </div>
 
@@ -102,29 +125,28 @@
               type="primary"
               :loading="loading"
               @click="handleLogin"
-              style="width: 100%; height: 48px; font-size: 15px"
+              class="login-btn"
             >
-              {{ loading ? '登录中...' : '登录' }}
+              <span v-if="!loading">安 全 登 录</span>
             </el-button>
           </el-form-item>
         </el-form>
 
         <!-- 调试模式按钮 -->
-        <div style="text-align: center; margin-top: 20px">
+        <div style="text-align: center;">
           <el-button
             type="warning"
             plain
             @click="handleDebugLogin"
-            style="font-size: 13px"
+            class="debug-btn"
           >
             🔧 调试模式（跳过登录）
           </el-button>
         </div>
       </div>
 
-      <!-- 底部信息 -->
       <div class="footer-info">
-        <span>© 2024 期货量化交易系统 | 仅供内部测试使用</span>
+        <p>本系统仅供合法期货交易使用 · 未经授权禁止访问</p>
       </div>
     </div>
   </div>
@@ -133,7 +155,6 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getBrokers, login } from '@/api'
 import { useUserStore } from '@/stores/user'
@@ -144,7 +165,7 @@ const userStore = useUserStore()
 const loginFormRef = ref(null)
 const loading = ref(false)
 const errorMsg = ref('')
-const rememberPassword = ref(false)
+const rememberAccount = ref(false)
 
 const loginForm = reactive({
   broker: '',
@@ -166,15 +187,27 @@ const loginRules = reactive({
   ]
 })
 
-const brokerGroups = ref({})
+const brokerGroups = ref([])
 
 // 加载期货公司列表
 onMounted(async () => {
   try {
     const data = await getBrokers()
     brokerGroups.value = data
+    
+    // 恢复记住的账号
+    const savedUsername = localStorage.getItem('futures_username')
+    const savedBroker = localStorage.getItem('futures_broker')
+    if (savedUsername) {
+      loginForm.username = savedUsername
+      rememberAccount.value = true
+    }
+    if (savedBroker) {
+      loginForm.broker = savedBroker
+    }
   } catch (error) {
     console.error('加载期货公司列表失败:', error)
+    errorMsg.value = '期货公司数据加载失败，请刷新重试'
   }
 })
 
@@ -192,6 +225,15 @@ const handleLogin = async () => {
       const result = await login(loginForm)
       
       if (result.success) {
+        // 保存账号信息
+        if (rememberAccount.value) {
+          localStorage.setItem('futures_username', loginForm.username)
+          localStorage.setItem('futures_broker', loginForm.broker)
+        } else {
+          localStorage.removeItem('futures_username')
+          localStorage.removeItem('futures_broker')
+        }
+        
         // 保存用户信息到 store
         userStore.setUser({
           username: loginForm.username,
@@ -201,10 +243,10 @@ const handleLogin = async () => {
         ElMessage.success('登录成功')
         router.push('/')
       } else {
-        errorMsg.value = result.message || '登录失败'
+        errorMsg.value = result.message || '账号或密码错误'
       }
     } catch (error) {
-      errorMsg.value = error.message || '登录失败，请稍后重试'
+      errorMsg.value = '网络连接失败，请检查网络后重试'
     } finally {
       loading.value = false
     }
@@ -344,6 +386,54 @@ const handleDebugLogin = async () => {
   margin-top: 6px;
 }
 
+/* 输入框容器 */
+.input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: #475569;
+  pointer-events: none;
+  transition: color 0.2s;
+  z-index: 10;
+}
+
+.input-wrapper:focus-within .input-icon {
+  color: #3b82f6;
+}
+
+/* 错误提示 */
+.error-msg {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #f87171;
+}
+
+.error-msg.show {
+  display: flex;
+}
+
+.error-msg svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* 表单选项 */
 .form-options {
   display: flex;
   justify-content: space-between;
@@ -362,6 +452,40 @@ const handleDebugLogin = async () => {
   color: #60a5fa;
 }
 
+/* 登录按钮 */
+.login-btn {
+  width: 100%;
+  height: 48px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 底部信息 */
 .footer-info {
   text-align: center;
   margin-top: 24px;
@@ -369,17 +493,48 @@ const handleDebugLogin = async () => {
   color: #334155;
 }
 
+.footer-info a {
+  color: #475569;
+  text-decoration: none;
+}
+
+.footer-info a:hover {
+  color: #64748b;
+}
+
+/* 调试模式按钮 */
+.debug-btn {
+  margin-top: 20px;
+  padding: 10px 28px;
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  border-radius: 8px;
+  color: #fb923c;
+  font-size: 13px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.debug-btn:hover {
+  background: rgba(249, 115, 22, 0.25);
+  border-color: rgba(249, 115, 22, 0.6);
+}
+
 /* Element Plus 样式覆盖 */
 :deep(.el-form-item__label) {
   color: #94a3b8;
   font-size: 13px;
   font-weight: 500;
+  margin-bottom: 8px;
 }
 
 :deep(.el-input__wrapper) {
   background: rgba(30, 41, 59, 0.8);
   border: 1px solid rgba(71, 85, 105, 0.5);
+  border-radius: 10px;
   box-shadow: none;
+  height: 46px;
+  padding-left: 42px;
 }
 
 :deep(.el-input__wrapper:hover) {
@@ -393,16 +548,75 @@ const handleDebugLogin = async () => {
 
 :deep(.el-input__inner) {
   color: #e2e8f0;
+  font-size: 14px;
 }
 
-:deep(.el-select .el-input__wrapper) {
+:deep(.el-input__prefix) {
+  display: none;
+}
+
+/* 自定义下拉选择器样式 */
+.custom-broker-select {
+  width: 100%;
+}
+
+:deep(.custom-broker-select .el-input__wrapper) {
   background: rgba(30, 41, 59, 0.8);
   border: 1px solid rgba(71, 85, 105, 0.5);
+  border-radius: 10px;
+  box-shadow: none;
+  height: 46px;
+  padding-left: 42px;
+  cursor: pointer;
+}
+
+:deep(.custom-broker-select .el-input__wrapper:hover) {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+:deep(.custom-broker-select .el-input__wrapper.is-focus) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+:deep(.el-select-dropdown) {
+  background: #1e293b;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+:deep(.el-select-dropdown__item) {
+  color: #cbd5e1;
+  padding: 8px 14px;
+}
+
+:deep(.el-select-dropdown__item:hover) {
+  background: rgba(59, 130, 246, 0.12);
+  color: #f1f5f9;
+}
+
+:deep(.el-select-dropdown__item.selected) {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+}
+
+:deep(.el-select-group__title) {
+  color: #475569;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 6px 14px 4px;
 }
 
 :deep(.el-checkbox__label) {
   color: #94a3b8;
   font-size: 13px;
+}
+
+:deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
 }
 
 :deep(.el-button--primary) {
@@ -425,5 +639,19 @@ const handleDebugLogin = async () => {
 :deep(.el-button--warning.is-plain:hover) {
   background: rgba(249, 115, 22, 0.25);
   border-color: rgba(249, 115, 22, 0.6);
+}
+
+/* 选项标签 */
+.option-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.option-tag.hot {
+  background: rgba(249, 115, 22, 0.15);
+  color: #fb923c;
 }
 </style>
