@@ -1,0 +1,17 @@
+/* 
+ * 期货量化交易系统 - 全局样式
+ * 
+ * 样式目录结构：
+ * - Trading.css: 交易页面样式
+ * - Home.css: 首页样式
+ * - Backtest.css: 回测页面样式
+ * - Login.css: 登录页面样式
+ */
+
+/* 可以在这里添加全局共享的样式变量和基础样式 */
+
+/* 导入所有页面样式（可选，便于全局管理） */
+@import './Trading.css';
+@import './Home.css';
+@import './Backtest.css';
+@import './Login.css';
