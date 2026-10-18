@@ -27,10 +27,20 @@ export function logout() {
 
 // 获取K线数据
 export function getKlineData(params) {
+  console.log('🌐 [API] getKlineData 请求:')
+  console.log('   URL:', '/api/backtest/kline')
+  console.log('   参数:', params)
+  
   return request({
     url: '/api/backtest/kline',
     method: 'get',
     params
+  }).then(response => {
+    console.log('📨 [API] getKlineData 响应:', response)
+    return response
+  }).catch(error => {
+    console.error('❌ [API] getKlineData 错误:', error)
+    throw error
   })
 }
 

@@ -253,9 +253,31 @@ function getInstrumentConfig(symbol) {
   return INSTRUMENT_CONFIG[code] || { tickSize: 1, multiplier: 10 }
 }
 
+// 响应窗口大小变化 - 使用防抖
+let resizeTimer = null
+let isSyncing = false // 防止dataZoom无限循环
+
+function handleResizeDebounced() {
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+  resizeTimer = setTimeout(() => {
+    if (klineChart) klineChart.resize()
+    if (indicatorChart) indicatorChart.resize()
+  }, 100)
+}
+
+function handleResize() {
+  if (klineChart) klineChart.resize()
+  if (indicatorChart) indicatorChart.resize()
+}
+
 // 初始化图表
 function initCharts() {
-  // 初始化主K线图表
+  console.log('🔍 [initCharts] 开始初始化图表...')
+  console.log('📊 klineChartRef.value:', klineChartRef.value)
+  console.log('📊 klineChartRef尺寸:', klineChartRef.value?.getBoundingClientRect())
+  
   klineChart = echarts.init(klineChartRef.value)
   
   const klineOption = {
@@ -337,7 +359,7 @@ function initCharts() {
       {
         type: 'inside',
         xAxisIndex: [0],
-        start: 70,
+        start: 0,
         end: 100
       },
       {
@@ -346,7 +368,7 @@ function initCharts() {
         type: 'slider',
         bottom: '5%',
         height: 20,
-        start: 70,
+        start: 0,
         end: 100,
         borderColor: '#00d4ff',
         backgroundColor: '#0f3460',
@@ -370,16 +392,15 @@ function initCharts() {
           color0: '#22c55e',
           borderColor: '#ef4444',
           borderColor0: '#22c55e'
-        },
-        encode: {
-          x: 0,
-          y: [1, 2, 3, 4]
         }
+        // 不使用 encode 属性，让 ECharts 使用默认的数据解析
       }
     ]
   }
   
+  console.log('📝 设置K线图表配置...')
   klineChart.setOption(klineOption)
+  console.log('✅ K线图表配置设置完成')
   
   // 初始化副指标图表
   indicatorChart = echarts.init(indicatorChartRef.value)
@@ -398,7 +419,7 @@ function initCharts() {
       left: '10%',
       right: '5%',
       top: '10%',
-      bottom: '15%',
+      bottom: '5%',
       containLabel: true
     },
     xAxis: {
@@ -437,7 +458,7 @@ function initCharts() {
       {
         type: 'inside',
         xAxisIndex: [0],
-        start: 70,
+        start: 0,
         end: 100
       }
     ],
@@ -460,44 +481,66 @@ function initCharts() {
       }
     ]
   }
-  
+
+  console.log('📝 设置副指标图表配置...')
   indicatorChart.setOption(indicatorOption)
+  console.log('✅ 副指标图表配置设置完成')
   
   // 实现主副图表dataZoom联动
   klineChart.on('dataZoom', function() {
+    if (isSyncing) return
+    
+    isSyncing = true
     const option = klineChart.getOption()
     const start = option.dataZoom[0].start
     const end = option.dataZoom[0].end
     
     const indicatorOption = indicatorChart.getOption()
-    indicatorOption.dataZoom[0].start = start
-    indicatorOption.dataZoom[0].end = end
+    indicatorOption.dataZoom.forEach(dz => {
+      dz.start = start
+      dz.end = end
+    })
     indicatorChart.setOption(indicatorOption)
+    
+    setTimeout(() => {
+      isSyncing = false
+    }, 100)
   })
   
   indicatorChart.on('dataZoom', function() {
+    if (isSyncing) return
+    
+    isSyncing = true
     const option = indicatorChart.getOption()
     const start = option.dataZoom[0].start
     const end = option.dataZoom[0].end
     
     const mainOption = klineChart.getOption()
-    mainOption.dataZoom[0].start = start
-    mainOption.dataZoom[0].end = end
+    mainOption.dataZoom.forEach(dz => {
+      dz.start = start
+      dz.end = end
+    })
     klineChart.setOption(mainOption)
+    
+    setTimeout(() => {
+      isSyncing = false
+    }, 100)
   })
   
   // 响应窗口大小变化
-  window.addEventListener('resize', handleResize)
-}
-
-function handleResize() {
-  if (klineChart) klineChart.resize()
-  if (indicatorChart) indicatorChart.resize()
+  window.addEventListener('resize', handleResizeDebounced)
 }
 
 // 加载K线数据
 async function loadKlineData() {
   loading.value = true
+  
+  console.log('🔍 [Backtest] 开始加载K线数据...')
+  console.log('📋 请求参数:', {
+    symbol: params.symbol,
+    period: params.period,
+    days: params.days
+  })
   
   try {
     const result = await getKlineData({
@@ -506,14 +549,30 @@ async function loadKlineData() {
       days: params.days
     })
     
+    console.log('📦 API返回结果:', result)
+    
     if (result.success && result.data) {
+      console.log('✅ 数据加载成功！')
+      console.log('📊 数据条数:', result.count || result.data.length)
+      console.log('📈 第一条数据:', result.data[0])
+      console.log('📉 最后一条数据:', result.data[result.data.length - 1])
+      console.log('🔍 数据结构示例:', {
+        time: result.data[0]?.time,
+        open: result.data[0]?.open,
+        high: result.data[0]?.high,
+        low: result.data[0]?.low,
+        close: result.data[0]?.close
+      })
+      
       updateCharts(result.data)
       ElMessage.success(`数据加载成功！共 ${result.count || result.data.length} 条数据`)
     } else {
+      console.error('❌ 数据加载失败:', result.message)
       ElMessage.error(result.message || '数据加载失败')
     }
   } catch (error) {
-    console.error('加载数据失败:', error)
+    console.error('❌ 加载数据异常:', error)
+    console.error('错误堆栈:', error.stack)
     ElMessage.error('加载失败: ' + (error.message || '网络请求失败'))
   } finally {
     loading.value = false
@@ -522,6 +581,9 @@ async function loadKlineData() {
 
 // 更新图表
 function updateCharts(data) {
+  console.log('🔄 [updateCharts] 开始更新图表...')
+  console.log('📊 传入数据条数:', data.length)
+  
   currentKlineData.value = data
   
   const categoryData = []
@@ -533,13 +595,25 @@ function updateCharts(data) {
     klineData.push(kline)
   })
   
+  console.log('📈 处理后的类别数据 (前5个):', categoryData.slice(0, 5))
+  console.log('📊 处理后的K线数据 (前5个):', klineData.slice(0, 5))
+  console.log('📉 处理后的K线数据 (后5个):', klineData.slice(-5))
+  
   updateTime.value = new Date().toLocaleString('zh-CN')
   
   // 更新K线图表
   const option = klineChart.getOption()
+  console.log('🔧 更新前 xAxis[0].data 长度:', option.xAxis[0].data.length)
+  console.log('🔧 更新前 series[0].data 长度:', option.series[0].data.length)
+  
   option.xAxis[0].data = categoryData
   option.series[0].data = klineData
+  
+  console.log('✅ 更新后 xAxis[0].data 长度:', option.xAxis[0].data.length)
+  console.log('✅ 更新后 series[0].data 长度:', option.series[0].data.length)
+  
   klineChart.setOption(option)
+  console.log('✨ K线图表更新完成')
   
   // 计算并更新副指标
   const indicator = calculateIndicator(data)
@@ -1074,15 +1148,46 @@ const handleLogout = async () => {
 }
 
 // 生命周期
+let isComponentMounted = true // 跟踪组件挂载状态
+
 onMounted(() => {
-  initCharts()
-  loadKlineData()
+  // 使用 nextTick 确保 DOM 完全渲染
+  setTimeout(() => {
+    initCharts()
+    
+    // 再延迟一点确保图表容器有正确的高度
+    setTimeout(() => {
+      if (isComponentMounted) {
+        loadKlineData()
+        // 初始化后执行一次 resize
+        if (klineChart) klineChart.resize()
+        if (indicatorChart) indicatorChart.resize()
+      }
+    }, 100)
+  }, 50)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  if (klineChart) klineChart.dispose()
-  if (indicatorChart) indicatorChart.dispose()
+  isComponentMounted = false
+  
+  // 清理 resize 定时器
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
+  }
+  
+  // 移除 resize 监听 - 使用防抖函数而非 handleResize
+  window.removeEventListener('resize', handleResizeDebounced)
+  
+  //  dispose 图表实例
+  if (klineChart) {
+    klineChart.dispose()
+    klineChart = null
+  }
+  if (indicatorChart) {
+    indicatorChart.dispose()
+    indicatorChart = null
+  }
 })
 </script>
 
@@ -1200,7 +1305,9 @@ onUnmounted(() => {
   flex-direction: column;
   padding: 20px;
   background: #1a1a2e;
+  height: calc(100vh - 56px); /* 显式设置高度 */
   min-height: 0;
+  overflow: hidden; /* 防止溢出 */
 }
 
 .chart-header {
@@ -1241,7 +1348,9 @@ onUnmounted(() => {
   background: #16213e;
   border-radius: 10px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  height: 75%; /* 显式设置高度比例 */
   min-height: 300px;
+  margin-bottom: 10px; /* 与副图表保持间距 */
 }
 
 .indicator-chart {
@@ -1249,7 +1358,7 @@ onUnmounted(() => {
   background: #16213e;
   border-radius: 10px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-  margin-top: 10px;
+  height: 25%; /* 显式设置高度比例 */
   min-height: 150px;
 }
 
