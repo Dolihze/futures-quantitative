@@ -21,11 +21,6 @@
 
     <!-- 主内容 -->
     <div class="main-content">
-      <div class="welcome-section">
-        <h1>欢迎回来，{{ userStore.username || '交易员' }}</h1>
-        <p>今日市场概览 · 祝您交易顺利</p>
-      </div>
-
       <!-- 数据统计 -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -50,29 +45,31 @@
         </div>
       </div>
 
-      <!-- 下单交易模块 -->
-      <h2 class="section-title">下单交易</h2>
-      
-      <!-- 量化账号连接状态 -->
-      <div class="quant-account-status">
-        <div class="status-left">
+      <!-- 下单交易模块标题 -->
+      <div class="section-header">
+        <h2 class="section-title">下单交易</h2>
+        <div class="connection-status">
           <div class="status-indicator" :class="{ connected: isQuantConnected }"></div>
           <span class="status-text" :class="{ connected: isQuantConnected }">
             {{ isQuantConnected ? '量化账号已连接' : '未连接量化账号' }}
           </span>
+          <el-switch
+            v-model="isQuantConnected"
+            :loading="isConnecting"
+            @change="toggleQuantConnection"
+            :disabled="isConnecting"
+            size="small"
+            class="connection-switch"
+            style="--el-switch-button-size: 14px; --el-switch-height: 20px;"
+          >
+            <template #loading>
+              <svg class="switch-loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+              </svg>
+            </template>
+          </el-switch>
         </div>
-        <button 
-          class="connect-btn" 
-          :class="{ connected: isQuantConnected }"
-          @click="toggleQuantConnection"
-          :disabled="isConnecting"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          <span>{{ connectBtnText }}</span>
-        </button>
       </div>
 
       <!-- 下单交易面板 -->
@@ -234,13 +231,6 @@ const showModal = ref(false)
 const modalTitle = ref('')
 const modalMessage = ref('')
 
-// 计算属性：连接按钮文本
-const connectBtnText = computed(() => {
-  if (isConnecting.value) return '连接中...'
-  if (isQuantConnected.value) return '断开连接'
-  return '连接账号'
-})
-
 // 退出登录
 const handleLogout = async () => {
   try {
@@ -260,29 +250,35 @@ const handleLogout = async () => {
 }
 
 // 连接/断开量化账号
-const toggleQuantConnection = async () => {
-  if (isQuantConnected.value) {
-    disconnectQuantAccount()
+const toggleQuantConnection = async (val) => {
+  // 如果正在连接中，不执行任何操作
+  if (isConnecting.value) {
     return
   }
 
-  // 连接量化账号
-  isConnecting.value = true
-
-  try {
-    const result = await quantLogin()
-    
-    if (result.success) {
-      isQuantConnected.value = true
-      ElMessage.success('量化账号连接成功')
-    } else {
-      ElMessage.error(result.message || '连接失败')
+  // 如果新状态是已连接，执行连接逻辑
+  if (val) {
+    isConnecting.value = true
+    try {
+      const result = await quantLogin()
+      
+      if (result.success) {
+        isQuantConnected.value = true
+        ElMessage.success('量化账号连接成功')
+      } else {
+        ElMessage.error(result.message || '连接失败')
+        isQuantConnected.value = false
+      }
+    } catch (error) {
+      console.error('连接错误:', error)
+      ElMessage.error('连接失败，请稍后重试')
+      isQuantConnected.value = false
+    } finally {
+      isConnecting.value = false
     }
-  } catch (error) {
-    console.error('连接错误:', error)
-    ElMessage.error('连接失败，请稍后重试')
-  } finally {
-    isConnecting.value = false
+  } else {
+    // 断开连接
+    disconnectQuantAccount()
   }
 }
 
@@ -481,22 +477,6 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-.welcome-section {
-  margin-bottom: 32px;
-}
-
-.welcome-section h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #f1f5f9;
-  margin-bottom: 8px;
-}
-
-.welcome-section p {
-  font-size: 14px;
-  color: #64748b;
-}
-
 /* 数据统计 */
 .stats-grid {
   display: grid;
@@ -543,43 +523,39 @@ onUnmounted(() => {
 }
 
 /* 下单交易模块 */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
 .section-title {
   font-size: 16px;
   font-weight: 600;
   color: #e2e8f0;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
-/* 量化账号连接状态 */
-.quant-account-status {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.3);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
+/* 连接状态区域 */
+.connection-status {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.status-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .status-indicator {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #ef4444;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
   animation: pulse 2s infinite;
 }
 
 .status-indicator.connected {
   background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
 }
 
 @keyframes pulse {
@@ -588,7 +564,7 @@ onUnmounted(() => {
 }
 
 .status-text {
-  font-size: 13px;
+  font-size: 12px;
   color: #94a3b8;
 }
 
@@ -596,40 +572,90 @@ onUnmounted(() => {
   color: #22c55e;
 }
 
-.connect-btn {
-  padding: 8px 16px;
-  background: rgba(59, 130, 246, 0.15);
+/* el-switch 连接开关样式 */
+.connection-switch {
+  --el-switch-on-color: #409EFF;
+  --el-switch-off-color: #DCDFE6;
+  /* 调小尺寸 */
+  --el-switch-height: 16px;
+  --el-switch-button-size: 12px;
+}
+
+/* 隐藏 switch 内部的文字 */
+.connection-switch :deep(.el-switch__label) {
+  display: none;
+}
+
+/* Loading 图标样式 */
+.switch-loading-icon {
+  width: 12px;
+  height: 12px;
+  animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 旧的按钮样式保留（用于其他地方可能的引用） */
+.connect-btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 6px;
   color: #3b82f6;
-  font-size: 12px;
-  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
 }
 
-.connect-btn:hover {
-  background: rgba(59, 130, 246, 0.25);
+.connect-btn-icon:hover {
+  background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.5);
 }
 
-.connect-btn:disabled {
+.connect-btn-icon:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.connect-btn.connected {
-  background: rgba(34, 197, 94, 0.15);
+.connect-btn-icon.connected {
+  background: rgba(34, 197, 94, 0.1);
   border-color: rgba(34, 197, 94, 0.3);
   color: #22c55e;
 }
 
-.connect-btn svg {
-  width: 14px;
-  height: 14px;
+.connect-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.connect-btn-icon.loading {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+}
+
+.connect-btn-icon .spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 交易面板禁用状态 */
