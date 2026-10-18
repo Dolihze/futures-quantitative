@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 import webview
 import threading
 import json
 import os
+import subprocess
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -29,13 +30,7 @@ def get_brokers():
     return jsonify(BROKER_GROUPS)
 
 
-@app.route('/login', methods=['GET'])
-def login_page():
-    """渲染登录页面"""
-    return render_template('login.html')
-
-
-@app.route('/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
     """处理登录请求"""
     data = request.get_json()
@@ -52,39 +47,6 @@ def login():
     session['broker']    = broker
     return jsonify({"success": True, "message": "登录成功"})
     # ==============================================================
-
-
-@app.route('/debug-login')
-def debug_login():
-    """调试模式：跳过登录验证，直接进入首页"""
-    session['logged_in'] = True
-    session['username']  = '管理员'
-    session['broker']    = ''
-    return redirect(url_for('home'))
-
-
-@app.route('/')
-def home():
-    """首页 - 需要登录才能访问"""
-    if not session.get('logged_in'):
-        return redirect(url_for('login_page'))
-    return render_template('home.html', username=session.get('username', ''))
-
-
-@app.route('/trading')
-def trading():
-    """交易页面 - 需要登录才能访问"""
-    if not session.get('logged_in'):
-        return redirect(url_for('login_page'))
-    return render_template('trading.html', username=session.get('username', ''))
-
-
-@app.route('/backtest')
-def backtest():
-    """回测页面 - 需要登录才能访问"""
-    if not session.get('logged_in'):
-        return redirect(url_for('login_page'))
-    return render_template('backtest.html', username=session.get('username', ''))
 
 
 @app.route('/api/backtest/kline')
@@ -160,7 +122,7 @@ def get_kline_data():
         }), 500
 
 
-@app.route('/logout', methods=['POST'])
+@app.route('/api/logout', methods=['POST'])
 def logout():
     """退出登录"""
     session.clear()
@@ -271,6 +233,45 @@ def start_flask():
     server.serve_forever()
 
 
+def start_frontend():
+    """启动 Vue 前端开发服务器"""
+    import time
+    
+    # 切换到 frontend 目录
+    frontend_dir = os.path.join(os.path.dirname(__file__), 'frontend')
+    
+    # 检查 node_modules 是否存在
+    node_modules_path = os.path.join(frontend_dir, 'node_modules')
+    if not os.path.exists(node_modules_path):
+        print("[启动] 检测到首次运行，正在安装前端依赖...")
+        try:
+            subprocess.run(['npm', 'install'], cwd=frontend_dir, shell=True)
+            print("[启动] 前端依赖安装完成")
+        except Exception as e:
+            print(f"[启动] 安装依赖失败: {e}")
+            print("[启动] 请手动在 frontend 目录下运行 npm install")
+            return None
+    
+    # 启动前端开发服务器
+    print("[启动] 正在启动 Vue 前端开发服务器...")
+    try:
+        # 使用 Popen 启动前端服务器，非阻塞
+        process = subprocess.Popen(
+            ['npm', 'run', 'dev'],
+            cwd=frontend_dir,
+            shell=True,
+            creationflags=subprocess.CREATE_NEW_CONSOLE  # 在新窗口中运行
+        )
+        
+        # 等待前端启动
+        time.sleep(3)
+        print("[启动] Vue 前端开发服务器已启动")
+        return process
+    except Exception as e:
+        print(f"[启动] 启动前端服务器失败: {e}")
+        return None
+
+
 def start_app():
     """启动桌面应用"""
     import time
@@ -292,17 +293,43 @@ def start_app():
         wait_count += 1
     
     if flask_ready:
-        print("[启动] Flask 服务器已就绪，创建桌面窗口...")
+        print("[启动] Flask 服务器已就绪")
     else:
-        print("[启动] 警告：Flask 服务器启动超时，尝试创建窗口...")
+        print("[启动] 警告：Flask 服务器启动超时")
     
-    # 额外等待一小段时间确保服务器完全就绪
-    time.sleep(0.5)
+    # 启动 Vue 前端开发服务器
+    frontend_process = start_frontend()
+    
+    # 额外等待一小段时间确保服务完全就绪
+    time.sleep(1)
+    
+    # 创建可缩放的桌面窗口，直接打开 Vue 前端页面
+    # 尝试多个可能的端口
+    possible_ports = [5173, 3000, 5174, 5175]
+    frontend_url = None
+    
+    for port in possible_ports:
+        try:
+            import urllib.request
+            url = f'http://localhost:{port}'
+            urllib.request.urlopen(url, timeout=1)
+            frontend_url = url
+            print(f"[启动] 检测到前端服务器运行在端口 {port}")
+            break
+        except:
+            continue
+    
+    if not frontend_url:
+        # 如果无法检测，使用默认端口
+        frontend_url = 'http://localhost:5173'
+        print(f"[启动] 使用默认前端地址: {frontend_url}")
+    
+    print(f"[启动] 创建桌面窗口，打开前端页面: {frontend_url}")
     
     # 创建可缩放的桌面窗口
     window = webview.create_window(
         title='期货量化交易系统',
-        url='http://127.0.0.1:5000/login',
+        url=frontend_url,
         maximized=True,  # 默认最大化，保留标题栏和边框
         resizable=True,
         min_size=(420, 600)
@@ -310,6 +337,12 @@ def start_app():
 
     # 启动 webview（这会阻塞主线程）
     webview.start()
+    
+    # 当 webview 关闭时，终止前端进程
+    if frontend_process:
+        print("[关闭] 正在关闭前端服务器...")
+        frontend_process.terminate()
+        frontend_process.wait()
 
 
 if __name__ == '__main__':
