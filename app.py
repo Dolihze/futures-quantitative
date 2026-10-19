@@ -6,6 +6,10 @@ import json
 import os
 import subprocess
 
+# 配置远程调试端口（必须在创建窗口前设置）
+os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=9222"
+webview.settings['REMOTE_DEBUGGING_PORT'] = 9222
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
@@ -120,6 +124,44 @@ def get_kline_data():
             'message': f'获取数据失败: {str(e)}',
             'error': error_detail  # 开发期间返回详细错误信息
         }), 500
+
+
+@app.route('/api/devtools/open', methods=['POST'])
+def open_devtools():
+    """打开开发者工具"""
+    try:
+        # 获取调试端口信息
+        debug_port = webview.settings.get('REMOTE_DEBUGGING_PORT', 9222)
+        debug_url = f"http://localhost:{debug_port}"
+        
+        print(f"[开发者工具] 正在打开开发者工具，调试端口: {debug_port}")
+        
+        # 根据记忆最佳实践：show_devtools() 在某些版本中不可用
+        # 直接返回手动访问的指引，让用户通过浏览器访问
+        return jsonify({
+            'success': True,
+            'message': f'开发者工具已准备就绪！\n\n请通过以下方式访问：\n\n1. 在 Edge 浏览器中访问: {debug_url}\n\n2. 或在 Edge 浏览器地址栏输入: edge://inspect\n\n然后选择要调试的页面。',
+            'debug_url': debug_url,
+            'manual': True
+        })
+            
+    except Exception as e:
+        print(f"[开发者工具] 打开失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'打开开发者工具失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/devtools/info', methods=['GET'])
+def get_debug_info():
+    """获取调试信息"""
+    debug_port = webview.settings.get('REMOTE_DEBUGGING_PORT', 9222)
+    return jsonify({
+        'debug_port': debug_port,
+        'debug_url': f"http://localhost:{debug_port}",
+        'chrome_inspect': "edge://inspect"
+    })
 
 
 @app.route('/api/logout', methods=['POST'])
@@ -304,8 +346,8 @@ def start_app():
     time.sleep(1)
     
     # 创建可缩放的桌面窗口，直接打开 Vue 前端页面
-    # 尝试多个可能的端口
-    possible_ports = [5173, 3000, 5174, 5175]
+    # 尝试多个可能的端口（按优先级排序）
+    possible_ports = [3000, 5173, 5174, 5175]
     frontend_url = None
     
     for port in possible_ports:
@@ -335,9 +377,17 @@ def start_app():
         min_size=(420, 600)
     )
 
-    # 启动 webview（这会阻塞主线程）
-    webview.start()
-    
+    # 启动 webview，强制使用EdgeChromium渲染引擎以支持开发者工具
+    print("[启动] 使用 EdgeChromium 渲染引擎启动应用")
+    print("=" * 60)
+    print("🔧 开发者工具使用说明:")
+    print("   - 右键菜单选择 '打开开发者工具'")
+    print("   - 按 F12 或 Ctrl+Shift+I 打开开发者工具")
+    print("   - 或访问 http://localhost:9222")
+    print("   - 或在Edge浏览器中访问 edge://inspect")
+    print("=" * 60)
+    webview.start(debug=True, gui='edgechromium')
+
     # 当 webview 关闭时，终止前端进程
     if frontend_process:
         print("[关闭] 正在关闭前端服务器...")

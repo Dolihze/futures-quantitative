@@ -5,9 +5,164 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>期货量化交易系统</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+  <style>
+    /* 右键菜单样式 */
+    .context-menu {
+      position: fixed;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 9999;
+      min-width: 180px;
+      padding: 4px 0;
+      display: none;
+    }
+    .context-menu-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #333;
+      transition: background 0.2s;
+    }
+    .context-menu-item:hover {
+      background: #f0f0f0;
+    }
+    .context-menu-item:active {
+      background: #e0e0e0;
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+  
+  <!-- 自定义右键菜单 -->
+  <div class="context-menu" id="contextMenu">
+    <div class="context-menu-item" id="openDevTools">🔧 打开开发者工具</div>
+  </div>
+  
   <script type="module" src="/src/main.js"></script>
+  
+  <!-- 开发者工具脚本 - 在Vue应用加载前执行 -->
+  <script>
+    (function() {
+      console.log('[开发者工具] 脚本已加载');
+      
+      // 获取右键菜单元素
+      const contextMenu = document.getElementById('contextMenu');
+      const openDevToolsBtn = document.getElementById('openDevTools');
+      
+      // 显示右键菜单
+      document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        
+        // 设置菜单位置
+        contextMenu.style.left = e.clientX + 'px';
+        contextMenu.style.top = e.clientY + 'px';
+        contextMenu.style.display = 'block';
+        
+        console.log('[开发者工具] 右键菜单已显示');
+      });
+      
+      // 点击其他区域隐藏菜单
+      document.addEventListener('click', function() {
+        if (contextMenu.style.display === 'block') {
+          contextMenu.style.display = 'none';
+          console.log('[开发者工具] 右键菜单已隐藏');
+        }
+      });
+      
+      // 打开开发者工具
+      async function openDeveloperTools() {
+        console.log('[开发者工具] 尝试打开开发者工具...');
+        
+        try {
+          const response = await fetch('/api/devtools/open', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const result = await response.json();
+          console.log('[开发者工具] API响应:', result);
+          
+          if (result.success) {
+            if (result.manual) {
+              // 显示友好的提示信息，并提供自动打开选项
+              const userChoice = confirm(
+                '🔧 开发者工具已准备就绪！\n\n' +
+                '点击下方"确定"按钮，将自动在浏览器中打开开发者工具。\n\n' +
+                '如果自动打开失败，请手动访问：\n' +
+                result.debug_url + '\n\n' +
+                '或在 Edge 浏览器中访问: edge://inspect'
+              );
+              
+              if (userChoice) {
+                // 用户点击确定，尝试打开新窗口
+                window.open(result.debug_url, '_blank');
+                console.log('[开发者工具] 已尝试在新窗口打开:', result.debug_url);
+              }
+            } else {
+              console.log('[开发者工具] 开发者工具已打开');
+            }
+          } else {
+            alert('❌ 打开开发者工具失败:\n\n' + result.message);
+          }
+        } catch (error) {
+          console.error('[开发者工具] 请求失败:', error);
+          // 如果API调用失败，显示手动访问提示
+          const debugUrl = 'http://localhost:9222';
+          const userChoice = confirm(
+            '⚠️ 无法连接到后端服务\n\n' +
+            '请手动访问开发者工具：\n' +
+            debugUrl + '\n\n' +
+            '或在 Edge 浏览器中访问: edge://inspect\n\n' +
+            '点击"确定"将尝试打开开发者工具页面。'
+          );
+          
+          if (userChoice) {
+            window.open(debugUrl, '_blank');
+          }
+        }
+      }
+      
+      // 点击菜单项打开开发者工具
+      openDevToolsBtn.addEventListener('click', function() {
+        contextMenu.style.display = 'none';
+        openDeveloperTools();
+      });
+      
+      // F12 或 Ctrl+Shift+I 快捷键打开开发者工具
+      document.addEventListener('keydown', function(e) {
+        // 检查 F12
+        if (e.key === 'F12') {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('[开发者工具] F12 按键触发');
+          openDeveloperTools();
+          return false;
+        }
+        
+        // 检查 Ctrl+Shift+I
+        if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('[开发者工具] Ctrl+Shift+I 按键触发');
+          openDeveloperTools();
+          return false;
+        }
+      }, true); // 使用捕获阶段，确保优先执行
+      
+      // 暴露全局测试函数
+      window.testDevTools = function() {
+        console.log('[开发者工具] 测试函数已执行');
+        alert('开发者工具脚本已正常运行！\n\n您可以通过以下方式打开开发者工具：\n1. 右键菜单\n2. F12 键\n3. Ctrl+Shift+I 键');
+      };
+      
+      console.log('[开发者工具] 初始化完成');
+      console.log('[开发者工具] 测试方法: 在控制台输入 window.testDevTools()');
+    })();
+  </script>
 </body>
 </html>
