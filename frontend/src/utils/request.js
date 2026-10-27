@@ -25,6 +25,10 @@ request.interceptors.response.use(
     return response.data
   },
   error => {
+    // 调用方可通过 config.silent = true 关闭全局错误提示，自行处理失败
+    if (error.config?.silent) {
+      return Promise.reject(error)
+    }
     if (error.response) {
       if (error.response.status === 401) {
         ElMessage.error('未登录，请先登录')

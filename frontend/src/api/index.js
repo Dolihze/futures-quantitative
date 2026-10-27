@@ -11,17 +11,22 @@ export function getBrokers() {
 // 登录
 export function login(data) {
   return request({
-    url: '/login',
+    url: '/api/login',
     method: 'post',
     data
   })
 }
 
 // 退出登录
+// 服务端 session 清理失败（后端未启动/网络异常）不应阻止用户在本地退出，
+// 因此这里吞掉错误且不弹全局提示，调用方随后会清理本地登录态。
 export function logout() {
   return request({
-    url: '/logout',
-    method: 'post'
+    url: '/api/logout',
+    method: 'post',
+    silent: true
+  }).catch(error => {
+    console.warn('退出登录：服务端会话清理失败，仅清理本地登录态', error)
   })
 }
 
