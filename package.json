@@ -1,0 +1,19 @@
+{
+  "name": "futures-quantitative",
+  "version": "1.0.0",
+  "description": "期货量化交易系统 - Tauri 2.x",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "backend:dev": "python backend.py",
+    "app": "python app.py",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "backend:build": "pyinstaller --noconfirm --onefile --name python-backend --distpath src-tauri/sidecar --add-data \"data;data\" --collect-data akshare --collect-data py_mini_racer --exclude-module torch --exclude-module tensorflow --exclude-module matplotlib backend.py && node scripts/copy-sidecar.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
