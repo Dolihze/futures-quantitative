@@ -1,5 +1,9 @@
 # 量化回测功能开发完成报告
 
+> **历史文档**：本文记录 2026-10-02 回测功能的初版开发（当时为 pywebview + Flask 架构）。
+> 项目现已迁移到 **Tauri 2.x**，`app.py`、`templates/`、`start.bat` 均已移除。
+> 最新的启动与构建方式请见根目录 [`README.md`](README.md)。
+
 ## 📅 开发时间
 2026-10-02
 
@@ -35,22 +39,22 @@
   - 响应式布局
 
 ### 4. 首页集成
-- 更新了首页home.html
+- 更新了首页（当时为 templates/home.html，现为 `frontend/src/views/Home.vue`）
 - 添加了量化回测卡片入口
 - 从"即将上线"改为可点击的链接
 
-## 📁 新增文件
+## 📁 当时新增的文件（记录）
 
-1. **templates/backtest.html** - 量化回测页面
-2. **test_kline_data.py** - 数据获取测试脚本
-3. **requirements.txt** - 依赖清单
-4. **README_BACKTEST.md** - 使用说明文档
-5. **start.bat** - 快速启动脚本
+1. `templates/backtest.html` - 量化回测页面（已由 `frontend/src/views/Backtest.vue` 取代）
+2. `test_kline_data.py` - 数据获取测试脚本（已移除）
+3. `requirements.txt` - 依赖清单
+4. `README_BACKTEST.md` - 使用说明文档
+5. `start.bat` - 快速启动脚本（已移除）
 
-## 🔧 修改文件
+## 🔧 当时修改的文件（记录）
 
-1. **app.py** - 添加回测路由和API接口
-2. **templates/home.html** - 添加量化回测入口
+1. `app.py` - 添加回测路由和API接口（现位于 `backend.py`）
+2. `templates/home.html` - 添加量化回测入口（已由 Vue 取代）
 
 ## 📦 依赖安装
 
@@ -62,22 +66,22 @@ pip install -r requirements.txt
 - `akshare` - 期货数据获取
 - `pandas` - 数据处理
 - `flask` - Web框架
-- `pywebview` - 桌面应用
+- `pyinstaller` - 打包后端 sidecar
+- Tauri 2.x - 桌面客户端（取代最初使用的 pywebview）
 
 ## 🚀 使用方法
 
-### 方式1: 直接运行
 ```bash
-python app.py
+npm install
+cd frontend && npm install && cd ..
+npm run backend:build   # 首次或修改 backend.py 后
+npm run dev
 ```
 
-### 方式2: 使用启动脚本
-```bash
-start.bat
-```
+详见根目录 [`README.md`](README.md)。
 
 ### 访问步骤
-1. 启动程序后自动打开浏览器
+1. 启动程序后自动打开桌面窗口
 2. 使用测试账号登录（admin/123456）
 3. 在首页点击"量化回测"卡片
 4. 选择参数并点击"加载数据"
@@ -133,11 +137,10 @@ start.bat
 
 ## 🔍 测试验证
 
-已创建测试脚本 `test_kline_data.py`，用于验证数据获取功能：
-
-```bash
-python test_kline_data.py
-```
+当时创建了测试脚本 `test_kline_data.py`（现已移除）验证数据获取功能。
+现在可直接验证接口：启动应用后访问
+`http://127.0.0.1:5000/api/backtest/kline?symbol=FU2611&period=5&days=30`，
+或运行 `npm run backend:dev` 单独启动后端后访问。
 
 测试内容：
 - 数据获取是否正常
@@ -194,8 +197,8 @@ python test_kline_data.py
 ## 📞 技术支持
 
 如有问题，请查看：
-1. README_BACKTEST.md - 使用说明
-2. test_kline_data.py - 测试脚本
+1. [README.md](README.md) - 启动、构建与故障排除
+2. [README_BACKTEST.md](README_BACKTEST.md) - 回测使用说明
 3. requirements.txt - 依赖清单
 
 ## 🎉 总结

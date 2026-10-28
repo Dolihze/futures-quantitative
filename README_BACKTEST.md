@@ -21,8 +21,12 @@ pip install -r requirements.txt
 ### 2. 启动程序
 
 ```bash
-python app.py
+npm install
+npm run dev
 ```
+
+`npm run dev` 会启动 Tauri 客户端、Vue 前端（5173）以及 Python 后端 sidecar（5000）。
+首次运行或修改 `backend.py` 后，需先执行 `npm run backend:build` 重新打包 sidecar。
 
 ### 3. 访问回测页面
 
@@ -56,7 +60,8 @@ python app.py
 - `akshare`: 用于获取期货历史数据
 - `pandas`: 数据处理
 - `flask`: Web框架
-- `pywebview`: 桌面应用窗口
+- `pyinstaller`: 打包后端 sidecar
+- Tauri 2.x: 桌面应用窗口
 
 ## 后续开发计划
 

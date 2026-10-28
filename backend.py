@@ -173,6 +173,9 @@ def logout():
 def quant_login():
     """处理量化账号登录请求"""
     # 调试模式：暂时跳过实际登录
+    # TODO: 接入真实 CTP 登录（vnpy_ctp.CtpGateway + vnpy.trader.engine.MainEngine）。
+    #   账号/密码/交易密码/brokerid/td_address/md_address/auth_code 应从环境变量或
+    #   加密配置读取，不要写进源码。旧的参考实现见 git 历史中的 app.py（提交 ed08d7c）。
     print(f"[调试模式] 量化账号登录请求 - 跳过实际验证")
     
     return jsonify({

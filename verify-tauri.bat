@@ -65,11 +65,11 @@ REM ===== 2. Tauri 配置检查 =====
 echo [2/6] 检查 Tauri 配置文件...
 echo.
 
-if exist "src-tauri\tauri.json" (
-    echo   [PASS] tauri.json 存在
+if exist "src-tauri\tauri.conf.json" (
+    echo   [PASS] tauri.conf.json 存在
     set /a PASS+=1
 ) else (
-    echo   [FAIL] tauri.json 缺失
+    echo   [FAIL] tauri.conf.json 缺失
     set /a FAIL+=1
 )
 

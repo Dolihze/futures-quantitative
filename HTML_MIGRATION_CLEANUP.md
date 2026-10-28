@@ -1,5 +1,9 @@
 # HTML模板迁移清理报告
 
+> **历史文档**：本文记录 2026-10-18 将纯 HTML 页面迁移到 Vue 的清理工作（当时为 pywebview + `app.py`）。
+> 项目现已迁移到 **Tauri 2.x**，`app.py` 已移除，其 API 全部保留在 `backend.py` 中。
+> 最新的启动与构建方式请见根目录 [`README.md`](README.md)。
+
 ## 清理时间
 2026-10-18
 
@@ -70,7 +74,7 @@
 
 ## 后端修改
 
-### app.py 变更
+### app.py 变更（当时的记录，现为 backend.py）
 
 #### 移除的内容
 1. `render_template` 导入（不再需要渲染HTML模板）
@@ -89,53 +93,29 @@
 - `/api/backtest/kline` - 获取K线数据
 - `/api/quant-login` (POST) - 量化账号登录
 
-#### 新增功能
-1. **自动启动Vue前端**
-   - 检测并自动安装前端依赖（`npm install`）
-   - 启动Vue开发服务器（`npm run dev`）
-   - 在新窗口中运行前端服务器
+#### 当时新增的功能（pywebview 时期，已被 Tauri 取代）
+1. 由 `app.py` 自动安装前端依赖并启动 Vue 开发服务器
+2. 自动检测前端端口（5173 / 3000 / 5174 / 5175）并用 pywebview 窗口打开
 
-2. **智能端口检测**
-   - 自动检测前端服务器运行端口（5173, 3000, 5174, 5175等）
-   - 打开桌面窗口时直接使用Vue前端页面
-
-3. **启动流程优化**
-   ```python
-   def start_app():
-       1. 启动Flask后端（API服务）
-       2. 启动Vue前端开发服务器
-       3. 检测前端运行端口
-       4. 创建桌面窗口打开Vue前端页面
-   ```
+这些职责现在由 Tauri 承担：`tauri.conf.json` 的 `beforeDevCommand` 启动前端，
+`src-tauri/src/main.rs` 启动 Python sidecar 并创建窗口。
 
 ## 启动方式
 
-### 方式一：一键启动（推荐）
+现在只有一种桌面启动方式：
+
 ```bash
-python app.py
-```
-
-**启动流程：**
-1. Flask后端在 `http://127.0.0.1:5000` 启动
-2. 自动检测并安装前端依赖（首次运行）
-3. Vue前端在 `http://localhost:5173` 启动（或其他端口）
-4. 自动打开桌面窗口，显示Vue前端页面
-
-### 方式二：分开启动（开发调试）
-```bash
-# 终端1：启动后端
-python app.py
-
-# 终端2：启动前端
-cd frontend
 npm run dev
 ```
 
-### 方式三：使用启动脚本
+调试时可单独运行后端或前端（不会打开窗口）：
+
 ```bash
-# Windows
-.\start-all.bat
+npm run backend:dev    # 仅 Flask，端口 5000
+npm run frontend:dev   # 仅 Vite，端口 5173
 ```
+
+详见根目录 [`README.md`](README.md)。
 
 ## 技术栈对比
 
@@ -188,9 +168,10 @@ npm run dev
    npm install --registry=https://registry.npmmirror.com
    ```
 
-3. **端口冲突**时，Vue会自动切换到其他端口（如3000），程序会自动检测
+3. **端口冲突**：Vite 现在固定使用 5173（`strictPort`），不会自动切换端口；
+   残留进程占用端口时，`npm run dev` 会自动清理本项目的残留 Vite，详见 `README.md` 的故障排除
 
-4. **开发环境**建议使用分开启动方式，便于调试
+4. **开发环境**需要单独调试后端或前端时，可使用 `npm run backend:dev` / `npm run frontend:dev`
 
 5. **生产环境**建议构建前端静态文件，通过Nginx等Web服务器部署
 

@@ -217,8 +217,8 @@ frontend/src/styles/
 ## 相关文件
 
 - [样式目录说明](./README.md) - 详细的样式规范和使用指南
-- [项目开发报告](../../DEVELOPMENT_REPORT.md) - 项目整体开发记录
-- [Vue迁移评估标准](../../MIGRATION_COMPLETE.md) - Vue迁移相关文档
+- [项目开发报告](../../../DEVELOPMENT_REPORT.md) - 项目整体开发记录
+- [Vue迁移评估标准](../../../MIGRATION_COMPLETE.md) - Vue迁移相关文档
 
 ## 联系支持
 
