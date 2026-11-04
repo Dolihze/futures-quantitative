@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
+    "setup": "node scripts/setup.mjs",
     "dev": "tauri dev",
     "build": "tauri build",
     "backend:dev": "python backend.py",

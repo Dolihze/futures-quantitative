@@ -39,13 +39,12 @@ futures-quantitative/
 ├── backend.py                # Flask 后端源码（sidecar 入口）
 ├── data/brokers.json         # 期货公司数据
 ├── scripts/
+│   ├── setup.mjs             # 首次准备：装前端依赖、装 Python 依赖、打包 sidecar
 │   ├── dev-frontend.mjs      # beforeDevCommand：清理残留 Vite 后启动前端
 │   ├── copy-sidecar.mjs      # 生成带目标三元组后缀的 sidecar 副本
 │   └── gen-icon.py           # 生成应用图标
 ├── requirements.txt          # Python 依赖
-├── package.json              # npm 脚本
-├── start-tauri.bat / .ps1    # 一键启动（含环境检查）
-└── verify-tauri.bat          # 环境与文件完整性检查
+└── package.json              # npm 脚本
 ```
 
 ## 环境要求
@@ -60,28 +59,32 @@ futures-quantitative/
 ## 快速开始
 
 ```bash
-# 1. 安装依赖（首次）
+# 1. 首次准备（根目录 npm install 之后只需执行一次）
 npm install
-cd frontend && npm install && cd ..
-pip install -r requirements.txt
+npm run setup     # 装前端依赖 + 装 Python 依赖 + 打包后端 sidecar
 
-# 2. 打包后端 sidecar（首次，以及每次修改 backend.py 后）
-npm run backend:build
-
-# 3. 启动
+# 2. 启动
 npm run dev
+```
+
+`npm run setup` 等价于手动执行：
+
+```bash
+cd frontend && npm install && cd ..
+python -m pip install -r requirements.txt
+npm run backend:build
 ```
 
 `npm run dev` 会依次：启动 Vue 前端（5173）→ 编译并运行 Tauri → Tauri 拉起 Python sidecar（5000）→ 打开桌面窗口。
 首次编译 Rust 依赖需要几分钟，之后增量编译很快。
 
-也可以使用 `start-tauri.bat` / `start-tauri.ps1`（自动检查环境并安装缺失依赖，最终同样执行 `npm run dev`）。
-`verify-tauri.bat` 用于检查环境和关键文件是否齐全。
+之后每次修改 `backend.py`，需要单独重新执行 `npm run backend:build`。
 
 ## 常用命令
 
 | 命令 | 作用 |
 |---|---|
+| `npm run setup` | 首次准备：安装前端、Python 依赖并打包 sidecar |
 | `npm run dev` | 启动完整开发环境（Tauri + 前端 + sidecar） |
 | `npm run build` | 构建安装包 |
 | `npm run backend:build` | 用 PyInstaller 打包 `backend.py` 并生成 sidecar |
