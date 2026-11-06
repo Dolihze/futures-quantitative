@@ -49,6 +49,31 @@ export function getKlineData(params) {
   })
 }
 
+// 交易复盘：上传交易记录 Excel（multipart）。
+// 业务错误（格式不对、列缺失等）后端返回 400 + message，这里由页面自己展示，不弹全局错误提示。
+export function uploadReviewFile(file) {
+  const form = new FormData()
+  form.append('file', file)
+  return request({
+    url: '/api/review/upload',
+    method: 'post',
+    data: form,
+    timeout: 120000,
+    silent: true
+  })
+}
+
+// 交易复盘：按品种/时间范围获取累计盈亏曲线。
+// 记录失效（expired）时由页面提示重新上传，因此同样不弹全局提示。
+export function getReviewCurve(params) {
+  return request({
+    url: '/api/review/curve',
+    method: 'get',
+    params,
+    silent: true
+  })
+}
+
 // 量化账号登录
 export function quantLogin(data) {
   return request({

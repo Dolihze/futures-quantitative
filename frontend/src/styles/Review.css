@@ -1,0 +1,404 @@
+/* Review.vue 样式（交易复盘）
+   布局和配色沿用 Backtest.css：左侧控制面板 + 右侧图表，红涨绿跌。 */
+
+.review-container {
+  min-height: 100vh;
+  background: #1a1a2e;
+}
+
+/* 顶部导航栏 */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back-btn {
+  padding: 6px 14px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  color: #3b82f6;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.back-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.user-avatar {
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.username {
+  color: #94a3b8;
+}
+
+/* 主体 */
+.main-container {
+  display: flex;
+  height: calc(100vh - 56px);
+}
+
+.sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  background: #16213e;
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid #0f3460;
+}
+
+.control-panel {
+  background: #0f3460;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.control-panel h3 {
+  color: #00d4ff;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
+
+/* 上传区 */
+.upload-text {
+  padding: 8px 0;
+}
+
+.upload-main {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.upload-main em {
+  color: #3b82f6;
+  font-style: normal;
+}
+
+.upload-tip {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.file-info {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: #16213e;
+  border-radius: 6px;
+}
+
+.file-name {
+  color: #e2e8f0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-meta {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.review-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.review-warning {
+  margin-top: 8px;
+  color: #fbbf24;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fee-hint {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.filter-actions a {
+  color: #3b82f6;
+  cursor: pointer;
+}
+
+.filter-actions a:hover {
+  text-decoration: underline;
+}
+
+/* 统计 */
+.backtest-result {
+  background: #0f3460;
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.backtest-result h4 {
+  color: #00d4ff;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.result-item {
+  background: #16213e;
+  padding: 12px;
+  border-radius: 5px;
+  text-align: center;
+}
+
+.result-item.wide {
+  grid-column: 1 / -1;
+}
+
+.result-label {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.result-value {
+  color: #00d4ff;
+  font-size: 16px;
+  font-weight: bold;
+  word-break: break-all;
+}
+
+.result-item.wide .result-value {
+  font-size: 22px;
+}
+
+.result-value.positive {
+  color: #ef4444;
+}
+
+.result-value.negative {
+  color: #22c55e;
+}
+
+.result-value.neutral {
+  color: #ffffff;
+}
+
+/* 图表区 */
+.chart-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: #1a1a2e;
+  height: calc(100vh - 56px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-shrink: 0;
+}
+
+.chart-header h2 {
+  color: #00d4ff;
+  font-size: 20px;
+}
+
+.data-info {
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+}
+
+.info-label {
+  color: #888;
+  margin-right: 6px;
+}
+
+.info-value {
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+.chart-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.pnl-chart {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+
+/* 空状态 / 加载中：盖在图表上方 */
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 40px;
+  text-align: center;
+  background: #16213e;
+  border-radius: 8px;
+}
+
+.empty-icon {
+  font-size: 44px;
+}
+
+.empty-title {
+  color: #e2e8f0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.empty-desc {
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.chart-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 8px;
+  z-index: 10;
+}
+
+.loading-spinner {
+  border: 4px solid #334155;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 14px;
+}
+
+.loading-text {
+  color: #3b82f6;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Element Plus 组件（渲染在子组件内，需要 :deep） */
+:deep(.el-upload-dragger) {
+  background: #16213e;
+  border: 1px dashed rgba(59, 130, 246, 0.5);
+  padding: 22px 10px;
+}
+
+:deep(.el-upload-dragger:hover) {
+  border-color: #3b82f6;
+}
+
+:deep(.el-form-item__label) {
+  color: #cbd5e1;
+}
+
+:deep(.el-checkbox__label) {
+  color: #cbd5e1;
+}
+
+:deep(.el-button--danger.is-plain) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+:deep(.el-button--danger.is-plain:hover) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}

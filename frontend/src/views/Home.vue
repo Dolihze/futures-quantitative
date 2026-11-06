@@ -68,6 +68,27 @@
             </svg>
           </div>
         </router-link>
+
+        <!-- 交易复盘卡片 -->
+        <router-link to="/review" class="feature-card">
+          <div class="feature-icon review">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <polyline points="8 17 11 13 13 15 16 11"/>
+            </svg>
+          </div>
+          <div class="feature-title">交易复盘</div>
+          <div class="feature-description">
+            导入交易记录 Excel，绘制账户盈亏曲线，支持按时间范围和交易品种筛选
+          </div>
+          <div class="feature-arrow">
+            <span>进入复盘</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+        </router-link>
       </div>
     </div>
 

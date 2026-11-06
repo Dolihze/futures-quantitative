@@ -24,6 +24,12 @@ const routes = [
     name: 'Backtest',
     component: () => import('@/views/Backtest.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/review',
+    name: 'Review',
+    component: () => import('@/views/Review.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 
