@@ -530,9 +530,9 @@ def test_user_excel_each_trade_lands_in_the_right_trading_day_and_session():
         where[d["time"][5:16]] = (seg["day"], seg["name"])
     assert where == {
         "10-14 22:10": ("2026-10-15", "夜盘"),
-        "10-15 10:00": ("2026-10-15", "早盘一"),
+        "10-15 10:00": ("2026-10-15", "早盘（上）"),
         "10-15 22:30": ("2026-10-16", "夜盘"),      # 10-16 交易日的夜盘，真实时间是 10-15 晚上
-        "10-16 10:40": ("2026-10-16", "早盘二"),
+        "10-16 10:40": ("2026-10-16", "早盘（下）"),
         "10-16 14:20": ("2026-10-16", "午盘"),
     }, where
 
@@ -591,8 +591,8 @@ def test_session_of_covers_all_four_sessions_and_boundaries():
     names = [s["name"] for s in review.SESSIONS]
     cases = {
         "2026-10-21 21:00:00": "夜盘", "2026-10-21 22:59:59": "夜盘",
-        "2026-10-22 09:00:00": "早盘一", "2026-10-22 10:15:00": "早盘一",
-        "2026-10-22 10:30:00": "早盘二", "2026-10-22 11:30:00": "早盘二",
+        "2026-10-22 09:00:00": "早盘（上）", "2026-10-22 10:15:00": "早盘（上）",
+        "2026-10-22 10:30:00": "早盘（下）", "2026-10-22 11:30:00": "早盘（下）",
         "2026-10-22 13:30:00": "午盘", "2026-10-22 15:00:00": "午盘",
     }
     for t, want in cases.items():
@@ -602,10 +602,10 @@ def test_session_of_covers_all_four_sessions_and_boundaries():
 def test_session_of_assigns_out_of_session_trades_to_the_nearest_session_without_dropping():
     names = [s["name"] for s in review.SESSIONS]
     cases = {
-        "2026-10-22 08:59:00": "早盘一",   # 集合竞价，略早于开盘
-        "2026-10-22 10:19:00": "早盘一",   # 两场之间的 15 分钟休息：离 10:15 更近
-        "2026-10-22 10:28:00": "早盘二",   # 离 10:30 更近
-        "2026-10-22 11:31:00": "早盘二",   # 收盘后撮合延迟
+        "2026-10-22 08:59:00": "早盘（上）",   # 集合竞价，略早于开盘
+        "2026-10-22 10:19:00": "早盘（上）",   # 两场之间的 15 分钟休息：离 10:15 更近
+        "2026-10-22 10:28:00": "早盘（下）",   # 离 10:30 更近
+        "2026-10-22 11:31:00": "早盘（下）",   # 收盘后撮合延迟
         "2026-10-22 12:30:00": "午盘",     # 午休正中间，两边一样远：取后一个
         "2026-10-22 15:05:00": "午盘",
         "2026-10-22 18:00:00": "午盘",     # 日盘结束后、夜盘开始前：跟前面的日盘走，不能被夜盘“抢走”
@@ -626,7 +626,7 @@ def test_night_session_extends_past_midnight_and_belongs_to_the_next_trading_day
 
 def test_session_axis_always_has_all_four_segments_per_trading_day_in_the_right_order():
     xs, segs = review.session_axis([_ts("2026-10-21 21:30:05"), _ts("2026-10-22 09:15:00"), _ts("2026-10-22 14:30:00")])
-    assert [s["name"] for s in segs] == ["夜盘", "早盘一", "早盘二", "午盘"], "只有一个交易日：固定四段，哪怕早盘二没有成交"
+    assert [s["name"] for s in segs] == ["夜盘", "早盘（上）", "早盘（下）", "午盘"], "只有一个交易日：固定四段，哪怕早盘二没有成交"
     assert all(s["day"] == "2026-10-22" for s in segs)
     # 段宽 = 真实时长：夜盘 120、早盘一 75、早盘二 60、午盘 90；段与段之间留 SESSION_GAP_WIDTH
     assert [round(s["x1"] - s["x0"]) for s in segs] == [120, 75, 60, 90]
@@ -690,7 +690,7 @@ def test_curve_returns_session_x_aligned_with_points_and_segments_for_every_shap
     assert c["segments"][0]["x0"] == review.AXIS_PAD and "gaps" not in c, "整条轴从 AXIS_PAD 开始（段的起点，不是点的位置）；旧的 gaps 已删除"
     assert all(s["x0"] >= 0 for s in c["segments"]) and c["xs"][0] > 0, "不能出现负坐标"
     # 一个交易日（10-22）：固定四段，夜盘在最前
-    assert [s["name"] for s in c["segments"]] == ["夜盘", "早盘一", "早盘二", "午盘"]
+    assert [s["name"] for s in c["segments"]] == ["夜盘", "早盘（上）", "早盘（下）", "午盘"]
     assert c["segments"][0]["start"] == "2026-10-21 21:00:00", "夜盘从前一天 21:00 开始"
     # 所有点都落在某一段之内（包含边界）：不丢点
     for x in c["xs"][1:]:
@@ -799,3 +799,17 @@ if __name__ == "__main__":
             print("FAIL ", t.__name__, "->", repr(e))
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     sys.exit(1 if failed else 0)
+
+
+def test_curve_returns_open_marks_aligned_with_axis_and_not_in_points():
+    # 开仓不进 points/details/stats，只作为 openMarks 返回，横坐标与平仓用同一条轴（xs 递增、落在某个段里）
+    c = review.build_curve(review.analyze(make_detail_sheet(ROWS_D), "s.xlsx").records, include_fee=False)
+    assert len(c["points"]) == len(c["details"]) == 6
+    marks = c["openMarks"]
+    assert [m["time"][5:19] for m in marks] == ["10-21 21:05:00", "10-21 21:25:05", "10-22 09:00:00",
+                                                "10-22 09:01:00", "10-22 13:40:00", "10-22 14:50:00"]
+    assert all(k in marks[0] for k in ("time", "x", "symbol", "direction", "lots", "price"))
+    assert [m["x"] for m in marks] == sorted(m["x"] for m in marks)
+    for m in marks:
+        assert any(s["x0"] - 1e-6 <= m["x"] <= s["x1"] + 1e-6 for s in c["segments"]), m
+    assert review.build_curve(review.analyze(make_detail_sheet(ROWS_D), "s.xlsx").records, start="2027-01-01")["openMarks"] == []

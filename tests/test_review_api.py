@@ -64,7 +64,7 @@ def test_detail_sheet_upload_merge_fee_and_flags():
     assert first["lots"] == 6 and first["fills"] == 3 and first["time"] == "2026-10-21 21:30:05"
     # 横坐标：固定四个交易时段，夜盘排最前；xs 与 points 一一对应
     assert len(net["xs"]) == len(net["points"]) == 6 and net["xs"] == sorted(net["xs"])
-    assert [s["name"] for s in net["segments"]] == ["夜盘", "早盘一", "早盘二", "午盘"]
+    assert [s["name"] for s in net["segments"]] == ["夜盘", "早盘（上）", "早盘（下）", "午盘"]
     assert [round(s["x1"] - s["x0"]) for s in net["segments"]] == [120, 75, 60, 90], "段宽 = 真实时长（分钟）"
     assert net["segments"][0]["start"] == "2026-10-21 21:00:00" and net["segments"][3]["end"] == "2026-10-22 15:00:00"
     # 休息时间不画：整条轴 = 左边留白 + 345 分钟的交易时间 + 3 个段间隔，远小于真实跨度（约 18 小时）。

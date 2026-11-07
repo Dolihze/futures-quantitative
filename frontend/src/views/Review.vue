@@ -322,10 +322,11 @@ function segTimeAt(seg, x) {
 
 const LABEL_PX = 56      // 一个 HH:mm 标签（含间距）大约占的像素
 const JOINT_PX = 84      // 相邻两个“交界标签”（如 10:15 | 10:30）的中心至少隔这么多像素：一个交界标签约 70px 宽
-const SEG_NAME_PX = 56   // 一段至少这么宽才写段名。段名约 36px，写在图的上方；时间标签在 X 轴下方，纵向不冲突，
+const SEG_NAME_PX = 72   // 一段至少这么宽才写段名。最长的段名“早盘（上）”约 60px，写在图的上方；时间标签在 X 轴下方，纵向不冲突，
                          // 所以只取决于段名自己放不放得下。（以前定 100，两个交易日时早盘一/早盘二的名字全被丢了，看着像漏了两段）
 const SEG_FULL_PX = 130  // 一段至少这么宽才加段内的整刻度
 const DATE_PX = 54       // 两个日期标签之间至少隔这么多像素，否则会叠在一起
+const HOVER_NEAR_PX = 12 // 鼠标离交易点的横坐标不超过这么多像素，才弹出该笔交易的详情
 
 // 刻度、标签和段名。关键：按“当前可见的范围”算，而不是整条轴——
 // 8 个交易日全显示时每段只有几十个像素，64 个边界标签放不下（已截图验证：糊成 28900013003300…）；
@@ -490,7 +491,7 @@ function viewDependentOptions(segments, plotWidthPx, range, yMin, yMax) {
   }
 }
 
-function timeAxisOptions(points, xs, segments, details, plotWidthPx, yMin, yMax) {
+function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, yMin, yMax) {
   const view = viewDependentOptions(segments, plotWidthPx, null, yMin, yMax)
   const areas = view.areas
   const sepLines = view.sepLines
@@ -524,31 +525,45 @@ function timeAxisOptions(points, xs, segments, details, plotWidthPx, yMin, yMax)
     },
     tooltipFormatter: (items) => {
       if (!items || !items.length) return ''
-      const hovered = items[0].dataIndex
-      if (hovered === 0) {
-        return `<div style="font-weight:bold">起点</div><div>累计盈亏：<b>${plain(0)}</b></div>`
-      }
-      // 同一时刻、不同合约（或买卖方向不同）的几笔平仓不合并，它们的横坐标完全相同。
-      // axis 型提示框在同一个 x 上只会给出其中一个点，另外几笔就永远悬停不到了（已验证），
-      // 所以这里找出所有横坐标相同的点，一起列出来。
-      // 另外，被归入最近时段的成交（集合竞价、夜盘延续到凌晨等）在轴上贴着段的边界，所以同一个边界上可能叠着不同时刻的几笔，
-      // 同样一起列出，各自显示真实的成交时间。
+      // 十字线跟着鼠标走（可以停在任意横坐标），但只有鼠标靠近某个交易点的横坐标时才弹出详情。
+      // 鼠标所在的横坐标取自 axisPointer 的值（value 轴上就是鼠标的 x）。
+      const mouseX = Number(items[0].axisValue)
+      if (!Number.isFinite(mouseX)) return ''
+      // 在“可见范围”内按像素判断是否靠近：放大后同样的像素距离对应更小的横坐标差
+      const dz = chart?.getOption()?.dataZoom?.[0]
+      const vx0 = dz?.startValue ?? segments[0].x0
+      const vx1 = dz?.endValue ?? segments[segments.length - 1].x1
+      const pxPerUnit = plotWidthPx / Math.max(vx1 - vx0, 1)
+      // 鼠标附近（HOVER_NEAR_PX 像素内）的开仓点和平仓点都列出来，各自按真实成交时间排列。
+      // 同一时刻、不同合约（或买卖方向不同）的几笔成交不合并，它们的横坐标完全相同；
+      // 被归入最近时段的成交（集合竞价、夜盘延续到凌晨等）在轴上贴着段的边界，同一个边界上也可能叠着不同时刻的几笔，
+      // 所以不是只取最近的一个点，而是把范围内的全部列出来。
+      const near = (x) => Math.abs(x - mouseX) * pxPerUnit <= HOVER_NEAR_PX
       const same = []
-      for (let j = 1; j < xs.length; j++) if (Math.abs(xs[j] - xs[hovered]) < 1e-9) same.push(j)
+      for (let j = 1; j < xs.length; j++) if (near(xs[j])) same.push(j)
+      const opensNear = openMarks.filter((m) => near(m.x))
+      if (!same.length && !opensNear.length) return ''
+      const openBlock = (m) => {
+        return `<div style="font-weight:bold;margin-bottom:4px">${fmtFull(m.time)}</div>
+              <div>${m.symbol} ${m.direction}开 ${m.lots} 手 @ ${m.price}</div>`
+      }
       const block = (i) => {
         const d = details[i]
         const value = points[i][1]
         const color = value > 0 ? '#ef4444' : value < 0 ? '#22c55e' : '#fff'
         const pc = d.pnl > 0 ? '#ef4444' : d.pnl < 0 ? '#22c55e' : '#fff'
-        const merged = d.fills > 1 ? `（${d.fills} 笔成交合并）` : ''
         return `<div style="font-weight:bold;margin-bottom:4px">${fmtFull(d.time)}</div>
-              <div>${d.symbol} ${d.direction}平 · ${d.lots} 手 @ ${d.price}${merged}</div>
+              <div>${d.symbol} ${d.direction}平 ${d.lots} 手 @ ${d.price}</div>
               <div>本笔盈亏：<b style="color:${pc}">${money(d.pnl)}</b></div>
-              <div style="color:#94a3b8">手续费（含对应开仓）：${plain(d.fee)}</div>
+              <div style="color:#94a3b8">手续费：${plain(d.fee)}</div>
               <div>累计盈亏：<b style="color:${color}">${money(value)}</b></div>`
       }
-      const head = same.length > 1 ? `<div style="color:#fbbf24;margin-bottom:6px">此位置共 ${same.length} 笔平仓</div>` : ''
-      return head + same.map(block).join('<div style="height:1px;background:#475569;margin:6px 0"></div>')
+      const blocks = [
+        ...opensNear.map((m) => ({ time: m.time, html: openBlock(m) })),
+        ...same.map((i) => ({ time: details[i].time, html: block(i) }))
+      ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+      const head = blocks.length > 1 ? `<div style="color:#fbbf24;margin-bottom:6px">此位置共 ${blocks.length} 笔成交</div>` : ''
+      return head + blocks.map((b) => b.html).join('<div style="height:1px;background:#475569;margin:6px 0"></div>')
     },
     areas,
     sepLines,
@@ -556,6 +571,80 @@ function timeAxisOptions(points, xs, segments, details, plotWidthPx, yMin, yMax)
     // 不用阶梯线（只有水平和垂直，看不出盈亏的变化趋势），也不用平滑曲线（会在拐点处画出数据里不存在的弧形和超调）
     seriesExtra: {}
   }
+}
+
+// 曲线上的点 = 开仓点 + 平仓点，按横坐标从左到右排好，相邻点之间用直线连接。
+// 规则：
+//  - 空仓时（总持仓为 0）曲线是水平的，保持上一次平仓后的累计盈亏；
+//  - 从空仓到第一笔开仓，这个开仓点是“起点”，纵坐标 = 当前累计盈亏；从这里开始曲线不再水平，
+//    直线连到下一个平仓点（累计盈亏变成平仓后的新值）；
+//  - 持仓期间夹在中间的其它开仓点不改变这条直线，只是标在直线上（纵坐标按直线插值）；
+//  - 平仓后如果仍有持仓，这个平仓点就是下一段直线的起点；平仓后空仓，之后又是水平线。
+// 持仓量按合约统计：开仓手数 - 平仓手数（details / openMarks 里的手数都是合并后的成交手数，和方向无关）。
+// 横坐标相同时开仓排在平仓前面（同一时刻先开后平）。
+// 开仓点画成空心圆（和平仓点的实心红绿圆区分），端点和轴两端补的水平延长线不画圆点。
+function buildSeriesData(points, xs, details, openMarks, axisMin, axisMax) {
+  // kind: 0 = 开仓，1 = 平仓（同 x 时开仓在前）
+  const events = []
+  openMarks.forEach((m, i) => events.push({ x: m.x, kind: 0, symbol: m.symbol, lots: m.lots, t: m.time, order: i }))
+  for (let i = 1; i < points.length; i++) {
+    events.push({ x: xs[i], kind: 1, symbol: details[i].symbol, lots: details[i].lots, t: details[i].time, y: points[i][1], order: i })
+  }
+  events.sort((a, b) => a.x - b.x || a.kind - b.kind || (a.t < b.t ? -1 : a.t > b.t ? 1 : 0) || a.order - b.order)
+
+  const held = {}   // 合约 -> 持仓手数
+  const total = () => Object.values(held).reduce((s, v) => s + Math.max(v, 0), 0)
+  // 每个事件的纵坐标：先记下“锚点”（上一段直线的起点），遇到平仓时回填这一段里的开仓点
+  const ys = new Array(events.length)
+  let cum = 0                 // 已实现的累计盈亏（空仓时曲线停在这里）
+  let anchor = null           // 当前这段直线的起点 { idx, x, y }
+  let pendingOpens = []       // 这段直线上、还没有确定纵坐标的开仓点下标
+  events.forEach((e, idx) => {
+    if (e.kind === 0) {
+      held[e.symbol] = (held[e.symbol] || 0) + e.lots
+      if (!anchor) {
+        anchor = { x: e.x, y: cum }
+        ys[idx] = cum
+      } else {
+        pendingOpens.push(idx)
+      }
+      return
+    }
+    // 平仓：纵坐标就是平仓后的累计盈亏；把这一段里夹着的开仓点按直线插值回填
+    held[e.symbol] = (held[e.symbol] || 0) - e.lots
+    const y = e.y
+    if (anchor) {
+      const span = e.x - anchor.x
+      for (const k of pendingOpens) {
+        const r = span > 1e-9 ? (events[k].x - anchor.x) / span : 1
+        ys[k] = anchor.y + (y - anchor.y) * r
+      }
+    }
+    pendingOpens = []
+    ys[idx] = y
+    cum = y
+    // 平仓后仍有持仓：这个平仓点是下一段直线的起点；否则回到空仓
+    anchor = total() > 1e-9 ? { x: e.x, y } : null
+  })
+  // 文件结束时还没平掉的开仓：没有对应的平仓，只能停在当前累计值上
+  for (const k of pendingOpens) ys[k] = cum
+
+  const data = [{ value: [axisMin, 0], symbolSize: 0 }]
+  events.forEach((e, idx) => {
+    if (e.kind === 1) {
+      data.push([e.x, ys[idx]])
+    } else {
+      // 开仓点：空心圆。itemStyle 的 color 覆盖 visualMap，边框用金色，避免和红绿平仓点混淆
+      data.push({
+        value: [e.x, ys[idx]],
+        symbol: 'circle',
+        symbolSize: 8,
+        itemStyle: { color: '#16213e', borderColor: '#fbbf24', borderWidth: 2 }
+      })
+    }
+  })
+  data.push({ value: [axisMax, cum], symbolSize: 0 })
+  return data
 }
 
 function renderChart() {
@@ -573,7 +662,10 @@ function renderChart() {
   // 绘图区的实际宽度（图表宽度减去左右留白），用来决定能放下多少个 X 轴标签
   const plotWidthPx = Math.max(200, chart.getWidth() - 70 - 56)
   currentSegments = segments
-  const mode = timeAxisOptions(points, xs, segments, details, plotWidthPx, min, max)
+  const mode = timeAxisOptions(points, xs, segments, details, curve.value?.openMarks || [], plotWidthPx, min, max)
+  // 与 timeAxisOptions 里 x 轴的 min / max 保持一致：曲线从轴的最左端画到最右端
+  const axisMin = segments[0].x0 - 2
+  const axisMax = segments[segments.length - 1].x1 + 1
   chart.setOption(
     {
       backgroundColor: '#16213e',
@@ -621,15 +713,18 @@ function renderChart() {
           name: '累计盈亏',
           type: 'line',
           ...mode.seriesExtra,
-          showSymbol: points.length <= 200,
+          // 圆点由 buildSeriesData 按点单独设置（开仓空心、平仓实心）；成交太多时全部隐藏，避免糊成一片
+          showSymbol: points.length + (curve.value?.openMarks?.length || 0) <= 300,
           symbolSize: 6,
           // 线和数据点的红绿由上面的 visualMap 按“值”决定。
           // 面积填充不做红绿分界：面积的渐变也是按它自己的包围盒定位，红绿分界会落在错误的高度（已截图验证），
           // 所以面积只用一层中性色，由线条本身表达盈亏方向。
           lineStyle: { width: 2 },
           areaStyle: { color: 'rgba(148, 163, 184, 0.14)', origin: 0 },
-          // 横坐标用固定四段交易时间里的位置（xs），而不是真实时间戳
-          data: points.map((p, i) => [xs[i], p[1]]),
+          // 横坐标用固定四段交易时间里的位置（xs），而不是真实时间戳。
+          // 曲线要覆盖整条时间轴：开头补一个累计 0 的点（轴的最左端），结尾补一个与最后一笔累计盈亏相同的点（轴的最右端），
+          // 第一笔之前、最后一笔之后没有交易的时间段就是水平线。补的点只用于画线，不显示圆点，悬停详情也不使用它们。
+          data: buildSeriesData(points, xs, details, curve.value?.openMarks || [], axisMin, axisMax),
           // 每一段的段名（夜盘 / 早盘一 / 早盘二 / 午盘），不画底色
           markArea: { silent: true, data: mode.areas },
           markLine: {
@@ -715,6 +810,11 @@ async function fetchCurve(isFirst = false) {
     if (seq !== requestSeq) return
     curve.value = res
     errorMsg.value = ''
+    // 新版后端一定会返回 openMarks（没有开仓时是空数组）；字段缺失说明运行的是旧版后端，画不出开仓点。
+    // 打包版的后端（src-tauri/sidecar）需要重新构建（npm run backend:build）才会更新。
+    const staleMsg = '后端版本过旧，没有返回开仓数据，图上不会显示开仓点；请重启后端（打包版需重新执行 npm run backend:build）'
+    warnings.value = warnings.value.filter((w) => w !== staleMsg)
+    if (!Array.isArray(res.openMarks)) warnings.value.push(staleMsg)
     await nextTick()
     // 绘图单独处理：数据已经取到了，绘图出错不能被当成“获取曲线失败”（网络错误）报给用户
     try {

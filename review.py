@@ -1,4 +1,4 @@
-"""交易复盘：解析期货公司导出的交易记录 Excel，并生成累计平仓盈亏曲线。
+﻿"""交易复盘：解析期货公司导出的交易记录 Excel，并生成累计平仓盈亏曲线。
 
 只依赖 pandas / openpyxl / xlrd，不依赖 Flask，便于单独测试。
 
@@ -426,7 +426,7 @@ def build_curve(records: pd.DataFrame, products: list[str] | None = None,
             df = df[tday <= pd.to_datetime(end).normalize()]
 
     if df.empty:
-        return {"points": [], "xs": [], "segments": [], "details": [], "stats": _empty_stats(), "trades": 0}
+        return {"points": [], "xs": [], "segments": [], "details": [], "stats": _empty_stats(), "trades": 0, "openMarks": []}
     df = _sort_by_session(df)
 
     # 曲线上只有“平”：开仓行不产生盈亏，也不算一笔成交。
@@ -435,9 +435,13 @@ def build_curve(records: pd.DataFrame, products: list[str] | None = None,
     df = df.assign(fee_charge=_attribute_fees(df))
     closes = df[df["is_close"]]
     if closes.empty:
-        return {"points": [], "xs": [], "segments": [], "details": [], "stats": _empty_stats(), "trades": 0, "openOnly": True}
+        return {"points": [], "xs": [], "segments": [], "details": [], "stats": _empty_stats(), "trades": 0, "openOnly": True, "openMarks": []}
 
     trades = _merge_same_time(closes)
+    # 开仓成交（同样按“时间+合约+买卖”合并）。它们不进 points/stats，只作为 openMarks 交给前端画在曲线上：
+    # 开仓不产生盈亏，所以开仓那一刻曲线保持水平，直到平仓才动。
+    opens = df[~df["is_close"]]
+    open_trades = _merge_same_time(opens.assign(pnl=0.0, fee_charge=0.0)) if not opens.empty else opens
     fee_used = trades["fee_charge"] if include_fee else 0.0
     delta = trades["pnl"] - fee_used
     cum = delta.cumsum()
@@ -452,13 +456,18 @@ def build_curve(records: pd.DataFrame, products: list[str] | None = None,
     # 横坐标：固定的四个交易时段（夜盘 → 早盘一 → 早盘二 → 午盘），与 points 一一对应。
     # 起点不按时间映射：它的坐标固定在第一笔的左边，保证严格不重叠（第一笔恰好在轴的最左端时也是），
     # 否则鼠标悬停在第一笔的位置只会命中起点。整条轴整体右移 AXIS_PAD 给起点留位置。
-    trade_xs, segments = session_axis(list(trades["time"]))
+    # 轴要覆盖开仓所在的交易日，所以把开仓时间也一起交给 session_axis；前 n 个是平仓，其后是开仓
+    n_close = len(trades)
+    open_times = list(open_trades["time"]) if len(open_trades) else []
+    all_xs, segments = session_axis(list(trades["time"]) + open_times)
+    trade_xs, open_xs = all_xs[:n_close], all_xs[n_close:]
     xs = [round(trade_xs[0] - START_POINT_OFFSET, 3)] + [round(x, 3) for x in trade_xs]
     # 平移的基准是“整条轴的最左端”（第一段的起点），而不是第一个点：点落在段内偏右的位置是正常的，
     # 如果按点平移，第一笔在夜盘 21:30 时整条轴会被向左拉，夜盘的起点 21:00 就跑到负坐标去了（已发现）。
     # 起点（第一笔左边 START_POINT_OFFSET）万一超出轴的最左端（第一笔恰好在 21:00:00），靠 AXIS_PAD 的留白容纳。
     shift = AXIS_PAD - segments[0]["x0"]
     xs = [round(x + shift, 3) for x in xs]
+    open_xs = [round(x + shift, 3) for x in open_xs]
     for sg in segments:
         sg["x0"] = round(sg["x0"] + shift, 3)
         sg["x1"] = round(sg["x1"] + shift, 3)
@@ -493,8 +502,18 @@ def build_curve(records: pd.DataFrame, products: list[str] | None = None,
                                                    trades["volume"], trades["price"], trades["pnl"],
                                                    trades["fee_charge"], trades["fills"])
     ]
+    # 开仓标记：与 points 无关，单独成列，前端按横坐标把它们插进曲线（y = 此前最近一个平仓点的累计值）
+    open_marks = [
+        {
+            "time": t.strftime("%Y-%m-%d %H:%M:%S"), "x": x, "symbol": str(sym), "direction": str(d),
+            "lots": _num(lots), "price": _num(price), "fills": int(n),
+        }
+        for x, t, sym, d, lots, price, n in zip(open_xs, open_trades["time"], open_trades["symbol"],
+                                                open_trades["direction"], open_trades["volume"],
+                                                open_trades["price"], open_trades["fills"])
+    ] if len(open_trades) else []
     return {"points": points, "xs": xs, "segments": segments, "details": details, "stats": stats,
-            "trades": int(len(trades))}
+            "trades": int(len(trades)), "openMarks": open_marks}
 
 
 # ---------------------------------------------------------------------------
@@ -507,8 +526,8 @@ def build_curve(records: pd.DataFrame, products: list[str] | None = None,
 # 没有任何成交的交易日不画，否则一个月的文件会有几十个空段。
 SESSIONS = [
     {"key": "night", "name": "夜盘", "start": 21 * 60, "end": 23 * 60},
-    {"key": "am1", "name": "早盘一", "start": 9 * 60, "end": 10 * 60 + 15},
-    {"key": "am2", "name": "早盘二", "start": 10 * 60 + 30, "end": 11 * 60 + 30},
+    {"key": "am1", "name": "早盘（上）", "start": 9 * 60, "end": 10 * 60 + 15},
+    {"key": "am2", "name": "早盘（下）", "start": 10 * 60 + 30, "end": 11 * 60 + 30},
     {"key": "pm", "name": "午盘", "start": 13 * 60 + 30, "end": 15 * 60},
 ]
 SESSION_GAP_WIDTH = 14  # 相邻两段之间留的视觉间隔（分钟宽度，只是为了画分隔线、让两侧的时间标签各占一边，不代表时间）
