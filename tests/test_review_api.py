@@ -130,6 +130,182 @@ def test_too_large_upload():
     assert r.status_code == 413 and "文件过大" in r.get_json()["message"]
 
 
+def test_day_trades_pairs_open_and_close_fifo_and_splits_by_day():
+    from test_review import GROSS_D, make_detail_sheet, ROWS_D
+    rid = upload(make_detail_sheet(ROWS_D), "settlement.xlsx").get_json()["reviewId"]
+    j = client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-22").get_json()
+    assert j["success"] and j["day"] == "2026-10-22" and j["days"] == ["2026-10-22"]
+    by = {s["symbol"]: s["trades"] for s in j["symbols"]}
+    assert sorted(by) == ["FU2611", "IF2611", "rb2610"]
+
+    # FU：夜盘买开 6 手，同刻分 3 笔平（1+2+3 手，价格 2910/2912/2914）→ 开仓时间、平仓时间相同，合并成 1 笔：
+    # 6 手，平仓价取按手数加权的均价 (2910*1+2912*2+2914*3)/6 = 2912.67，盈亏相加 100+240+420 = 760
+    fu = by["FU2611"]
+    big = [t for t in fu if t["openTime"] == "2026-10-21 21:25:05"]
+    assert len(big) == 1 and big[0]["lots"] == 6 and big[0]["fills"] == 3
+    assert big[0]["side"] == "多" and big[0]["openPrice"] == 2900 and big[0]["closePrice"] == 2912.67
+    assert big[0]["pnl"] == 760.0, "有平仓盈亏列：按文件里的值，合并后相加，和资金曲线合并后的那一笔一致"
+    # 次日买开 1 手 → 同刻卖平：盈亏 -50
+    assert any(t["openTime"] == "2026-10-22 09:01:00" and t["closeTime"] == "2026-10-22 09:15:00" and t["pnl"] == -50.0
+               for t in fu)
+    # rb 夜盘卖开 → 买平，是空单
+    rb = by["rb2610"]
+    short = next(t for t in rb if t["side"] == "空")
+    assert short["openTime"] == "2026-10-21 21:05:00" and short["closeTime"] == "2026-10-21 22:10:30" and short["pnl"] == 200.0
+    # 所有已平仓交易的盈亏之和 = 资金曲线的毛盈亏
+    closed = [t for s in j["symbols"] for t in s["trades"] if t["closeTime"]]
+    assert round(sum(t["pnl"] for t in closed), 2) == GROSS_D
+    # 夜盘（真实 10-21）属于 10-22 交易日，开仓、平仓都算在当天
+    assert all(t["openInDay"] and t["closeInDay"] for t in closed)
+    # 品种筛选；没有成交的交易日返回空列表而不是报错
+    only = client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-22&products=IF").get_json()
+    assert [s["symbol"] for s in only["symbols"]] == ["IF2611"]
+    assert client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-23").get_json()["symbols"] == []
+    assert client.get(f"/api/review/day-trades?reviewId={rid}").status_code == 400
+    assert client.get("/api/review/day-trades?reviewId=nope&day=2026-10-22").status_code == 404
+
+
+def test_day_trades_merges_same_time_on_both_ends_with_weighted_prices():
+    # 同一时刻分两笔开仓（价格不同）、之后同一时刻一笔平掉：先进先出会拆成两条，开仓时间和平仓时间都相同 → 合并
+    # 另一组开仓时间不同、平仓时间相同 → 不能合并（开仓点在不同的 K 线上）
+    from test_review import make_xlsx
+    rows = [
+        ["2026-10-21 09:00:00", "FU2611", "买", "开", 2900, 1, 1.0],
+        ["2026-10-21 09:00:00", "FU2611", "买", "开", 2910, 3, 1.0],
+        ["2026-10-21 09:30:00", "FU2611", "卖", "平", 2920, 4, 1.0],
+        ["2026-10-21 10:00:00", "FU2611", "买", "开", 2900, 1, 1.0],
+        ["2026-10-21 10:05:00", "FU2611", "买", "开", 2900, 1, 1.0],
+        ["2026-10-21 10:30:00", "FU2611", "卖", "平", 2910, 2, 1.0],
+    ]
+    header = ["成交时间", "合约", "买卖", "开平", "成交价", "手数", "手续费"]
+    rid = upload(make_xlsx(rows, header), "r.xlsx").get_json()["reviewId"]
+    t = client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-21").get_json()["symbols"][0]["trades"]
+    # 没有“平仓盈亏”列：按价差×乘数(10)×手数计算
+    a = next(x for x in t if x["openTime"] == "2026-10-21 09:00:00")
+    assert a["lots"] == 4 and a["fills"] == 2
+    assert a["openPrice"] == 2907.5, "(2900*1 + 2910*3) / 4"
+    assert a["closePrice"] == 2920 and a["pnl"] == (2920 - 2900) * 1 * 10 + (2920 - 2910) * 3 * 10 == 500.0
+    others = [x for x in t if x["openTime"] != "2026-10-21 09:00:00"]
+    assert [x["openTime"][11:] for x in others] == ["10:00:00", "10:05:00"], "开仓时间不同，各自一条"
+    assert all(x["lots"] == 1 and x["fills"] == 1 for x in others)
+    # 合并只改变条数，不改变总手数和总盈亏
+    assert sum(x["lots"] for x in t) == 6 and round(sum(x["pnl"] for x in t), 2) == 500.0 + 100.0 + 100.0
+
+
+def test_day_trades_overnight_position_and_pnl_computed_without_file_pnl():
+    # 没有“平仓盈亏”列时按价差×乘数×手数计算；隔夜持仓：开仓在前一个交易日，平仓在后一个
+    from test_review import HEADER_A, make_xlsx
+    rows = [
+        ["2026-10-20 10:00:00", "FU2611", "买", "开", 2900, 2, 1.0],
+        ["2026-10-21 09:30:00", "FU2611", "卖", "平", 2910, 1, 1.0],
+        ["2026-10-21 10:00:00", "FU2611", "卖", "平", 2890, 1, 1.0],
+    ]
+    header = ["成交时间", "合约", "买卖", "开平", "成交价", "手数", "手续费"]
+    rid = upload(make_xlsx(rows, header), "r.xlsx").get_json()["reviewId"]
+    j = client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-21").get_json()
+    t = j["symbols"][0]["trades"]
+    assert [x["pnl"] for x in t] == [100.0, -100.0]          # (2910-2900)*1*10，(2890-2900)*1*10
+    assert all(x["openTime"] == "2026-10-20 10:00:00" and not x["openInDay"] and x["closeInDay"] for x in t)
+    assert j["days"] == ["2026-10-20", "2026-10-21"]
+    # 开仓那一天也能看到这两笔：开仓在当天，平仓在之后的交易日
+    prev = client.get(f"/api/review/day-trades?reviewId={rid}&day=2026-10-20").get_json()
+    assert len(prev["symbols"][0]["trades"]) == 2
+    assert all(x["openInDay"] and not x["closeInDay"] for x in prev["symbols"][0]["trades"])
+
+
+def _fake_bars(start, n, freq):
+    import pandas as pd
+    t = pd.date_range(start, periods=n, freq=freq)
+    return pd.DataFrame({"datetime": t, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 3, "hold": 9})
+
+
+def _with_fake_sina(by_period, calls=None):
+    """把 akshare 的新浪分钟线接口换成离线假数据：by_period 是 {周期: DataFrame 或 异常}。"""
+    import akshare as ak
+    orig = ak.futures_zh_minute_sina
+
+    def fake(symbol, period):
+        if calls is not None:
+            calls.append(period)
+        v = by_period.get(period)
+        if isinstance(v, Exception):
+            raise v
+        return v if v is not None else _fake_bars("2000-01-01", 0, "1min")
+    ak.futures_zh_minute_sina = fake
+    return lambda: setattr(ak, "futures_zh_minute_sina", orig)
+
+
+def test_day_kline_uses_finest_period_that_fully_covers_the_day():
+    import pandas as pd
+    # 1 分钟线从 10-21 夜盘 21:00 开始（该交易日 10-22 的第一根就是整份数据的第一根 → 开头被截断，不完整）
+    # 5 分钟线更早开始 → 完整，用它；交易日口径：夜盘 21:00 属于 10-22
+    one = _fake_bars("2026-10-21 21:00", 6, "1min")
+    five = pd.concat([_fake_bars("2026-10-20 09:00", 3, "5min"), _fake_bars("2026-10-21 21:00", 3, "5min"),
+                      _fake_bars("2026-10-22 09:00", 3, "5min")], ignore_index=True)
+    calls = []
+    restore = _with_fake_sina({"1": one, "5": five}, calls)
+    try:
+        j = client.get("/api/review/day-kline?symbol=SHFE.FU2611&day=2026-10-22").get_json()
+    finally:
+        restore()
+    assert j["success"] and j["available"] and j["symbol"] == "FU2611"
+    assert j["period"] == 5 and j["partial"] is False and j["count"] == 6, "1 分钟被截断，降级到完整的 5 分钟"
+    assert j["data"][0]["time"] == "2026-10-21 21:00:00" and j["data"][-1]["time"] == "2026-10-22 09:10:00"
+    assert calls == ["1", "5"], "找到完整的就停，不再请求更长的周期"
+
+
+def test_day_kline_one_minute_when_complete_and_partial_when_nothing_is_complete():
+    import pandas as pd
+    # 1 分钟完整（这个交易日前面还有更早的数据）→ 直接用 1 分钟，只请求一次
+    one = pd.concat([_fake_bars("2026-10-21 09:00", 3, "1min"), _fake_bars("2026-10-21 21:00", 3, "1min")],
+                    ignore_index=True)
+    calls = []
+    restore = _with_fake_sina({"1": one}, calls)
+    try:
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
+    finally:
+        restore()
+    assert j["period"] == 1 and j["partial"] is False and calls == ["1"]
+
+    # 每个周期里这一天都是最早的数据（都被截断）→ 取最细的 1 分钟，标 partial
+    same = _fake_bars("2026-10-21 21:00", 3, "1min")
+    restore = _with_fake_sina({p: same for p in ("1", "5", "15", "30", "60")})
+    try:
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
+    finally:
+        restore()
+    assert j["available"] and j["period"] == 1 and j["partial"] is True
+
+
+def test_day_kline_unavailable_lists_ranges_and_handles_errors():
+    # 所有周期都没有这一天：不是错误，available=False，message 里写清各周期能取到的范围
+    bars = {p: _fake_bars("2026-11-04 09:00", 3, "1min") for p in ("1", "5", "15", "30", "60")}
+    restore = _with_fake_sina(bars)
+    try:
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-01").get_json()
+    finally:
+        restore()
+    assert j["success"] and j["available"] is False and "2026-10-01" in j["message"]
+    assert "1分钟 11-04" in j["message"] and "60分钟" in j["message"]
+
+    # 个别周期出错（网络抖动）不影响用其它周期；全部出错才是 502
+    five = _fake_bars("2026-10-20 09:00", 2, "5min")
+    five = __import__("pandas").concat([five, _fake_bars("2026-10-22 09:00", 2, "5min")], ignore_index=True)
+    restore = _with_fake_sina({"1": RuntimeError("boom"), "5": five})
+    try:
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
+    finally:
+        restore()
+    assert j["available"] and j["period"] == 5
+    restore = _with_fake_sina({p: RuntimeError("boom") for p in ("1", "5", "15", "30", "60")})
+    try:
+        r = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22")
+    finally:
+        restore()
+    assert r.status_code == 502 and "boom" in r.get_json()["message"]
+    assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

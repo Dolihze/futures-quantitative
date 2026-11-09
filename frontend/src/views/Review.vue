@@ -131,10 +131,16 @@
         </div>
       </aside>
 
-      <!-- 右侧：盈亏曲线 -->
+      <!-- 右侧：盈亏曲线 / 当天 K 线 -->
       <div class="chart-container">
         <div class="chart-header">
-          <h2>账户盈亏曲线</h2>
+          <div class="view-switch">
+            <h2>{{ viewMode === 'curve' ? '账户盈亏曲线' : '当天交易回放' }}</h2>
+            <el-radio-group v-model="viewMode" size="small">
+              <el-radio-button value="curve">资金曲线</el-radio-button>
+              <el-radio-button value="kline">当天K线</el-radio-button>
+            </el-radio-group>
+          </div>
           <div class="data-info" v-if="fileInfo">
             <div class="info-item">
               <span class="info-label">品种:</span>
@@ -147,7 +153,15 @@
           </div>
         </div>
 
-        <div class="chart-wrapper">
+        <!-- 当天 K 线：用 v-if 而不是 v-show，ECharts 容器在隐藏时宽度为 0，初始化出来的图是空的 -->
+        <ReviewKline
+          v-if="viewMode === 'kline'"
+          :review-id="fileInfo?.reviewId || ''"
+          :products="selectedProducts"
+          :days="tradingDays"
+        />
+
+        <div v-show="viewMode === 'curve'" class="chart-wrapper">
           <div ref="chartRef" class="pnl-chart"></div>
 
           <!-- 空状态 / 提示 -->
@@ -187,6 +201,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import { uploadReviewFile, getReviewCurve, logout } from '@/api'
 import { useUserStore } from '@/stores/user'
+import ReviewKline from './ReviewKline.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -202,6 +217,15 @@ const range = ref(null)            // ['YYYY-MM-DD', 'YYYY-MM-DD']
 const selectedProducts = ref([])   // 空 = 全部
 const includeFee = ref(true)
 const curve = ref(null)            // { points, stats, trades }
+
+// 右侧视图：资金曲线 / 当天 K 线
+const viewMode = ref('curve')
+// 当天 K 线能选的交易日 = 文件里有成交的交易日，且在左侧“时间范围”之内
+const tradingDays = computed(() => {
+  const all = fileInfo.value?.days || []
+  if (!range.value) return all
+  return all.filter((d) => d >= range.value[0] && d <= range.value[1])
+})
 
 const stats = computed(() => curve.value?.stats || {})
 // 实际是否扣了手续费：用户勾选了，并且文件里确实有手续费数据
@@ -743,6 +767,13 @@ function renderChart() {
 }
 
 const handleResize = () => chart && chart.resize()
+
+// 从 K 线视图切回资金曲线：图表容器之前被 display:none 隐藏过，尺寸要重新量一次
+watch(viewMode, async (mode) => {
+  if (mode !== 'curve') return
+  await nextTick()
+  chart && chart.resize()
+})
 
 // ---------- 数据流程 ----------
 // 从 axios 错误里取出后端给的可读提示（silent 请求不会弹全局提示，需要页面自己展示）

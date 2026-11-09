@@ -74,6 +74,27 @@ export function getReviewCurve(params) {
   })
 }
 
+// 交易复盘：某个交易日的所有交易（开仓/平仓已配对，按合约分组）
+export function getReviewDayTrades(params) {
+  return request({
+    url: '/api/review/day-trades',
+    method: 'get',
+    params,
+    silent: true
+  })
+}
+
+// 交易复盘：某个合约在某个交易日的 1 分钟 K 线（新浪数据，只有最近几个交易日）
+export function getReviewDayKline(params) {
+  return request({
+    url: '/api/review/day-kline',
+    method: 'get',
+    params,
+    timeout: 60000,
+    silent: true
+  })
+}
+
 // 量化账号登录
 export function quantLogin(data) {
   return request({

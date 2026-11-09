@@ -281,6 +281,12 @@
   font-size: 20px;
 }
 
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .data-info {
   display: flex;
   gap: 24px;

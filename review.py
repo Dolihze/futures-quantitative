@@ -1,4 +1,4 @@
-﻿"""交易复盘：解析期货公司导出的交易记录 Excel，并生成累计平仓盈亏曲线。
+"""交易复盘：解析期货公司导出的交易记录 Excel，并生成累计平仓盈亏曲线。
 
 只依赖 pandas / openpyxl / xlrd，不依赖 Flask，便于单独测试。
 
@@ -371,6 +371,8 @@ class ReviewResult:
     warnings: list[str] = field(default_factory=list)
     # 文件里是否有手续费数据。没有时前端应禁用“扣除手续费”，而不是让它看起来生效了
     has_fee: bool = True
+    # 文件里有成交的全部交易日（升序，YYYY-MM-DD）：当天 K 线视图的日期选择用
+    days: list[str] = field(default_factory=list)
 
 
 def analyze(file_bytes: bytes, filename: str = "") -> ReviewResult:
@@ -399,6 +401,7 @@ def analyze(file_bytes: bytes, filename: str = "") -> ReviewResult:
         end=df["time"].map(trading_day).max().strftime("%Y-%m-%d %H:%M:%S"),
         warnings=list(dict.fromkeys(warnings)),
         has_fee=bool((df["fee"] != 0).any()),
+        days=sorted(df["time"].map(trading_day).dt.strftime("%Y-%m-%d").unique().tolist()),
     )
 
 
@@ -667,3 +670,121 @@ def _num(v: float):
 def _empty_stats() -> dict:
     return {"totalPnl": 0.0, "grossPnl": 0.0, "totalFee": 0.0, "closeCount": 0, "winCount": 0,
             "lossCount": 0, "winRate": 0.0, "maxDrawdown": 0.0, "maxProfit": 0.0, "maxLoss": 0.0}
+
+
+# ---------------------------------------------------------------------------
+# 当天 K 线复盘：把每一笔开仓和平仓配成一笔“交易”
+# ---------------------------------------------------------------------------
+def pair_trades(df: pd.DataFrame) -> list[dict]:
+    """按合约先进先出，把开仓和平仓配成一笔笔交易（一笔平仓可能对应多笔开仓，会拆开）。
+
+    要求 df 已按交易时段排好序，且带有 is_close / pnl 列（analyze 已处理）。
+    平仓方向与持仓相反：买平 = 平空仓，卖平 = 平多仓。
+    每笔交易的盈亏：文件里有“平仓盈亏”时，按手数把平仓行的盈亏分摊到它对应的各笔开仓上
+    （这样和资金曲线、Excel 的汇总一致）；否则按价差 × 合约乘数 × 手数计算。
+    没有找到对应开仓的平仓（开仓在文件之前）：open_time 为 None，盈亏仍取平仓行的值。
+    """
+    long_q: dict[str, deque] = defaultdict(deque)    # 合约 -> deque[[开仓时间, 价格, 剩余手数, 费用]]
+    short_q: dict[str, deque] = defaultdict(deque)
+    trades: list[dict] = []
+    has_file_pnl = bool((df["pnl"] != 0).any())
+
+    for row in df.itertuples(index=False):
+        sym, lots, price, d, t = row.symbol, float(row.volume), float(row.price), row.direction, row.time
+        mult = CONTRACT_MULTIPLIER.get(row.product, DEFAULT_MULTIPLIER)
+        if not row.is_close:
+            (long_q if d == "买" else short_q)[sym].append([t, price, lots])
+            continue
+
+        # 买平 = 平空仓（队列是 short_q），卖平 = 平多仓
+        queue = short_q[sym] if d == "买" else long_q[sym]
+        side = "空" if d == "买" else "多"
+        remaining, total_lots = lots, lots
+        while remaining > 1e-9:
+            if queue:
+                o_time, o_price, o_lots = queue[0]
+                matched = min(remaining, o_lots)
+                queue[0][2] -= matched
+                if queue[0][2] <= 1e-9:
+                    queue.popleft()
+            else:
+                o_time, o_price, matched = None, None, remaining   # 找不到对应开仓
+            if has_file_pnl:
+                pnl = float(row.pnl) * matched / total_lots
+            elif o_price is not None:
+                pnl = ((o_price - price) if side == "空" else (price - o_price)) * matched * mult
+            else:
+                pnl = 0.0
+            trades.append({
+                "symbol": str(sym), "side": side, "lots": matched,
+                "openTime": o_time, "openPrice": o_price, "closeTime": t, "closePrice": price, "pnl": pnl,
+            })
+            remaining -= matched
+    return trades
+
+
+def merge_paired_trades(trades: list[dict]) -> list[dict]:
+    """把配对后“开仓时间、平仓时间、合约、方向都相同”的交易合并成一条，对应资金曲线的 _merge_same_time。
+
+    先进先出会把同一时刻的几笔成交拆成几条（例如同一时刻分三笔平 1+2+3 手，或一笔平仓吃掉同一时刻的几笔开仓），
+    它们在 K 线上落在同一根 K 线，开仓点、平仓点和连线会叠在一起，悬停也只能看到最上面一条。
+    合并后：手数、盈亏相加；开仓价、平仓价取按手数加权的均价；fills 记录合并了几条。
+    开仓时间为 None（找不到对应开仓）的按平仓时间合并。保持首次出现的顺序。
+    """
+    merged: dict[tuple, dict] = {}
+    for tr in trades:
+        key = (tr["symbol"], tr["side"], tr["openTime"], tr["closeTime"])
+        m = merged.get(key)
+        if m is None:
+            merged[key] = {**tr, "fills": 1,
+                           "_open_notional": (tr["openPrice"] or 0.0) * tr["lots"],
+                           "_close_notional": tr["closePrice"] * tr["lots"]}
+            continue
+        m["lots"] += tr["lots"]
+        m["pnl"] += tr["pnl"]
+        m["fills"] += 1
+        m["_open_notional"] += (tr["openPrice"] or 0.0) * tr["lots"]
+        m["_close_notional"] += tr["closePrice"] * tr["lots"]
+    out = []
+    for m in merged.values():
+        m["closePrice"] = m.pop("_close_notional") / m["lots"]
+        open_notional = m.pop("_open_notional")
+        m["openPrice"] = None if m["openTime"] is None else open_notional / m["lots"]
+        out.append(m)
+    return out
+
+
+def build_day_trades(records: pd.DataFrame, day: str, products: list[str] | None = None) -> dict:
+    """某个交易日的所有交易（按合约分组），用于在 K 线上标注。
+
+    配对使用文件里的全部记录（隔夜持仓的开仓在前一个交易日），再取“开仓或平仓落在这个交易日”的交易。
+    返回 {"day", "symbols": [{"symbol", "trades": [...]}], "days": [文件里有成交的全部交易日]}。
+    """
+    df = records
+    if products:
+        df = df[df["product"].isin(products)]
+    df = _sort_by_session(df)
+    tday = df["time"].map(trading_day).dt.strftime("%Y-%m-%d")
+    days = sorted(tday.unique().tolist())
+    target = pd.to_datetime(day).strftime("%Y-%m-%d")   # 非法日期抛 ValueError（接口返回 400）
+
+    def fmt(t):
+        return None if t is None else t.strftime("%Y-%m-%d %H:%M:%S")
+
+    by_symbol: dict[str, list[dict]] = defaultdict(list)
+    for tr in merge_paired_trades(pair_trades(df)):
+        in_day = lambda t: t is not None and trading_day(t).strftime("%Y-%m-%d") == target
+        if not (in_day(tr["openTime"]) or in_day(tr["closeTime"])):
+            continue
+        by_symbol[tr["symbol"]].append({
+            "side": tr["side"], "lots": _num(tr["lots"]),
+            # 合并后的均价保留两位小数（期货最小变动价位最多到 0.01 的量级，再多位数只是均价的除不尽）
+            "openTime": fmt(tr["openTime"]),
+            "openPrice": None if tr["openPrice"] is None else _num(round(tr["openPrice"], 2)),
+            "closeTime": fmt(tr["closeTime"]), "closePrice": _num(round(tr["closePrice"], 2)),
+            "pnl": round(tr["pnl"], 2), "fills": tr["fills"],
+            # 开仓 / 平仓是否落在这个交易日：不在当天的那一端画不到当天的 K 线上
+            "openInDay": in_day(tr["openTime"]), "closeInDay": in_day(tr["closeTime"]),
+        })
+    symbols = [{"symbol": s, "trades": ts} for s, ts in sorted(by_symbol.items())]
+    return {"day": target, "days": days, "symbols": symbols}
