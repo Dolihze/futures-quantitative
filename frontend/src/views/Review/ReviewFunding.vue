@@ -554,7 +554,8 @@ function renderChart() {
       backgroundColor: '#16213e',
       animation: points.length < 5000,
       // bottom 要给 x 轴标签（序号 + 日期两行）和下方的缩放滑块都留出位置
-      grid: { left: 70, right: 56, top: 30, bottom: 96 },
+      // top 30 -> 40：y 轴标题「累计盈亏（元）」随绘图区下移，它上方多留 10px
+      grid: { left: 70, right: 56, top: 40, bottom: 96 },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross' },

@@ -271,20 +271,67 @@
 .chart-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   margin-bottom: 15px;
   flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.18);
 }
 
-.chart-header h2 {
+/* 标题区即 Tab 栏：两个大标签页（账户盈亏曲线 / 当天交易回放） */
+.view-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.view-tab {
+  position: relative;
+  padding: 12px 28px;
+  margin-bottom: -1px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #8892a6;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.view-tab:hover {
+  color: #e2e8f0;
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.view-tab.active {
   color: #00d4ff;
-  font-size: 20px;
+  background: #16213e;
+  border-color: rgba(0, 212, 255, 0.18);
 }
 
-.view-switch {
+.view-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  border-radius: 10px 10px 0 0;
+  background: #00d4ff;
+}
+
+.chart-header .data-info {
+  padding-bottom: 8px;
+}
+
+.chart-header .info-item {
   display: flex;
   align-items: center;
-  gap: 16px;
+}
+
+.chart-header .product-select {
+  width: 130px;
 }
 
 .data-info {

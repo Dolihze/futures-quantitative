@@ -134,30 +134,57 @@
       <!-- 右侧：盈亏曲线 / 当天 K 线 -->
       <div class="chart-container">
         <div class="chart-header">
-          <div class="view-switch">
-            <h2>{{ viewMode === 'curve' ? '账户盈亏曲线' : '当天交易回放' }}</h2>
-            <el-radio-group v-model="viewMode" size="small">
-              <el-radio-button value="curve">资金曲线</el-radio-button>
-              <el-radio-button value="kline">当天K线</el-radio-button>
-            </el-radio-group>
+          <div class="view-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              class="view-tab"
+              :class="{ active: viewMode === 'curve' }"
+              :aria-selected="viewMode === 'curve'"
+              @click="viewMode = 'curve'"
+            >
+              账户盈亏曲线
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="view-tab"
+              :class="{ active: viewMode === 'kline' }"
+              :aria-selected="viewMode === 'kline'"
+              @click="viewMode = 'kline'"
+            >
+              当天交易回放
+            </button>
           </div>
           <div class="data-info" v-if="fileInfo">
             <div class="info-item">
               <span class="info-label">品种:</span>
-              <span class="info-value">{{ productLabel }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">成交:</span>
-              <span class="info-value">{{ curve ? curve.trades : 0 }} 笔</span>
+              <!-- 曲线 Tab：只有「全部」一个选项（不可改）；回放 Tab：选项是导入文件里包含的品种 -->
+              <el-select
+                v-if="viewMode === 'kline'"
+                v-model="klineProduct"
+                size="small"
+                class="product-select"
+                :disabled="!fileInfo.products.length"
+              >
+                <el-option v-for="p in fileInfo.products" :key="p" :label="p" :value="p" />
+              </el-select>
+              <el-select v-else model-value="" size="small" class="product-select" disabled placeholder="全部">
+                <el-option label="全部" value="" />
+              </el-select>
             </div>
           </div>
         </div>
 
-        <!-- 当天 K 线：用 v-if 而不是 v-show，ECharts 容器在隐藏时宽度为 0，初始化出来的图是空的 -->
+        <!-- 当天交易回放：第一次打开 Tab 时才挂载（此时才请求接口），之后用 v-show 保留组件和数据，
+             切回来不再重复请求。不能一开始就挂载：ECharts 容器在隐藏时宽度为 0，初始化出来的图是空的；
+             而一旦挂载过，隐藏再显示时组件内的 ResizeObserver 会自动重新量尺寸 -->
         <ReviewKline
-          v-if="viewMode === 'kline'"
+          v-if="klineVisited"
+          v-show="viewMode === 'kline'"
+          :active="viewMode === 'kline'"
           :review-id="fileInfo?.reviewId || ''"
-          :products="selectedProducts"
+          :products="klineProducts"
           :days="tradingDays"
         />
 
@@ -202,6 +229,24 @@ const curve = ref(null)            // { points, stats, trades }
 
 // 右侧视图：资金曲线 / 当天 K 线
 const viewMode = ref('curve')
+// 当天交易回放是否打开过：打开过就一直保留组件（缓存），不再卸载重载
+const klineVisited = ref(false)
+watch(viewMode, (mode) => {
+  if (mode === 'kline') klineVisited.value = true
+})
+// 当天交易回放选中的品种（右上角下拉框）：选项是导入文件里包含的品种，导入新文件时默认选第一个。
+// 它独立于左侧「交易品种」筛选（那个只影响账户盈亏曲线）
+const klineProduct = ref('')
+// 传给回放组件的品种数组用 computed 缓存：模板里直接写 [klineProduct] 每次渲染都会生成新数组
+const klineProducts = computed(() => (klineProduct.value ? [klineProduct.value] : []))
+watch(
+  () => fileInfo.value?.products,
+  (list) => {
+    if (!list?.length) klineProduct.value = ''
+    else if (!list.includes(klineProduct.value)) klineProduct.value = list[0]
+  },
+  { immediate: true }
+)
 // 当天 K 线能选的交易日 = 文件里有成交的交易日，且在左侧“时间范围”之内
 const tradingDays = computed(() => {
   const all = fileInfo.value?.days || []
@@ -212,11 +257,6 @@ const tradingDays = computed(() => {
 const stats = computed(() => curve.value?.stats || {})
 // 实际是否扣了手续费：用户勾选了，并且文件里确实有手续费数据
 const feeApplied = computed(() => includeFee.value && !!fileInfo.value?.hasFee)
-const productLabel = computed(() => {
-  const all = fileInfo.value?.products || []
-  if (!selectedProducts.value.length || selectedProducts.value.length === all.length) return '全部'
-  return selectedProducts.value.join('、')
-})
 
 // ---------- 格式化（红涨绿跌，与项目其它页面一致）----------
 const plain = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

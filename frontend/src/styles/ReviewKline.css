@@ -8,38 +8,25 @@
   flex: 1;
   min-height: 0;
 }
-.kline-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 0 10px;
-}
-.kline-legend {
-  margin-left: auto;
-  color: #94a3b8;
-  font-size: 12px;
-}
-.kline-legend .lg {
-  font-style: normal;
-  margin: 0 4px 0 12px;
-}
-.lg-buy {
-  color: #dc2626;
-}
-.lg-sell {
-  color: #16a34a;
-}
-/* 盈利 / 亏损的图例是连线的颜色（和脚本里的 UP / DOWN 保持一致） */
-.lg-win {
-  color: #dc2626;
-}
-.lg-loss {
-  color: #16a34a;
-}
+/* 黄色提示（el-alert warning）：宽度只包住内容（el-alert 默认 width:100%，在 flex 列里要显式收窄并靠左），
+   和下面的图表隔开一点；换成深色背景以适配页面的深色主题 */
 .kline-notice {
+  margin: 0 0 10px;
+  width: fit-content;
+  max-width: 100%;
+  align-self: flex-start;
+  flex-shrink: 0;
+  background: rgba(251, 191, 36, 0.12);
+  --el-alert-title-font-size: 13px;
+}
+/* 关闭按钮是绝对定位（不占宽度），宽度按内容收缩时文字会压到 ×；给内容区右侧留出按钮的位置 */
+.kline-notice :deep(.el-alert__content) {
+  padding-right: 24px;
+}
+.kline-notice :deep(.el-alert__title),
+.kline-notice :deep(.el-alert__icon),
+.kline-notice :deep(.el-alert__close-btn) {
   color: #fbbf24;
-  font-size: 12px;
-  padding: 0 0 8px;
 }
 /* 鼠标所在 K 线的信息面板：固定在图表右上角，半透明黑底、没有边框、直角（订单提示框是 ECharts 自带的，带蓝色边框）。
    pointer-events: none：不挡鼠标，否则鼠标移到面板上会被当成离开图表，面板自己就闪没了 */

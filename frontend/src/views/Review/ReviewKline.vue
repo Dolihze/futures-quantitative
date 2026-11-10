@@ -1,27 +1,16 @@
 <template>
   <div class="kline-view">
-    <div class="kline-toolbar">
-      <el-select v-model="day" placeholder="选择交易日" size="small" style="width: 150px" :disabled="!days.length">
-        <el-option v-for="d in daysDesc" :key="d" :label="d" :value="d" />
-      </el-select>
-      <el-select
-        v-model="symbol"
-        placeholder="选择合约"
-        size="small"
-        style="width: 150px"
-        :disabled="!symbols.length"
-      >
-        <el-option v-for="s in symbols" :key="s.symbol" :label="`${s.symbol}（${s.trades.length} 笔）`" :value="s.symbol" />
-      </el-select>
-      <span class="kline-legend">
-        <i class="lg lg-buy">▲●</i>做多（▲开仓 ●平仓）
-        <i class="lg lg-sell">▼●</i>做空（▼开仓 ●平仓）
-        <i class="lg lg-win">━</i>盈利
-        <i class="lg lg-loss">━</i>亏损
-      </span>
-    </div>
-
-    <div v-if="notice" class="kline-notice">⚠ {{ notice }}</div>
+    <!-- 黄色提示（可关闭）；品种由页面右上角的下拉框选择。
+         key 绑定提示内容：换了一条新提示时组件重建，之前被关掉的提示不会把新提示一起吞掉 -->
+    <el-alert
+      v-if="notice"
+      :key="notice"
+      class="kline-notice"
+      type="warning"
+      :title="notice"
+      show-icon
+      @close="notice = ''"
+    />
 
     <div class="kline-body">
       <div ref="chartRef" class="kline-chart"></div>
@@ -42,7 +31,7 @@
       <div v-else-if="!loading && !symbols.length" class="chart-empty">
         <div class="empty-icon">🔍</div>
         <div class="empty-title">{{ day }} 没有成交记录</div>
-        <div class="empty-desc">请换一个交易日，或检查左侧的交易品种筛选</div>
+        <div class="empty-desc">请调整左侧的时间范围，或在右上角换一个品种</div>
       </div>
       <div v-else-if="!loading && klineUnavailable" class="chart-empty">
         <div class="empty-icon">🕯️</div>
@@ -69,8 +58,9 @@ import { getReviewDayTrades, getReviewDayKline } from '@/api'
 
 const props = defineProps({
   reviewId: { type: String, default: '' },
-  products: { type: Array, default: () => [] },   // 左侧筛选的品种，空 = 全部
-  days: { type: Array, default: () => [] }        // 文件里有成交的全部交易日（升序）
+  products: { type: Array, default: () => [] },   // 页面右上角选中的品种（回放页只看这个品种），空 = 全部
+  days: { type: Array, default: () => [] },       // 文件里有成交的全部交易日（升序）
+  active: { type: Boolean, default: true }        // 当前 Tab 是否可见；隐藏时筛选变化不立刻请求，等切回来再刷新
 })
 
 const chartRef = ref(null)
@@ -90,7 +80,6 @@ const kline = ref([])            // 当前合约当天的 K 线
 const hoverIndex = ref(-1)       // 鼠标所在的 K 线序号，-1 表示鼠标不在 K 线区域，右上角的信息面板隐藏
 const hoverBar = computed(() => kline.value[hoverIndex.value] || null)
 const period = ref(1)            // 实际取到的 K 线周期（分钟）
-const daysDesc = computed(() => [...props.days].reverse())
 
 const currentTrades = computed(() => symbols.value.find((s) => s.symbol === symbol.value)?.trades || [])
 
@@ -108,8 +97,8 @@ async function loadDay() {
     const res = await getReviewDayTrades({ reviewId: props.reviewId, day: day.value, products: props.products.join(',') })
     if (my !== seq) return
     symbols.value = res.symbols || []
-    // 保持已选合约；没有或不在当天的合约里时选第一个
-    if (!symbols.value.some((s) => s.symbol === symbol.value)) symbol.value = symbols.value[0]?.symbol || ''
+    // 合约由右上角选的品种决定：同一品种当天有多个合约时，取成交笔数最多的那个（并列取第一个，按合约代码排序）
+    symbol.value = symbols.value.reduce((best, s) => (!best || s.trades.length > best.trades.length ? s : best), null)?.symbol || ''
     if (!symbol.value) {
       kline.value = []
       renderChart()
@@ -152,20 +141,6 @@ async function loadKline(my) {
     klineUnavailable.value = e?.response?.data?.message || '获取 K 线失败，请检查网络后重试'
   }
   renderChart()
-}
-
-// 只换合约时不用重新取交易，只取这个合约的 K 线
-async function onSymbolChange() {
-  if (!symbol.value) return
-  const my = ++seq
-  loading.value = true
-  notice.value = ''
-  klineUnavailable.value = ''
-  try {
-    await loadKline(my)
-  } finally {
-    if (my === seq) loading.value = false
-  }
 }
 
 // ---------- 绘图 ----------
@@ -753,11 +728,29 @@ watch(
   },
   { immediate: true }
 )
-watch(() => [props.reviewId, props.products.join(','), day.value], () => loadDay())
-watch(symbol, (n, o) => {
-  // loadDay 里改合约不要重复请求；用户手动切合约才单独取 K 线
-  if (n && o && n !== o && !loading.value) onSymbolChange()
+// 缓存：组件常驻（切 Tab 不卸载），数据只在“依赖变了”时重新请求。
+// 隐藏期间依赖变了（比如在曲线 Tab 里改了筛选条件）只记脏标记，切回来才请求一次
+let stale = false
+// getter 必须返回原始值（字符串）而不是数组：返回数组时每次求值都是新引用，Vue 用 Object.is 比较，
+// 值没变也会判定“变了”而触发回调（父组件重新渲染、props.products 换了新数组引用就会这样），
+// 结果是隐藏期间被误打脏标记，切回 Tab 时白白重新请求一次
+const loadKey = computed(() => [props.reviewId, props.products.join(','), day.value].join('|'))
+watch(loadKey, () => {
+  if (!props.active) {
+    stale = true
+    return
+  }
+  stale = false
+  loadDay()
 })
+watch(
+  () => props.active,
+  (on) => {
+    if (!on || !stale) return
+    stale = false
+    loadDay()
+  }
+)
 
 onMounted(() => {
   // 不再 await nextTick()：onMounted 时模板已经渲染完，chartRef 一定有值；
