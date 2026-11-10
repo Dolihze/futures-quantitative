@@ -248,8 +248,24 @@ let chart = null
 // 当前图上的段（renderChart 每次更新）。缩放事件的回调要用它重算刻度
 let currentSegments = []
 
+// 鼠标在图表容器里最新的横向像素位置（相对图表左边缘），-1 表示鼠标不在图上。
+// 提示框要用它判断“鼠标是否靠近某个交易点”：axis 型提示框拿到的 axisValue 始终是吸附到最近数据点的值
+// （ECharts 源码 axisTrigger.js 里注明 Tooltip should always be snapToValue），不是鼠标的真实位置。
+// 用 DOM 捕获阶段监听：比 ZRender 内部的鼠标处理（以及挂在它上面的提示框）更早执行，所以提示框的 formatter 被调用时
+// 读到的已经是这一次移动的位置，而不是上一次的
+let mouseOffsetX = -1
+function onDomMouseMove(e) {
+  const rect = chartRef.value?.getBoundingClientRect()
+  mouseOffsetX = rect ? e.clientX - rect.left : -1
+}
+function onDomMouseLeave() {
+  mouseOffsetX = -1
+}
+
 function initChart() {
   chart = echarts.init(chartRef.value)
+  chartRef.value.addEventListener('mousemove', onDomMouseMove, true)
+  chartRef.value.addEventListener('mouseleave', onDomMouseLeave, true)
   // 缩放（滚轮、拖滑块）时，按“当前可见的范围”重新生成刻度、标签和段名：
   // 8 个交易日全显示时每段很窄，只能标日期；放大到一两天后每段有几百像素，所有边界时间标签才放得下。
   // 监听只在这里挂一次（renderChart 每次筛选都会调用，挂在那里会越积越多、一次缩放重算 N 次）。
@@ -335,6 +351,7 @@ function pnlVisualMap() {
 
 const pad2 = (n) => String(n).padStart(2, '0')
 const fmtHM = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+const fmtMDHMS = (d) => `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
 const fmtMD = (d) => `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 const parseTime = (s) => new Date(s.replace(' ', 'T'))
 const fmtFull = (iso) => iso.replace('T', ' ')
@@ -342,6 +359,26 @@ const fmtFull = (iso) => iso.replace('T', ' ')
 // 段内某个横坐标 x 对应的真实时刻
 function segTimeAt(seg, x) {
   return new Date(parseTime(seg.start).getTime() + (x - seg.x0) * 60000)
+}
+
+// 横轴上任意一个位置 x（轴单位，1 单位 = 1 分钟）对应的真实时刻，精确到秒。十字线在 X 轴上显示的标签用它。
+// 段与段之间有一段空隙（实际是每个休市间隔留的 14 个单位，用来画分隔线和交界标签），鼠标落在空隙里或轴两端的补白里时
+// 没有真实时间，取离得最近的段端点的时间（比如 10:15 和 10:30 之间显示较近的那个）。
+// 1 秒 = 1/60 单位，所以先换算成毫秒再四舍五入到整秒。
+function axisTimeAt(segments, x) {
+  if (!segments.length || !Number.isFinite(x)) return null
+  let seg = segments.find((s) => x >= s.x0 && x <= s.x1)
+  let xx = x
+  if (!seg) {
+    // 不在任何一段里：找离 x 最近的段，并把 x 夹到这一段的端点上
+    seg = segments.reduce((best, s) => {
+      const d = x < s.x0 ? s.x0 - x : x - s.x1
+      return d < best.d ? { s, d } : best
+    }, { s: segments[0], d: Infinity }).s
+    xx = Math.min(Math.max(x, seg.x0), seg.x1)
+  }
+  const ms = parseTime(seg.start).getTime() + (xx - seg.x0) * 60000
+  return new Date(Math.round(ms / 1000) * 1000)
 }
 
 const LABEL_PX = 56      // 一个 HH:mm 标签（含间距）大约占的像素
@@ -530,6 +567,19 @@ function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, 
       axisLine: { lineStyle: { color: '#475569' } },
       axisTick: { show: true, ...view.xAxis.axisTick },
       splitLine: { show: false },
+      // 十字线的竖线：不吸附交易点，连续地跟着鼠标走；X 轴上的标签显示这个位置的真实时间，精确到秒。
+      // snap 必须写在轴自己的 axisPointer 里：tooltip.axisPointer.snap 对“触发提示框的那根轴”无效，
+      // ECharts 在 modelHelper.js 里把它写死成 value 轴 + 触发提示框 = true，轴自己的配置才能覆盖它。
+      // 1 秒 = 1/60 个轴单位，竖线本身是连续的（一秒不到一个像素），秒级的颗粒度体现在标签上
+      axisPointer: {
+        snap: false,
+        label: {
+          formatter: (p) => {
+            const t = axisTimeAt(segments, Number(p.value))
+            return t ? fmtMDHMS(t) : ''
+          }
+        }
+      },
       axisLabel: {
         color: '#94a3b8',
         ...view.xAxis.axisLabel,
@@ -549,9 +599,11 @@ function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, 
     },
     tooltipFormatter: (items) => {
       if (!items || !items.length) return ''
-      // 十字线跟着鼠标走（可以停在任意横坐标），但只有鼠标靠近某个交易点的横坐标时才弹出详情。
-      // 鼠标所在的横坐标取自 axisPointer 的值（value 轴上就是鼠标的 x）。
-      const mouseX = Number(items[0].axisValue)
+      // 十字线跟着鼠标走（可以停在任意横坐标，不吸附交易点），但只有鼠标靠近某个交易点的横坐标时才弹出详情。
+      // 鼠标所在的横坐标不能取 items[0].axisValue：它始终是吸附到最近数据点的值，用它判断“靠近”永远成立。
+      // 改用 DOM 监听记下的鼠标真实像素位置，再换算成轴值。
+      if (mouseOffsetX < 0 || !chart) return ''
+      const mouseX = chart.convertFromPixel({ xAxisIndex: 0 }, mouseOffsetX)
       if (!Number.isFinite(mouseX)) return ''
       // 在“可见范围”内按像素判断是否靠近：放大后同样的像素距离对应更小的横坐标差
       const dz = chart?.getOption()?.dataZoom?.[0]
@@ -924,6 +976,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  chartRef.value?.removeEventListener('mousemove', onDomMouseMove, true)
+  chartRef.value?.removeEventListener('mouseleave', onDomMouseLeave, true)
   clearTimeout(filterTimer)
   if (chart) {
     chart.dispose()
