@@ -15,10 +15,10 @@
 #### 源文件（Vue组件）
 | 文件路径 | 原始状态 | 迁移后状态 |
 |---------|---------|-----------|
-| `src/views/Trading.vue` | ✅ 内嵌样式（约240行） | ✅ 外部CSS引用 |
-| `src/views/Home.vue` | ✅ 内嵌样式（约160行） | ✅ 外部CSS引用 |
-| `src/views/Backtest.vue` | ✅ 内嵌样式（约200行） | ✅ 外部CSS引用 |
-| `src/views/Login.vue` | ✅ 内嵌样式（约260行） | ✅ 外部CSS引用 |
+| `src/views/Trading/index.vue` | ✅ 内嵌样式（约240行） | ✅ 外部CSS引用 |
+| `src/views/Home/index.vue` | ✅ 内嵌样式（约160行） | ✅ 外部CSS引用 |
+| `src/views/Backtest/index.vue` | ✅ 内嵌样式（约200行） | ✅ 外部CSS引用 |
+| `src/views/Login/index.vue` | ✅ 内嵌样式（约260行） | ✅ 外部CSS引用 |
 
 #### 新增文件（CSS文件）
 | 文件路径 | 文件大小 | 说明 |

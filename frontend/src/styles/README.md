@@ -35,10 +35,10 @@ styles/
 ```
 
 例如：
-- `Trading.vue` → `@import '@/styles/Trading.css';`
-- `Home.vue` → `@import '@/styles/Home.css';`
-- `Backtest.vue` → `@import '@/styles/Backtest.css';`
-- `Login.vue` → `@import '@/styles/Login.css';`
+- `views/Trading/index.vue` → `@import '@/styles/Trading.css';`
+- `views/Home/index.vue` → `@import '@/styles/Home.css';`
+- `views/Backtest/index.vue` → `@import '@/styles/Backtest.css';`
+- `views/Login/index.vue` → `@import '@/styles/Login.css';`
 
 ### 添加新页面样式
 

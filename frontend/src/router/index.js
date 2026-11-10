@@ -4,31 +4,31 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/Login.vue'),
+    component: () => import('@/views/Login/index.vue'),
     meta: { requiresAuth: false }
   },
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/views/Home.vue'),
+    component: () => import('@/views/Home/index.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/trading',
     name: 'Trading',
-    component: () => import('@/views/Trading.vue'),
+    component: () => import('@/views/Trading/index.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/backtest',
     name: 'Backtest',
-    component: () => import('@/views/Backtest.vue'),
+    component: () => import('@/views/Backtest/index.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/review',
     name: 'Review',
-    component: () => import('@/views/Review.vue'),
+    component: () => import('@/views/Review/index.vue'),
     meta: { requiresAuth: true }
   }
 ]

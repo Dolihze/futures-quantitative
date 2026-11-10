@@ -58,11 +58,19 @@ frontend/
 │   │   └── user.js
 │   ├── utils/             # 工具函数
 │   │   └── request.js
-│   ├── views/             # 页面组件
-│   │   ├── Login.vue
-│   │   ├── Home.vue
-│   │   ├── Trading.vue
-│   │   └── Backtest.vue
+│   ├── views/             # 页面组件：每个页面一个文件夹，入口是 index.vue，页面私有的子组件放在同一个文件夹里
+│   │   ├── Login/
+│   │   │   └── index.vue
+│   │   ├── Home/
+│   │   │   └── index.vue
+│   │   ├── Trading/
+│   │   │   └── index.vue
+│   │   ├── Backtest/
+│   │   │   └── index.vue
+│   │   └── Review/        # 交易复盘
+│   │       ├── index.vue          # 页面（上传、筛选、统计、取数据）
+│   │       ├── ReviewFunding.vue  # 账户盈亏曲线
+│   │       └── ReviewKline.vue    # 当天交易回放（K 线）
 │   ├── App.vue            # 根组件
 │   └── main.js            # 入口文件
 ├── public/                # 公共静态资源
@@ -73,23 +81,23 @@ frontend/
 
 ## 🎨 页面说明
 
-### 登录页面 (Login.vue)
+### 登录页面 (views/Login/index.vue)
 - 期货交易账户登录
 - 期货公司选择（支持搜索）
 - 记住密码功能
 - 调试模式快捷入口
 
-### 首页 (Home.vue)
+### 首页 (views/Home/index.vue)
 - 功能模块导航
 - 交易和回测入口卡片
 - 用户信息展示
 
-### 交易页面 (Trading.vue)
+### 交易页面 (views/Trading/index.vue)
 - 实时行情数据展示（开发中）
 - 下单操作（开发中）
 - 持仓管理（开发中）
 
-### 回测页面 (Backtest.vue)
+### 回测页面 (views/Backtest/index.vue)
 - 历史数据回测（开发中）
 - 策略验证（开发中）
 - 绩效分析（开发中）
