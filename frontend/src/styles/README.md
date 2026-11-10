@@ -11,6 +11,8 @@ styles/
 ├── Home.css           # 首页样式
 ├── Backtest.css       # 回测页面样式
 ├── Login.css          # 登录页面样式
+├── Review.css         # 交易复盘页面样式（index.vue 和它的子组件共用的部分：布局、空状态、加载中等）
+├── ReviewKline.css    # 复盘页「当天交易回放」组件（ReviewKline.vue）自己的样式
 └── README.md          # 本说明文档
 ```
 
@@ -39,6 +41,8 @@ styles/
 - `views/Home/index.vue` → `@import '@/styles/Home.css';`
 - `views/Backtest/index.vue` → `@import '@/styles/Backtest.css';`
 - `views/Login/index.vue` → `@import '@/styles/Login.css';`
+- `views/Review/index.vue`、`views/Review/ReviewFunding.vue` → `@import '@/styles/Review.css';`
+- `views/Review/ReviewKline.vue` → 先 `@import '@/styles/Review.css';`（共用部分），再 `@import '@/styles/ReviewKline.css';`（自己的样式，顺序不能反）
 
 ### 添加新页面样式
 
