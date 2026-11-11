@@ -86,6 +86,13 @@
   --grid-line: rgba(59, 130, 246, 0.08);
   --glow-dot: rgba(59, 130, 246, 0.4);
   --tab-bg: rgba(255, 255, 255, 0.03);
+
+  /* 导航栏按钮（返回首页 / 主题切换）：深灰主题使用中性灰 */
+  --nav-btn-bg: rgba(255, 255, 255, 0.06);
+  --nav-btn-bg-hover: rgba(255, 255, 255, 0.12);
+  --nav-btn-border: rgba(161, 161, 170, 0.35);
+  --nav-btn-border-hover: rgba(161, 161, 170, 0.6);
+  --nav-btn-color: #d4d4d8;
 }
 
 /* ==================== 深蓝（原有配色） ==================== */
@@ -135,6 +142,13 @@
   --neutral: #f1f5f9;
 
   --spinner-track: #334155;
+
+  /* 导航栏按钮：深蓝主题使用蓝色 */
+  --nav-btn-bg: rgba(59, 130, 246, 0.1);
+  --nav-btn-bg-hover: rgba(59, 130, 246, 0.2);
+  --nav-btn-border: rgba(59, 130, 246, 0.3);
+  --nav-btn-border-hover: rgba(59, 130, 246, 0.5);
+  --nav-btn-color: #60a5fa;
 }
 
 /* ==================== 白色 ==================== */
@@ -206,6 +220,13 @@
   --grid-line: rgba(37, 99, 235, 0.08);
   --glow-dot: rgba(37, 99, 235, 0.35);
   --tab-bg: rgba(15, 23, 42, 0.04);
+
+  /* 导航栏按钮：白色主题使用白底深灰字 */
+  --nav-btn-bg: #ffffff;
+  --nav-btn-bg-hover: #f1f5f9;
+  --nav-btn-border: rgba(148, 163, 184, 0.8);
+  --nav-btn-border-hover: #94a3b8;
+  --nav-btn-color: #334155;
 }
 
 /* ==================== Element Plus 变量映射 ====================

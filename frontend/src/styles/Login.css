@@ -10,7 +10,7 @@
   align-items: center;
 }
 
-/* 动态背景网格 */
+/* 动��背景网栄1�7 */
 .login-container::before {
   content: '';
   position: absolute;
@@ -118,7 +118,7 @@
   margin-top: 6px;
 }
 
-/* 输入框容器 */
+/* 输入框容噄1�7 */
 .input-wrapper {
   position: relative;
   width: 100%;
@@ -252,20 +252,47 @@
   border-color: rgba(var(--orange-rgb), 0.6);
 }
 
+/* 统一表单控件尺寸：与 Element Plus 默认 el-select 一致 */
+.login-card {
+  --field-height: 32px;
+  --field-radius: 6px;
+}
+
 /* Element Plus 样式覆盖 */
 :deep(.el-form-item__label) {
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
-  margin-bottom: 8px;
+  /* 标签与右侧控件等高并垂直居中，保证中轴线平行 */
+  height: var(--field-height);
+  line-height: var(--field-height);
+  align-items: center;
+  margin-bottom: 0;
+}
+
+/* 表单项间距：为校验提示语预留空间 */
+:deep(.el-form-item) {
+  margin-bottom: 28px;
+}
+
+:deep(.el-form-item__error) {
+  font-size: 12px;
+  line-height: 1.4;
+  padding-top: 0;
+}
+
+/* 登录按钮所在的表单项不需要额外下边距 */
+:deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 
 :deep(.el-input__wrapper) {
   background: var(--bg-field);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--field-radius);
   box-shadow: none;
-  height: 46px;
+  box-sizing: border-box;
+  height: var(--field-height);
   padding-left: 42px;
 }
 
@@ -292,23 +319,44 @@
   width: 100%;
 }
 
-:deep(.custom-broker-select .el-input__wrapper) {
+/* Element Plus 2.5+ 中 el-select 使用 .el-select__wrapper（不再是 .el-input__wrapper） */
+:deep(.custom-broker-select .el-select__wrapper) {
+  box-sizing: border-box;
   background: var(--bg-field);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--field-radius);
   box-shadow: none;
-  height: 46px;
-  padding-left: 42px;
+  height: var(--field-height);
+  min-height: var(--field-height);
+  /* 左侧留出 42px 给小房子图标，避免与 placeholder 重叠 */
+  padding: 0 12px 0 42px;
+  font-size: 14px;
   cursor: pointer;
 }
 
-:deep(.custom-broker-select .el-input__wrapper:hover) {
+:deep(.custom-broker-select .el-select__wrapper.is-hovering:not(.is-focused)),
+:deep(.custom-broker-select .el-select__wrapper:hover) {
   border-color: rgba(var(--primary-rgb), 0.5);
+  box-shadow: none;
 }
 
-:deep(.custom-broker-select .el-input__wrapper.is-focus) {
+:deep(.custom-broker-select .el-select__wrapper.is-focused) {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.15);
+}
+
+:deep(.custom-broker-select .el-select__placeholder) {
+  font-weight: normal;
+  color: var(--text-body);
+}
+
+:deep(.custom-broker-select .el-select__placeholder.is-transparent) {
+  color: var(--el-text-color-placeholder);
+}
+
+:deep(.custom-broker-select .el-select__selected-item),
+:deep(.custom-broker-select .el-select__input) {
+  color: var(--text-body);
 }
 
 :deep(.el-select-dropdown) {
@@ -387,7 +435,7 @@
   color: var(--orange);
 }
 
-/* �����л��������Ͻǣ� */
+/* �����л��������Ͻǣ� */
 .theme-corner {
   position: absolute;
   top: 20px;

@@ -41,10 +41,10 @@ const current = computed(() => THEMES.find((t) => t.value === themeStore.theme) 
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: rgba(var(--primary-rgb), 0.1);
-  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  background: var(--nav-btn-bg);
+  border: 1px solid var(--nav-btn-border);
   border-radius: 6px;
-  color: var(--primary);
+  color: var(--nav-btn-color);
   font-size: 12px;
   cursor: pointer;
   outline: none;
@@ -52,8 +52,8 @@ const current = computed(() => THEMES.find((t) => t.value === themeStore.theme) 
 }
 
 .theme-switcher:hover {
-  background: rgba(var(--primary-rgb), 0.2);
-  border-color: rgba(var(--primary-rgb), 0.5);
+  background: var(--nav-btn-bg-hover);
+  border-color: var(--nav-btn-border-hover);
 }
 
 .theme-switcher svg {

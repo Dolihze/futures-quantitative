@@ -28,7 +28,6 @@
       <div class="login-card">
         <div class="card-header">
           <h2>账户登录</h2>
-          <p>请输入您的期货交易账户信息</p>
         </div>
 
         <!-- 错误提示 -->
@@ -170,7 +169,7 @@ const userStore = useUserStore()
 const loginFormRef = ref(null)
 const loading = ref(false)
 const errorMsg = ref('')
-const rememberAccount = ref(false)
+const rememberAccount = ref(true)
 
 const loginForm = reactive({
   broker: '',
