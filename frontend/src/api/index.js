@@ -147,6 +147,103 @@ export function getReviewDayKline(params) {
   })
 }
 
+// 可交易的期货合约列表（登录后由 CTP 异步查询，刚登录时可能还没就绪）
+export function getContracts() {
+  return request({
+    url: '/api/contracts',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 订阅并获取合约最新行情，symbol 形如 ag2612.SHFE
+export function getQuote(symbol) {
+  return request({
+    url: '/api/quote',
+    method: 'get',
+    params: { symbol },
+    silent: true
+  })
+}
+
+// 限价下单：action = open_long 买多开仓 / open_short 卖空开仓 / close_long 平多 / close_short 平空
+// 业务失败（校验不通过、柜台拒单）由页面自己展示原因，不弹全局提示
+export function placeOrder(data) {
+  return request({
+    url: '/api/order',
+    method: 'post',
+    data,
+    silent: true
+  })
+}
+
+// 委托列表（最新的在前）
+export function getOrders() {
+  return request({
+    url: '/api/orders',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 持仓列表：含今昨仓、开仓均价、按最新价算的浮动盈亏
+export function getPositions() {
+  return request({
+    url: '/api/positions',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 成交明细（最新的在前）
+export function getTrades() {
+  return request({
+    url: '/api/trades',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 反手：先按 closePrice 平掉 volume 手 fromSide（'多' / '空'）持仓，
+// 平仓【全部成交】后才按 openPrice 反向开同样手数。业务失败由页面自己展示原因。
+export function startReverse(data) {
+  return request({
+    url: '/api/reverse',
+    method: 'post',
+    data,
+    silent: true
+  })
+}
+
+// 取消等待中的反手任务（同时撤销未成交的平仓委托）
+export function cancelReverse(taskId) {
+  return request({
+    url: '/api/reverse/cancel',
+    method: 'post',
+    data: { taskId },
+    silent: true
+  })
+}
+
+// 反手任务列表（等待 / 已开仓 / 已取消 / 开仓失败）
+export function getReverseTasks() {
+  return request({
+    url: '/api/reverse/tasks',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 撤单
+export function cancelOrder(orderId) {
+  return request({
+    url: '/api/order/cancel',
+    method: 'post',
+    data: { orderId },
+    silent: true
+  })
+}
+
 // 量化账号登录
 export function quantLogin(data) {
   return request({

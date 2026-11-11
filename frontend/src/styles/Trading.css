@@ -605,3 +605,210 @@
   background: rgba(var(--up-rgb), 0.2);
   border-color: rgba(var(--up-rgb), 0.5);
 }
+
+/* ------------------------------------------------------------------ */
+/* 合约选择 / 行情 / 委托列表                                           */
+/* ------------------------------------------------------------------ */
+
+.contract-group {
+  flex: 1.2;
+}
+
+/* 合约下拉：高度、圆角和同一行的输入框保持一致 */
+.contract-select {
+  width: 100%;
+}
+
+:deep(.contract-select .el-select__wrapper) {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  box-shadow: none;
+  border: 1px solid var(--border);
+  font-size: 15px;
+}
+
+:deep(.contract-select .el-select__wrapper.is-focused) {
+  border-color: rgba(var(--primary-rgb), 0.5);
+  background: var(--bg-input-focus);
+}
+
+.quote-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 48px;
+}
+
+.quote-main {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+/* 红涨绿跌（与项目其它页面一致） */
+.quote-main.up { color: var(--up); }
+.quote-main.down { color: var(--down); }
+
+.quote-detail {
+  display: flex;
+  gap: 14px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.quote-detail b { font-weight: 600; }
+
+.up-text { color: var(--up-text); }
+.down-text { color: var(--down); }
+
+.quote-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding-bottom: 14px;
+}
+
+.fill-last {
+  margin-left: 8px;
+  color: var(--primary);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fill-last:hover { text-decoration: underline; }
+
+.trading-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 委托列表 */
+.orders-header { margin-top: 28px; }
+
+.orders-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.orders-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 16px;
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.orders-table th,
+.orders-table td {
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.orders-table tr:last-child td { border-bottom: none; }
+
+.orders-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.orders-table .num { text-align: right; }
+
+.orders-empty {
+  text-align: center !important;
+  color: var(--text-muted);
+  padding: 24px 0 !important;
+}
+
+.order-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.order-status.active { background: rgba(var(--primary-rgb), 0.15); color: var(--primary); }
+.order-status.done { background: rgba(var(--down-rgb), 0.15); color: var(--down); }
+.order-status.rejected { background: rgba(var(--up-rgb), 0.15); color: var(--up-text); }
+.order-status.cancelled { background: rgba(113, 113, 122, 0.2); color: var(--text-muted); }
+
+.cancel-link {
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.cancel-link:hover { text-decoration: underline; }
+
+.muted { color: var(--text-muted); }
+
+/* ------------------------------------------------------------------ */
+/* 持仓 / 反手任务                                                      */
+/* ------------------------------------------------------------------ */
+
+.reverse-link { margin-left: 12px; color: var(--purple); }
+
+.reverse-panel {
+  margin-top: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.reverse-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.reverse-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.reverse-item:first-of-type { border-top: none; }
+
+.reverse-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reverse-msg {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 开仓失败：平仓已经成交，需要用户手动处理，必须醒目 */
+.reverse-item.failed .reverse-msg { color: var(--up-text); font-weight: 600; }
+
+.reverse-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.reverse-tag.waiting { background: rgba(var(--purple-rgb), 0.15); color: var(--purple); }
+.reverse-tag.opened { background: rgba(var(--down-rgb), 0.15); color: var(--down); }
+.reverse-tag.cancelled { background: rgba(113, 113, 122, 0.2); color: var(--text-muted); }
+.reverse-tag.failed { background: rgba(var(--up-rgb), 0.15); color: var(--up-text); }
