@@ -51,13 +51,46 @@ export function getKlineData(params) {
 
 // 交易复盘：上传交易记录 Excel（multipart）。
 // 业务错误（格式不对、列缺失等）后端返回 400 + message，这里由页面自己展示，不弹全局错误提示。
-export function uploadReviewFile(file) {
+// overwrite=true：文件夹里已有同名文件时直接覆盖。不带时后端对同名文件返回 409（error.response.data.exists），
+// 由页面弹窗让用户确认后再带 overwrite 重传。
+export function uploadReviewFile(file, overwrite = false) {
   const form = new FormData()
   form.append('file', file)
+  if (overwrite) form.append('overwrite', '1')
   return request({
     url: '/api/review/upload',
     method: 'post',
     data: form,
+    timeout: 120000,
+    silent: true
+  })
+}
+
+// 交易复盘：列出项目 review_files 文件夹里已导入的交易记录文件（最近修改的在前）
+export function getReviewFiles() {
+  return request({
+    url: '/api/review/files',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 交易复盘：删除 review_files 文件夹里的一个文件（只删磁盘文件，已经在分析的数据不受影响）
+export function deleteReviewFile(name) {
+  return request({
+    url: '/api/review/files',
+    method: 'delete',
+    data: { name },
+    silent: true
+  })
+}
+
+// 交易复盘：选择 review_files 文件夹里已有的文件进行分析，返回结构和 uploadReviewFile 完全一致
+export function openReviewFile(name) {
+  return request({
+    url: '/api/review/open',
+    method: 'post',
+    data: { name },
     timeout: 120000,
     silent: true
   })

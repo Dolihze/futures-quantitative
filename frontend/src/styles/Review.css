@@ -153,6 +153,115 @@
   font-size: 12px;
 }
 
+/* 已导入的文件列表（项目 review_files 文件夹）：点击切换分析 */
+.saved-files {
+  margin-top: 14px;
+}
+
+.saved-files-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.saved-files-refresh {
+  color: #00d4ff;
+  cursor: pointer;
+}
+
+.saved-files-refresh.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.saved-files-empty {
+  padding: 10px 12px;
+  background: #16213e;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.saved-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.saved-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: #16213e;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.saved-file:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+}
+
+.saved-file.active {
+  border-color: #00d4ff;
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.saved-file.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.saved-file-main {
+  flex: 1;
+  min-width: 0;   /* 让文件名过长时能被 ellipsis 截断，而不是把删除按钮挤出去 */
+}
+
+/* 删除按钮：平时淡色，鼠标移到这一行时才变明显，悬停在按钮上变红 */
+.saved-file-delete {
+  flex-shrink: 0;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: color 0.2s, opacity 0.2s;
+}
+
+.saved-file:hover .saved-file-delete {
+  opacity: 1;
+}
+
+.saved-file-delete:hover {
+  color: #ef4444;
+}
+
+.saved-file-name {
+  color: #e2e8f0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-file.active .saved-file-name {
+  color: #00d4ff;
+}
+
+.saved-file-meta {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+}
+
 .review-error {
   margin-top: 12px;
   padding: 10px 12px;

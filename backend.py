@@ -169,29 +169,40 @@ def get_kline_data():
 # ---------------------------------------------------------------------------
 # 交易复盘
 # ---------------------------------------------------------------------------
-# 上传的交易记录只保存在内存里（不落盘，属于个人交易数据）；sidecar 重启即清空。
-# 最多保留最近 5 份，避免反复上传导致内存无限增长。
+# 解析后的交易记录放在内存缓存里（reviewId 是临时的，sidecar 重启即失效）。
+# 最多保留最近 5 份，避免反复切换文件导致内存无限增长。
 REVIEW_CACHE = OrderedDict()
 REVIEW_CACHE_MAX = 5
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
+# 导入过的交易记录文件保存在这个文件夹里（开发模式 = 项目根目录，打包后 = 可执行文件同级目录），
+# 之后可以直接在界面上选择、切换分析，不必每次重新找文件。里面是个人交易数据，已加入 .gitignore。
+# 环境变量 REVIEW_FILES_DIR 可以改位置（测试用）。
+REVIEW_FILES_DIRNAME = 'review_files'
+REVIEW_EXTS = ('.xlsx', '.xls', '.csv')
 
-@app.errorhandler(413)
-def too_large(_e):
-    return jsonify({"success": False, "message": "文件过大，请上传 20MB 以内的文件"}), 413
+
+def review_files_dir():
+    return os.environ.get('REVIEW_FILES_DIR') or os.path.join(BASE_DIR, REVIEW_FILES_DIRNAME)
 
 
-@app.route('/api/review/upload', methods=['POST'])
-def review_upload():
-    """上传交易记录 Excel，解析后返回可选品种和数据时间范围。"""
-    f = request.files.get('file')
-    if f is None or not f.filename:
-        return jsonify({"success": False, "message": "请选择要上传的文件"}), 400
-    if not f.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
-        return jsonify({"success": False, "message": "仅支持 .xlsx / .xls / .csv 文件"}), 400
+def safe_review_path(name):
+    """把界面传来的文件名换成 review_files 里的真实路径；名字不合法（含路径、越出文件夹）返回 None。"""
+    if not name or name != os.path.basename(name) or name in ('.', '..'):
+        return None
+    if not name.lower().endswith(REVIEW_EXTS):
+        return None
+    root = os.path.realpath(review_files_dir())
+    path = os.path.realpath(os.path.join(root, name))
+    if os.path.dirname(path) != root:
+        return None
+    return path
 
+
+def analyze_to_response(content, filename):
+    """解析一份交易记录，放进缓存，返回给前端的 JSON（上传和从文件夹选择共用，前端不用区分来源）。"""
     try:
-        result = review.analyze(f.read(), f.filename)
+        result = review.analyze(content, filename)
     except review.ReviewParseError as e:
         return jsonify({"success": False, "message": str(e)}), 400
     except Exception as e:  # 解析库的意外错误：不要把 500 抛给用户，给出可读提示
@@ -208,7 +219,7 @@ def review_upload():
     return jsonify({
         "success": True,
         "reviewId": review_id,
-        "filename": f.filename,
+        "filename": filename,
         "products": result.products,
         "start": result.start,
         "end": result.end,
@@ -217,6 +228,147 @@ def review_upload():
         "days": result.days,
         "warnings": result.warnings,
     })
+
+
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"success": False, "message": "文件过大，请上传 20MB 以内的文件"}), 413
+
+
+# /api/ 下的 404、405、500 也统一返回 JSON + message。Flask 默认返回 HTML 页面，前端读不到 message，
+# 界面就只剩一句笼统的“xx失败”，看不出原因（比如后端是没重启的旧版本，缺少新接口时会返回 405）。
+def _api_error(status, message):
+    return jsonify({"success": False, "message": message}), status
+
+
+@app.errorhandler(404)
+def api_not_found(e):
+    if request.path.startswith('/api/'):
+        return _api_error(404, f"接口 {request.path} 不存在，可能是后端版本过旧，请重启后端")
+    return e
+
+
+@app.errorhandler(405)
+def api_method_not_allowed(e):
+    if request.path.startswith('/api/'):
+        return _api_error(405, f"后端不支持 {request.method} {request.path}，可能是后端版本过旧，请重启后端")
+    return e
+
+
+@app.errorhandler(500)
+def api_server_error(e):
+    if request.path.startswith('/api/'):
+        print(f"[Backend] 500 {request.method} {request.path}: {e}")
+        return _api_error(500, "服务器内部错误，详细原因见后端日志")
+    return e
+
+
+@app.route('/api/review/upload', methods=['POST'])
+def review_upload():
+    """上传交易记录 Excel：先解析，解析成功后保存到 review_files 文件夹，返回可选品种和数据时间范围。
+
+    文件名按“文件夹里是否已有同名文件”判断唯一性（Windows 下不区分大小写）：
+    已有同名文件且没有带 overwrite=1 时返回 409 + exists:true，什么都不做（不解析、不保存），
+    由界面弹窗让用户确认；用户确认后带 overwrite=1 重新上传，才会覆盖。
+    """
+    f = request.files.get('file')
+    if f is None or not f.filename:
+        return jsonify({"success": False, "message": "请选择要上传的文件"}), 400
+    if not f.filename.lower().endswith(REVIEW_EXTS):
+        return jsonify({"success": False, "message": "仅支持 .xlsx / .xls / .csv 文件"}), 400
+
+    # 有的浏览器 / WebView 会在文件名里带路径，只取最后的文件名；取完还不合法（比如全是点）就拒绝
+    name = os.path.basename(f.filename.replace('\\', '/'))
+    path = safe_review_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    overwrite = request.form.get('overwrite') == '1'
+    if os.path.exists(path) and not overwrite:
+        return jsonify({"success": False, "exists": True, "name": os.path.basename(path),
+                        "message": f"「{os.path.basename(path)}」已存在，是否覆盖？"}), 409
+
+    content = f.read()
+    resp = analyze_to_response(content, name)
+    response, status = resp if isinstance(resp, tuple) else (resp, 200)
+    if status != 200:
+        return resp          # 解析失败的文件不保存，已有的同名旧文件也不会被它覆盖
+
+    # 保存失败（磁盘只读、没有权限等）不影响本次分析，只在警告里告诉用户。
+    # 先写临时文件再替换：写到一半失败时不会把原来的好文件弄坏
+    data = response.get_json()
+    tmp = path + '.uploading'
+    try:
+        os.makedirs(review_files_dir(), exist_ok=True)
+        with open(tmp, 'wb') as out:
+            out.write(content)
+        os.replace(tmp, path)
+        data["saved"] = True
+        data["overwritten"] = overwrite
+    except OSError as e:
+        print(f"[Review] 保存到 {review_files_dir()} 失败: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        data["saved"] = False
+        data["warnings"] = list(data.get("warnings", [])) + [f"文件没能保存到「{REVIEW_FILES_DIRNAME}」文件夹：{e}"]
+    return jsonify(data)
+
+
+@app.route('/api/review/files')
+def review_files():
+    """列出 review_files 文件夹里的交易记录文件（最近修改的在前）。文件夹不存在时返回空列表。"""
+    root = review_files_dir()
+    files = []
+    if os.path.isdir(root):
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            # 跳过临时文件（Excel 打开文件时会生成 ~$ 开头的锁文件）、子文件夹和不支持的类型
+            if name.startswith(('~$', '.')) or not os.path.isfile(path) or not name.lower().endswith(REVIEW_EXTS):
+                continue
+            st = os.stat(path)
+            files.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime)})
+    files.sort(key=lambda x: (-x["mtime"], x["name"]))
+    return jsonify({"success": True, "dir": REVIEW_FILES_DIRNAME, "files": files})
+
+
+@app.route('/api/review/files', methods=['DELETE'])
+def review_file_delete():
+    """删除 review_files 文件夹里的一个文件。
+
+    参数（JSON）：name（文件名，不含路径）。只删磁盘上的文件：已经解析进内存、正在分析的数据不受影响。
+    """
+    name = (request.get_json(silent=True) or {}).get('name', '')
+    path = safe_review_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    if not os.path.isfile(path):
+        return jsonify({"success": False, "fileMissing": True, "message": f"文件「{name}」不存在，可能已被移动或删除"}), 404
+    try:
+        os.remove(path)
+    except OSError as e:      # 文件被 Excel 等程序占用时 Windows 会拒绝删除
+        return jsonify({"success": False, "message": f"删除失败：{e}（文件可能正被其它程序打开）"}), 400
+    return jsonify({"success": True, "name": name})
+
+
+@app.route('/api/review/open', methods=['POST'])
+def review_open():
+    """选择 review_files 文件夹里已有的文件进行分析，返回结构和上传接口完全一致。
+
+    参数（JSON）：name（文件名，不含路径）。
+    """
+    name = (request.get_json(silent=True) or {}).get('name', '')
+    path = safe_review_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    if not os.path.isfile(path):
+        return jsonify({"success": False, "fileMissing": True, "message": f"文件「{name}」不存在，可能已被移动或删除，请刷新列表"}), 404
+    try:
+        with open(path, 'rb') as fh:
+            content = fh.read()
+    except OSError as e:
+        return jsonify({"success": False, "message": f"读取文件失败：{e}"}), 400
+    return analyze_to_response(content, name)
 
 
 @app.route('/api/review/curve')

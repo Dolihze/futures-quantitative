@@ -47,6 +47,33 @@
             <div class="file-meta">交易日 {{ fileInfo.start.slice(0, 10) }} ~ {{ fileInfo.end.slice(0, 10) }}</div>
           </div>
 
+          <!-- 已导入的文件：保存在项目的 review_files 文件夹里，点一下就能直接切换分析 -->
+          <div class="saved-files">
+            <div class="saved-files-head">
+              <span>已导入的文件</span>
+              <a class="saved-files-refresh" :class="{ disabled: filesLoading }" @click="loadFileList">刷新</a>
+            </div>
+            <div v-if="!reviewFiles.length" class="saved-files-empty">
+              {{ filesLoading ? '加载中...' : `还没有文件。导入的文件会保存到项目根目录的 ${filesDir} 文件夹，也可以直接把 Excel 放进去后点“刷新”` }}
+            </div>
+            <ul v-else class="saved-files-list">
+              <li
+                v-for="f in reviewFiles"
+                :key="f.name"
+                class="saved-file"
+                :class="{ active: f.name === currentFileName, disabled: loading }"
+                :title="f.name"
+                @click="handleOpenFile(f.name)"
+              >
+                <div class="saved-file-main">
+                  <div class="saved-file-name">{{ f.name }}</div>
+                  <div class="saved-file-meta">{{ formatMtime(f.mtime) }} · {{ formatSize(f.size) }}</div>
+                </div>
+                <a class="saved-file-delete" title="删除这个文件" @click.stop="handleDeleteFile(f.name)">删除</a>
+              </li>
+            </ul>
+          </div>
+
           <div v-if="errorMsg" class="review-error">
             <span>{{ errorMsg }}</span>
           </div>
@@ -207,7 +234,7 @@
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadReviewFile, getReviewCurve, logout } from '@/api'
+import { uploadReviewFile, getReviewFiles, openReviewFile, deleteReviewFile, getReviewCurve, logout } from '@/api'
 import { useUserStore } from '@/stores/user'
 import ReviewKline from './ReviewKline.vue'
 import ReviewFunding from './ReviewFunding.vue'
@@ -280,7 +307,13 @@ function errorText(error, fallback) {
   if (data?.message) return data.message
   if (error?.code === 'ECONNABORTED') return '请求超时，请稍后重试'
   if (error?.request && !error?.response) return '无法连接后端服务，请确认应用已正常启动'
-  return fallback
+  // 有响应但不是后端约定的 JSON（比如代理报错页、旧版后端的 HTML 错误页）：按状态码说明原因，
+  // 不能只给一句笼统的“xx失败”，用户没法判断该怎么办
+  const status = error?.response?.status
+  if (status === 404 || status === 405) return `${fallback}：后端不支持这个操作（HTTP ${status}），可能是后端版本过旧，请重启后端`
+  if (status === 502 || status === 503 || status === 504) return `${fallback}：后端没有响应（HTTP ${status}），请确认后端已启动`
+  if (status) return `${fallback}（HTTP ${status}）`
+  return error?.message ? `${fallback}：${error.message}` : fallback
 }
 
 async function handleFileChange(uploadFile) {
@@ -298,21 +331,30 @@ async function handleFileChange(uploadFile) {
   loading.value = true
   loadingText.value = '正在解析交易记录...'
   try {
-    const res = await uploadReviewFile(file)
-    fileInfo.value = res
-    warnings.value = res.warnings || []
-    // 下面改筛选条件是程序设置的，不是用户操作；这里会马上自己取一次曲线，
-    // 所以让 watch 跳过这一轮，否则同一份数据会被请求两次（watch 是异步触发的，clearTimeout 来不及取消）
-    skipNextFilterWatch = true
-    selectedProducts.value = []
-    includeFee.value = true
-    range.value = [res.start.slice(0, 10), res.end.slice(0, 10)]
-    // watch 在下一个 tick 才触发。如果新值和旧值相同（重复导入同一份文件），watch 根本不会触发，
-    // 标志就不会被消费，会误吞用户之后真正的筛选操作——所以这里等一个 tick 后无条件复位。
-    await nextTick()
-    skipNextFilterWatch = false
-    await fetchCurve(true)
-    ElMessage.success(`已导入 ${res.tradeCount} 笔成交`)
+    let res
+    try {
+      res = await uploadReviewFile(file)
+    } catch (error) {
+      // 文件夹里已有同名文件：后端没有解析也没有保存，弹窗让用户确认是否覆盖
+      if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
+      loading.value = false      // 确认框期间不要一直转圈，也不要挡住别的操作
+      const name = error.response.data.name || file.name
+      try {
+        await ElMessageBox.confirm(`文件夹中已存在「${name}」，是否覆盖？`, '文件已存在', {
+          confirmButtonText: '覆盖',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch {
+        return                   // 用户取消：什么都不改，保留当前正在分析的数据
+      }
+      loading.value = true
+      res = await uploadReviewFile(file, true)
+    }
+    await applyReviewResult(res)
+    ElMessage.success(res.overwritten ? `已覆盖并导入 ${res.tradeCount} 笔成交` : `已导入 ${res.tradeCount} 笔成交`)
+    // 上传的文件会保存到 review_files 文件夹，刷新“已导入文件”列表
+    loadFileList()
   } catch (error) {
     // 解析失败时保留上一份已成功导入的数据，只显示错误
     errorMsg.value = errorText(error, '文件解析失败')
@@ -320,6 +362,104 @@ async function handleFileChange(uploadFile) {
     loading.value = false
   }
 }
+
+// 把一份解析结果（上传或从文件夹选择，返回结构相同）设为当前数据：重置筛选条件并取一次曲线
+async function applyReviewResult(res) {
+  fileInfo.value = res
+  warnings.value = res.warnings || []
+  // 下面改筛选条件是程序设置的，不是用户操作；这里会马上自己取一次曲线，
+  // 所以让 watch 跳过这一轮，否则同一份数据会被请求两次（watch 是异步触发的，clearTimeout 来不及取消）
+  skipNextFilterWatch = true
+  selectedProducts.value = []
+  includeFee.value = true
+  range.value = [res.start.slice(0, 10), res.end.slice(0, 10)]
+  // watch 在下一个 tick 才触发。如果新值和旧值相同（重复导入同一份文件），watch 根本不会触发，
+  // 标志就不会被消费，会误吞用户之后真正的筛选操作——所以这里等一个 tick 后无条件复位。
+  await nextTick()
+  skipNextFilterWatch = false
+  await fetchCurve(true)
+}
+
+// ---------- 已导入文件（项目 review_files 文件夹）----------
+const reviewFiles = ref([])          // [{ name, size, mtime }]，最近修改的在前
+const filesLoading = ref(false)
+const filesDir = ref('review_files')
+const currentFileName = computed(() => fileInfo.value?.filename || '')
+
+async function loadFileList() {
+  filesLoading.value = true
+  try {
+    const res = await getReviewFiles()
+    reviewFiles.value = res.files || []
+    filesDir.value = res.dir || filesDir.value
+  } catch (error) {
+    // 列表只是辅助功能，取不到时不打断主流程，也不弹错误
+    reviewFiles.value = []
+  } finally {
+    filesLoading.value = false
+  }
+}
+
+// 点击列表里的文件：直接分析，不用再从外部选文件。点击当前正在分析的文件不重复加载
+let openSeq = 0
+async function handleOpenFile(name) {
+  if (loading.value || name === currentFileName.value) return
+  const seq = ++openSeq
+  errorMsg.value = ''
+  warnings.value = []
+  loading.value = true
+  loadingText.value = '正在解析交易记录...'
+  try {
+    const res = await openReviewFile(name)
+    if (seq !== openSeq) return
+    await applyReviewResult(res)
+    ElMessage.success(`已切换到 ${name}（${res.tradeCount} 笔成交）`)
+  } catch (error) {
+    if (seq !== openSeq) return
+    errorMsg.value = errorText(error, '文件解析失败')
+    // 文件已经不在文件夹里（被删除或移动）：刷新列表，让它从列表里消失
+    if (error?.response?.data?.fileMissing) loadFileList()
+  } finally {
+    if (seq === openSeq) loading.value = false
+  }
+}
+
+// 删除列表里的文件：确认后只删磁盘上的文件。已经解析进内存、正在分析的数据不受影响（图表照常），
+// 只是之后不能再从列表里选它
+async function handleDeleteFile(name) {
+  if (loading.value) return
+  try {
+    await ElMessageBox.confirm(
+      name === currentFileName.value
+        ? `确定要删除「${name}」吗？这是当前正在分析的文件，删除后当前图表不受影响，但之后无法再从列表中选择它。`
+        : `确定要删除「${name}」吗？`,
+      '删除文件',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteReviewFile(name)
+    ElMessage.success(`已删除 ${name}`)
+  } catch (error) {
+    // 后端明确说“文件不存在”（fileMissing）：文件已经被别的程序删了，目的达到，不报错，只刷新列表。
+    // 不能只看 404 状态码：旧版后端没有这个接口时也会回 404 / 405，那是接口问题，必须报错
+    if (!error?.response?.data?.fileMissing) {
+      ElMessage.error(errorText(error, '删除失败'))
+    }
+  }
+  loadFileList()
+}
+
+const formatSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+const formatMtime = (s) => {
+  const d = new Date(s * 1000)
+  const p = (v) => String(v).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+loadFileList()
 
 let requestSeq = 0
 async function fetchCurve(isFirst = false) {

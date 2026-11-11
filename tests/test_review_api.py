@@ -4,10 +4,16 @@
 """
 import io
 import os
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 上传会把文件保存到 review_files 文件夹：测试一律指到临时目录，不能写进真实的项目文件夹
+_TMP_REVIEW_DIR = tempfile.mkdtemp(prefix="review_files_test_")
+os.environ["REVIEW_FILES_DIR"] = _TMP_REVIEW_DIR
 
 import backend  # noqa: E402
 from test_review import HEADER_A, ROWS_A, make_xlsx  # noqa: E402
@@ -15,8 +21,15 @@ from test_review import HEADER_A, ROWS_A, make_xlsx  # noqa: E402
 client = backend.app.test_client()
 
 
-def upload(content: bytes, name: str):
+def upload_raw(content: bytes, name: str):
+    """原样上传（不带 overwrite）：文件夹里已有同名文件时会收到 409，用来测确认流程。"""
     return client.post("/api/review/upload", data={"file": (io.BytesIO(content), name)},
+                       content_type="multipart/form-data")
+
+
+def upload(content: bytes, name: str):
+    """测试里的默认上传：带 overwrite=1。大部分用例关心的是解析和曲线，反复用同一个文件名上传不该被 409 挡住。"""
+    return client.post("/api/review/upload", data={"file": (io.BytesIO(content), name), "overwrite": "1"},
                        content_type="multipart/form-data")
 
 
@@ -121,6 +134,195 @@ def test_cache_is_bounded():
         upload(data, "a.xlsx")
     assert len(backend.REVIEW_CACHE) == backend.REVIEW_CACHE_MAX
     assert client.get(f"/api/review/curve?reviewId={first}").status_code == 404        # 最早的已被淘汰
+
+
+def _clean_review_dir():
+    shutil.rmtree(_TMP_REVIEW_DIR, ignore_errors=True)
+    os.makedirs(_TMP_REVIEW_DIR, exist_ok=True)
+
+
+def test_upload_saves_file_and_lists_it():
+    _clean_review_dir()
+    data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    j = upload_raw(data, "records.xlsx").get_json()
+    assert j["success"] and j["saved"] is True and j["filename"] == "records.xlsx"
+    with open(os.path.join(_TMP_REVIEW_DIR, "records.xlsx"), "rb") as fh:
+        assert fh.read() == data
+    assert j["overwritten"] is False
+    # 解析失败的文件不保存
+    assert upload(b"this is not an excel file", "fake.xlsx").status_code == 400
+    assert upload(b"hello", "notes.txt").status_code == 400
+    assert os.listdir(_TMP_REVIEW_DIR) == ["records.xlsx"]
+
+    files = client.get("/api/review/files").get_json()
+    assert files["success"] and files["dir"] == "review_files"
+    assert [f["name"] for f in files["files"]] == ["records.xlsx"]
+    assert all(f["size"] > 0 and f["mtime"] > 0 for f in files["files"])
+
+
+def upload_overwrite(content: bytes, name: str):
+    return client.post("/api/review/upload", data={"file": (io.BytesIO(content), name), "overwrite": "1"},
+                       content_type="multipart/form-data")
+
+
+def test_upload_same_name_needs_confirmation_then_overwrites():
+    _clean_review_dir()
+    first = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    assert upload_raw(first, "records.xlsx").status_code == 200
+    from test_review import ROWS_D, make_detail_sheet
+    second = make_detail_sheet(ROWS_D)
+    path = os.path.join(_TMP_REVIEW_DIR, "records.xlsx")
+
+    # 同名且没有确认：409 + exists，什么都不做（不保存、不解析进缓存）
+    cache_before = len(backend.REVIEW_CACHE)
+    r = upload_raw(second, "records.xlsx")
+    j = r.get_json()
+    assert r.status_code == 409 and j["exists"] is True and j["name"] == "records.xlsx" and "已存在" in j["message"]
+    with open(path, "rb") as fh:
+        assert fh.read() == first
+    assert len(backend.REVIEW_CACHE) == cache_before
+    # Windows 文件系统不区分大小写：RECORDS.XLSX 和 records.xlsx 是同一个文件，也要确认
+    if os.path.exists(os.path.join(_TMP_REVIEW_DIR, "RECORDS.XLSX")):
+        assert upload_raw(second, "RECORDS.XLSX").status_code == 409
+
+    # 确认覆盖：写入新内容，返回新文件的分析结果
+    r = upload_overwrite(second, "records.xlsx")
+    j = r.get_json()
+    assert r.status_code == 200 and j["saved"] is True and j["overwritten"] is True
+    assert j["products"] == ["FU", "IF", "RB"]
+    with open(path, "rb") as fh:
+        assert fh.read() == second
+    assert os.listdir(_TMP_REVIEW_DIR) == ["records.xlsx"]       # 没有留下临时文件、也没有多出副本
+
+    # 确认覆盖但新文件是坏的：解析失败，旧文件原样保留
+    r = upload_overwrite(b"this is not an excel file", "records.xlsx")
+    assert r.status_code == 400
+    with open(path, "rb") as fh:
+        assert fh.read() == second
+    # 没有同名文件时带 overwrite 也只是普通保存
+    assert upload_overwrite(first, "other.xlsx").get_json()["overwritten"] is True
+    assert sorted(os.listdir(_TMP_REVIEW_DIR)) == ["other.xlsx", "records.xlsx"]
+
+
+def test_upload_filename_with_path_is_reduced_and_unsafe_rejected():
+    _clean_review_dir()
+    data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    j = upload(data, "C:\\Users\\me\\Desktop\\win.xlsx").get_json()
+    assert j["success"] and j["filename"] == "win.xlsx"
+    assert os.listdir(_TMP_REVIEW_DIR) == ["win.xlsx"]
+    # 保存不能越出文件夹
+    assert not os.path.exists(os.path.join(os.path.dirname(_TMP_REVIEW_DIR), "win.xlsx"))
+    assert upload(data, "..").status_code == 400
+
+
+def test_api_errors_are_json_with_message():
+    # 以前这些情况返回 Flask 默认的 HTML 页面，前端读不到 message，界面只剩一句笼统的“xx失败”
+    r = client.put("/api/review/files")                       # 路径存在但不支持这个方法（旧版后端缺少新接口时就是这样）
+    j = r.get_json()
+    assert r.status_code == 405 and j["success"] is False and "PUT" in j["message"] and "重启后端" in j["message"]
+    r = client.delete("/api/review/nope")
+    j = r.get_json()
+    assert r.status_code == 404 and j["success"] is False and "/api/review/nope" in j["message"]
+    assert not j.get("fileMissing")                            # 接口不存在 ≠ 文件不存在，前端靠这个区分
+    # 非 /api/ 路径保持 Flask 默认行为，不被改成 JSON
+    r = client.get("/some/page")
+    assert r.status_code == 404 and r.get_json(silent=True) is None
+
+
+def test_file_missing_is_flagged():
+    _clean_review_dir()
+    for r in (client.delete("/api/review/files", json={"name": "gone.xlsx"}),
+              client.post("/api/review/open", json={"name": "gone.xlsx"})):
+        j = r.get_json()
+        assert r.status_code == 404 and j["fileMissing"] is True and "不存在" in j["message"]
+
+
+def test_delete_file():
+    _clean_review_dir()
+    data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    up = upload(data, "records.xlsx").get_json()
+    upload(data, "keep.xlsx")
+    r = client.delete("/api/review/files", json={"name": "records.xlsx"})
+    assert r.status_code == 200 and r.get_json()["success"] is True
+    assert os.listdir(_TMP_REVIEW_DIR) == ["keep.xlsx"]
+    assert [f["name"] for f in client.get("/api/review/files").get_json()["files"]] == ["keep.xlsx"]
+    # 已经解析进内存的数据不受影响：删了文件，正在分析的曲线还能取
+    c = client.get(f"/api/review/curve?reviewId={up['reviewId']}&fee=0").get_json()
+    assert c["success"] and c["stats"]["totalPnl"] == 100.0
+    # 但从文件夹里再选它就没有了
+    assert client.post("/api/review/open", json={"name": "records.xlsx"}).status_code == 404
+    # 再删一次：404；不合法的名字：400，而且不能删到文件夹外面的文件
+    assert client.delete("/api/review/files", json={"name": "records.xlsx"}).status_code == 404
+    outside = os.path.join(os.path.dirname(_TMP_REVIEW_DIR), "outside_delete_test.xlsx")
+    with open(outside, "wb") as fh:
+        fh.write(b"x")
+    try:
+        for bad in ["../outside_delete_test.xlsx", "..\\outside_delete_test.xlsx", os.path.abspath(outside), "", "notes.txt", ".."]:
+            r = client.delete("/api/review/files", json={"name": bad})
+            assert r.status_code == 400, bad
+        assert os.path.exists(outside)
+        assert client.delete("/api/review/files").status_code == 400          # 没有请求体
+    finally:
+        os.remove(outside)
+    # 子文件夹不能当文件删
+    os.makedirs(os.path.join(_TMP_REVIEW_DIR, "sub.xlsx"))
+    assert client.delete("/api/review/files", json={"name": "sub.xlsx"}).status_code == 404
+    assert os.path.isdir(os.path.join(_TMP_REVIEW_DIR, "sub.xlsx"))
+
+
+def test_files_list_filters_and_sorts():
+    _clean_review_dir()
+    for name, mtime in [("old.xlsx", 1_700_000_000), ("new.csv", 1_800_000_000), ("note.txt", 1_900_000_000),
+                        ("~$locked.xlsx", 1_900_000_000), (".hidden.xlsx", 1_900_000_000)]:
+        p = os.path.join(_TMP_REVIEW_DIR, name)
+        with open(p, "wb") as fh:
+            fh.write(b"x")
+        os.utime(p, (mtime, mtime))
+    os.makedirs(os.path.join(_TMP_REVIEW_DIR, "sub.xlsx"))     # 名字像文件的子文件夹也要跳过
+    names = [f["name"] for f in client.get("/api/review/files").get_json()["files"]]
+    assert names == ["new.csv", "old.xlsx"]                    # 最近修改的在前；锁文件、隐藏文件、其它类型、文件夹都不列
+    # 文件夹不存在：返回空列表而不是报错
+    shutil.rmtree(_TMP_REVIEW_DIR)
+    j = client.get("/api/review/files").get_json()
+    assert j["success"] and j["files"] == []
+    os.makedirs(_TMP_REVIEW_DIR, exist_ok=True)
+
+
+def test_open_file_from_folder_matches_upload():
+    _clean_review_dir()
+    data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    up = upload(data, "records.xlsx").get_json()
+    op = client.post("/api/review/open", json={"name": "records.xlsx"})
+    assert op.status_code == 200
+    o = op.get_json()
+    assert o["success"] and o["reviewId"] != up["reviewId"]
+    for key in ("filename", "products", "start", "end", "tradeCount", "hasFee", "days"):
+        assert o[key] == up[key], key                         # 结构、内容和上传完全一致，前端不用区分来源
+    c = client.get(f"/api/review/curve?reviewId={o['reviewId']}&fee=0").get_json()
+    assert c["success"] and c["stats"]["totalPnl"] == 100.0   # 选出来的文件可以直接分析
+
+
+def test_open_file_errors_and_path_traversal():
+    _clean_review_dir()
+    # 文件夹外面放一个合法的 Excel，路径穿越不能读到它
+    outside = os.path.join(os.path.dirname(_TMP_REVIEW_DIR), "outside_review_test.xlsx")
+    with open(outside, "wb") as fh:
+        fh.write(make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    try:
+        for bad in ["../outside_review_test.xlsx", "..\\outside_review_test.xlsx", "sub/a.xlsx",
+                    os.path.abspath(outside), "", "..", "notes.txt"]:
+            r = client.post("/api/review/open", json={"name": bad})
+            assert r.status_code == 400 and r.get_json()["success"] is False, bad
+        r = client.post("/api/review/open", json={"name": "missing.xlsx"})
+        assert r.status_code == 404 and "不存在" in r.get_json()["message"]
+        assert client.post("/api/review/open").status_code == 400                  # 没有请求体
+        # 文件在，但内容不是合法的交易记录：返回可读的 400，不是 500
+        with open(os.path.join(_TMP_REVIEW_DIR, "broken.xlsx"), "wb") as fh:
+            fh.write(b"this is not an excel file")
+        r = client.post("/api/review/open", json={"name": "broken.xlsx"})
+        assert r.status_code == 400 and "无法读取" in r.get_json()["message"]
+    finally:
+        os.remove(outside)
 
 
 def test_too_large_upload():
@@ -305,6 +507,10 @@ def test_day_kline_unavailable_lists_ranges_and_handles_errors():
     assert r.status_code == 502 and "boom" in r.get_json()["message"]
     assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
 
+
+import atexit  # noqa: E402
+
+atexit.register(shutil.rmtree, _TMP_REVIEW_DIR, ignore_errors=True)   # 不论是 pytest 还是直接运行，结束时删掉临时目录
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

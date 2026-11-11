@@ -32,6 +32,9 @@ src-tauri/sidecar/*.exe
 src-tauri/sidecar/python-backend
 !src-tauri/sidecar/README.md
 
+# 交易复盘：导入过的交易记录文件（个人交易数据，不提交）
+review_files/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
