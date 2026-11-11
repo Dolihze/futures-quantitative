@@ -11,7 +11,7 @@
     "backend:dev": "python backend.py",
     "frontend:dev": "cd frontend && npm run dev",
     "frontend:build": "cd frontend && npm run build",
-    "backend:build": "pyinstaller --noconfirm --onefile --name python-backend --distpath src-tauri/sidecar --add-data \"data;data\" --collect-data akshare --collect-data py_mini_racer --collect-all vnpy_ctp --hidden-import vnpy.trader.engine --hidden-import vnpy.trader.setting --hidden-import vnpy.trader.event --exclude-module torch --exclude-module tensorflow --exclude-module matplotlib backend.py && node scripts/copy-sidecar.mjs"
+    "backend:build": "pyinstaller --noconfirm --onefile --name python-backend --distpath src-tauri/sidecar --add-data \"data;data\" --collect-data akshare --collect-data py_mini_racer --collect-all vnpy_ctp --collect-submodules talib --hidden-import vnpy.trader.engine --hidden-import vnpy.trader.setting --hidden-import vnpy.trader.event --exclude-module torch --exclude-module tensorflow --exclude-module matplotlib backend.py && node scripts/copy-sidecar.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

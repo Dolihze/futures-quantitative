@@ -13,6 +13,7 @@ from collections import OrderedDict
 
 import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
 import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
+import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -113,7 +114,32 @@ def login():
     session['logged_in'] = True
     session['username']  = username
     session['broker']    = broker
-    return jsonify({"success": True, "message": "登录成功", "data": result.get("data")})
+
+    # 「记住账号」：只在登录成功后才保存（避免存下输错的密码）；取消勾选则清除旧记录
+    password_saved = False
+    if data.get('remember'):
+        password_saved = credential_store.save(broker, username, password)
+    else:
+        credential_store.clear()
+
+    return jsonify({"success": True, "message": "登录成功", "data": result.get("data"),
+                    "password_saved": password_saved})
+
+
+@app.route('/api/credentials', methods=['GET'])
+def get_credentials():
+    """读取「记住账号」保存的凭据，用于登录页预填；没有记录返回 saved=false"""
+    cred = credential_store.load()
+    if not cred:
+        return jsonify({"saved": False})
+    return jsonify({"saved": True, **cred})
+
+
+@app.route('/api/credentials', methods=['DELETE'])
+def delete_credentials():
+    """清除已保存的凭据"""
+    credential_store.clear()
+    return jsonify({"success": True})
 
 
 @app.route('/api/account')

@@ -167,8 +167,13 @@ def login(broker, username, password):
     try:
         MainEngine, CtpGateway, EVENT_LOG = _import_vnpy()
     except Exception as e:  # noqa: BLE001
-        print(f"[CTP] 导入 vnpy 失败: {e}")
-        return _fail("未安装 CTP 接口组件（vnpy / vnpy_ctp），无法登录")
+        import traceback
+        print(f"[CTP] 导入 vnpy 失败:\n{traceback.format_exc()}")
+        # 不能一律说“未安装”：打包后缺依赖、DLL 加载失败、版本不兼容等都会走到这里，
+        # 把真实异常带给界面，才能定位问题
+        kind = "未安装 CTP 接口组件（vnpy / vnpy_ctp）" if isinstance(e, ModuleNotFoundError) \
+            else "CTP 接口组件加载失败"
+        return _fail(f"{kind}：{type(e).__name__}: {e}")
 
     with _lock:
         # 先关闭旧会话（重新登录 / 切换账号）

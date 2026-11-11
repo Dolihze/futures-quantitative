@@ -156,7 +156,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getBrokers, login } from '@/api'
+import { getBrokers, login, getSavedCredentials } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -195,8 +195,9 @@ const brokerOptions = computed(() => brokerGroups.value.flatMap((group) => group
 // 当前对外开放的期货公司（value 对应 data/brokers.json）。
 // 全量数据仍由接口返回、不做删除；以后要开放更多公司，往这里追加 value 即可，
 // 设为 null 则展示全部。
-// simnow：SimNow 仿真环境（公开参数，用于联调验证登录流程，拿到真实参数后可移除）。
-const ENABLED_BROKERS = ['citic', 'guoyuan', 'simnow']
+// simnow / simnow_724：SimNow 仿真的第一套（交易时段）和 7x24 环境（公开参数，用于联调验证登录流程，
+// 拿到真实参数后可移除）。
+const ENABLED_BROKERS = ['citic', 'guoyuan', 'simnow', 'simnow_724']
 
 const filterBrokerGroups = (groups) => {
   if (!ENABLED_BROKERS) return groups
@@ -213,23 +214,33 @@ onMounted(async () => {
   try {
     const data = await getBrokers()
     brokerGroups.value = filterBrokerGroups(data)
-    
-    // 恢复记住的账号
-    const savedUsername = localStorage.getItem('futures_username')
-    const savedBroker = localStorage.getItem('futures_broker')
-    if (savedUsername) {
-      loginForm.username = savedUsername
-      rememberAccount.value = true
-    }
-    // 仅当记住的期货公司仍在可选列表中时才恢复
-    if (savedBroker && brokerGroups.value.some((g) => g.items.some((i) => i.value === savedBroker))) {
-      loginForm.broker = savedBroker
-    }
   } catch (error) {
     console.error('加载期货公司列表失败:', error)
     errorMsg.value = '期货公司数据加载失败，请刷新重试'
+    return
   }
+
+  await restoreSavedCredentials()
 })
+
+// 恢复「记住账号」保存的期货公司 / 账号 / 密码（密码由后端用 Windows DPAPI 加密保存在本机）
+const restoreSavedCredentials = async () => {
+  try {
+    const saved = await getSavedCredentials()
+    if (!saved?.saved) return
+
+    rememberAccount.value = true
+    loginForm.username = saved.username
+    loginForm.password = saved.password || ''
+    // 仅当记住的期货公司仍在可选列表中时才恢复
+    if (brokerGroups.value.some((g) => g.items.some((i) => i.value === saved.broker))) {
+      loginForm.broker = saved.broker
+    }
+  } catch (error) {
+    // 读取失败（后端未就绪等）不影响正常手动登录
+    console.warn('读取已保存的账号失败:', error)
+  }
+}
 
 // 处理登录
 const handleLogin = async () => {
@@ -242,18 +253,18 @@ const handleLogin = async () => {
     errorMsg.value = ''
     
     try {
-      const result = await login(loginForm)
+      // remember：由后端在登录成功后保存（勾选）或清除（未勾选）凭据
+      const result = await login({ ...loginForm, remember: rememberAccount.value })
       
       if (result.success) {
-        // 保存账号信息
-        if (rememberAccount.value) {
-          localStorage.setItem('futures_username', loginForm.username)
-          localStorage.setItem('futures_broker', loginForm.broker)
-        } else {
-          localStorage.removeItem('futures_username')
-          localStorage.removeItem('futures_broker')
+        // 清理旧版本遗留在 localStorage 的账号信息
+        localStorage.removeItem('futures_username')
+        localStorage.removeItem('futures_broker')
+
+        if (rememberAccount.value && !result.password_saved) {
+          ElMessage.warning('已记住账号，但当前系统不支持安全保存密码，下次需重新输入密码')
         }
-        
+
         // 保存用户信息到 store
         userStore.setUser({
           username: loginForm.username,

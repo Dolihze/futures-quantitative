@@ -179,7 +179,8 @@
     "label": "模拟环境",
     "items": [
       { "value": "ctp_sim", "name": "CTP 模拟环境", "tag": "模拟" },
-      { "value": "simnow", "name": "SimNow 仿真交易", "tag": "模拟", "tagType": "hot" }
+      { "value": "simnow", "name": "SimNow（交易时段）", "tag": "模拟", "tagType": "hot" },
+      { "value": "simnow_724", "name": "SimNow（7×24）", "tag": "模拟", "tagType": "hot" }
     ]
   },
   {

@@ -18,6 +18,15 @@ export function login(data) {
   })
 }
 
+// 读取「记住账号」保存的凭据（期货公司 / 账号 / 密码），用于登录页预填
+export function getSavedCredentials() {
+  return request({
+    url: '/api/credentials',
+    method: 'get',
+    silent: true
+  })
+}
+
 // 当前账号的资金、持仓快照（来自后端 CTP 会话）
 export function getAccount() {
   return request({
