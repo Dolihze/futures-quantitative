@@ -34,6 +34,7 @@
 // 曲线数据一变就自动重画。
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
+import { chartColors, onThemeChange } from '@/utils/chartTheme'
 
 const props = defineProps({
   curve: { type: Object, default: null },        // { points, xs, segments, details, openMarks, stats, trades, openOnly }
@@ -97,7 +98,7 @@ function onDataZoom() {
         silent: true,
         symbol: 'none',
         label: { show: false },
-        lineStyle: { color: '#94a3b8', type: 'dashed' },
+        lineStyle: { color: chartColors().text, type: 'dashed' },
         data: [{ yAxis: 0 }, ...view.sepLines]
       }
     }]
@@ -322,7 +323,7 @@ function viewDependentOptions(segments, plotWidthPx, range, yMin, yMax) {
     {
       xAxis: seg.x0,
       itemStyle: { color: 'transparent' },
-      label: { show: names.has(i), position: 'insideTop', color: '#94a3b8', fontSize: 11, formatter: seg.name }
+      label: { show: names.has(i), position: 'insideTop', color: chartColors().text, fontSize: 11, formatter: seg.name }
     },
     { xAxis: seg.x1 }
   ])
@@ -344,7 +345,7 @@ function viewDependentOptions(segments, plotWidthPx, range, yMin, yMax) {
     // 颜色用不透明的实色，不用半透明：半透明的虚线叠在“曲线下方的面积填充”和“纯深蓝背景”两种底色上，
     // 上半段（纯深蓝）的对比度只有下半段的三分之一（实测亮度差 15 vs 45），肉眼看起来像只画了一半。
     sepLines.push([
-      { xAxis: x, yAxis: yMin, lineStyle: { color: '#64748b', type: 'dashed', width: 1 } },
+      { xAxis: x, yAxis: yMin, lineStyle: { color: chartColors().muted, type: 'dashed', width: 1 } },
       { xAxis: x, yAxis: yMax }
     ])
   }
@@ -371,7 +372,7 @@ function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, 
       // 居中又压在缩放滑块上（三次截图都验证过），所以去掉
       min: segments[0].x0 - 2,
       max: segments[segments.length - 1].x1 + 1,
-      axisLine: { lineStyle: { color: '#475569' } },
+      axisLine: { lineStyle: { color: chartColors().axisLineSoft } },
       axisTick: { show: true, ...view.xAxis.axisTick },
       splitLine: { show: false },
       // 十字线的竖线：不吸附交易点，连续地跟着鼠标走；X 轴上的标签显示这个位置的真实时间，精确到秒。
@@ -388,19 +389,19 @@ function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, 
         }
       },
       axisLabel: {
-        color: '#94a3b8',
+        color: chartColors().text,
         ...view.xAxis.axisLabel,
         // 不用 hideOverlap：标签是否重叠由 buildSessionTicks 按可见范围的像素预算负责，
         // 交界处的两个时间合并成了一个标签（10:15 | 10:30），不会再互相叠在一起
         hideOverlap: false,
         rich: {
-          h: { color: '#94a3b8', fontSize: 11, lineHeight: 16 },
-          d: { color: '#cbd5e1', fontSize: 11, lineHeight: 16 },
+          h: { color: chartColors().text, fontSize: 11, lineHeight: 16 },
+          d: { color: chartColors().textStrong, fontSize: 11, lineHeight: 16 },
           // 交界标签写成“终点（黄）| 起点（蓝）”，三个片段在同一个文本块里从左到右排，不依赖任何对齐。
           // （之前用 align 左右错开没有效果：rich 里的 align 只控制文字在文本块内部靠哪边）
-          s: { color: '#7dd3fc', fontSize: 11, lineHeight: 16 },
-          e: { color: '#fbbf24', fontSize: 11, lineHeight: 16 },
-          sep: { color: '#64748b', fontSize: 11, lineHeight: 16 }
+          s: { color: chartColors().sky, fontSize: 11, lineHeight: 16 },
+          e: { color: chartColors().amber, fontSize: 11, lineHeight: 16 },
+          sep: { color: chartColors().muted, fontSize: 11, lineHeight: 16 }
         }
       }
     },
@@ -433,20 +434,21 @@ function timeAxisOptions(points, xs, segments, details, openMarks, plotWidthPx, 
       const block = (i) => {
         const d = details[i]
         const value = points[i][1]
-        const color = value > 0 ? '#ef4444' : value < 0 ? '#22c55e' : '#fff'
-        const pc = d.pnl > 0 ? '#ef4444' : d.pnl < 0 ? '#22c55e' : '#fff'
+        const tc = chartColors()
+        const color = value > 0 ? '#ef4444' : value < 0 ? '#22c55e' : tc.neutral
+        const pc = d.pnl > 0 ? '#ef4444' : d.pnl < 0 ? '#22c55e' : tc.neutral
         return `<div style="font-weight:bold;margin-bottom:4px">${fmtFull(d.time)}</div>
               <div>${d.symbol} ${d.direction}平 ${d.lots} 手 @ ${d.price}</div>
               <div>本笔盈亏：<b style="color:${pc}">${money(d.pnl)}</b></div>
-              <div style="color:#94a3b8">手续费：${plain(d.fee)}</div>
+              <div style="color:${tc.text}">手续费：${plain(d.fee)}</div>
               <div>累计盈亏：<b style="color:${color}">${money(value)}</b></div>`
       }
       const blocks = [
         ...opensNear.map((m) => ({ time: m.time, html: openBlock(m) })),
         ...same.map((i) => ({ time: details[i].time, html: block(i) }))
       ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
-      const head = blocks.length > 1 ? `<div style="color:#fbbf24;margin-bottom:6px">此位置共 ${blocks.length} 笔成交</div>` : ''
-      return head + blocks.map((b) => b.html).join('<div style="height:1px;background:#475569;margin:6px 0"></div>')
+      const head = blocks.length > 1 ? `<div style="color:${chartColors().amber};margin-bottom:6px">此位置共 ${blocks.length} 笔成交</div>` : ''
+      return head + blocks.map((b) => b.html).join(`<div style="height:1px;background:${chartColors().divider};margin:6px 0"></div>`)
     },
     areas,
     sepLines,
@@ -522,7 +524,7 @@ function buildSeriesData(points, xs, details, openMarks, axisMin, axisMax) {
         value: [e.x, ys[idx]],
         symbol: 'circle',
         symbolSize: 8,
-        itemStyle: { color: '#16213e', borderColor: '#fbbf24', borderWidth: 2 }
+        itemStyle: { color: chartColors().bg, borderColor: chartColors().amber, borderWidth: 2 }
       })
     }
   })
@@ -549,9 +551,10 @@ function renderChart() {
   // 与 timeAxisOptions 里 x 轴的 min / max 保持一致：曲线从轴的最左端画到最右端
   const axisMin = segments[0].x0 - 2
   const axisMax = segments[segments.length - 1].x1 + 1
+  const c = chartColors()
   chart.setOption(
     {
-      backgroundColor: '#16213e',
+      backgroundColor: c.bg,
       animation: points.length < 5000,
       // bottom 要给 x 轴标签（序号 + 日期两行）和下方的缩放滑块都留出位置
       // top 30 -> 40：y 轴标题「累计盈亏（元）」随绘图区下移，它上方多留 10px
@@ -559,9 +562,9 @@ function renderChart() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross' },
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderColor: '#00d4ff',
-        textStyle: { color: '#fff' },
+        backgroundColor: c.tooltipBg,
+        borderColor: c.accent,
+        textStyle: { color: c.tooltipText },
         formatter: mode.tooltipFormatter
       },
       xAxis: mode.xAxis,
@@ -569,12 +572,12 @@ function renderChart() {
       yAxis: {
         type: 'value',
         name: '累计盈亏（元）',
-        nameTextStyle: { color: '#94a3b8' },
+        nameTextStyle: { color: c.text },
         min,
         max,
-        axisLine: { show: true, lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8', formatter: (v) => v.toLocaleString('zh-CN') },
-        splitLine: { lineStyle: { color: 'rgba(71, 85, 105, 0.3)' } }
+        axisLine: { show: true, lineStyle: { color: c.axisLineSoft } },
+        axisLabel: { color: c.text, formatter: (v) => v.toLocaleString('zh-CN') },
+        splitLine: { lineStyle: { color: c.splitLineSoft } }
       },
       // 默认显示全部数据（不设初始窗口）；数据多时可以用滚轮缩放、拖动滑块查看局部。
       // filterMode: 'none'：默认的 'filter' 会把窗口外的点直接丢掉，缩放后窗口左侧进入的那条线也就没了，
@@ -588,8 +591,8 @@ function renderChart() {
           filterMode: 'none',
           height: 24,
           bottom: 20,
-          borderColor: '#334155',
-          textStyle: { color: '#94a3b8' }
+          borderColor: c.sliderBorder,
+          textStyle: { color: c.text }
         }
       ],
       series: [
@@ -604,7 +607,7 @@ function renderChart() {
           // 面积填充不做红绿分界：面积的渐变也是按它自己的包围盒定位，红绿分界会落在错误的高度（已截图验证），
           // 所以面积只用一层中性色，由线条本身表达盈亏方向。
           lineStyle: { width: 2 },
-          areaStyle: { color: 'rgba(148, 163, 184, 0.14)', origin: 0 },
+          areaStyle: { color: c.area, origin: 0 },
           // 横坐标用固定四段交易时间里的位置（xs），而不是真实时间戳。
           // 曲线要覆盖整条时间轴：开头补一个累计 0 的点（轴的最左端），结尾补一个与最后一笔累计盈亏相同的点（轴的最右端），
           // 第一笔之前、最后一笔之后没有交易的时间段就是水平线。补的点只用于画线，不显示圆点，悬停详情也不使用它们。
@@ -615,7 +618,7 @@ function renderChart() {
             silent: true,
             symbol: 'none',
             label: { show: false },
-            lineStyle: { color: '#94a3b8', type: 'dashed' },
+            lineStyle: { color: chartColors().text, type: 'dashed' },
             // 0 线 + 段与段之间（休息时间）的竖向虚线
             data: [{ yAxis: 0 }, ...mode.sepLines]
           }
@@ -628,7 +631,15 @@ function renderChart() {
 
 const handleResize = () => chart && chart.resize()
 
-// 从 K 线视图切回资金曲线：图表容器之前被 display:none 隐藏过，尺寸要重新量一次
+// 主题切换：颜色分散在多个辅助函数里，直接整体重绘；重绘前记下缩放窗口，重绘后恢复
+onThemeChange(() => {
+  if (!chart || !props.curve?.points?.length) return
+  const dz = chart.getOption().dataZoom?.[0]
+  renderChart()
+  if (dz?.startValue != null && dz?.endValue != null) {
+    chart.dispatchAction({ type: 'dataZoom', startValue: dz.startValue, endValue: dz.endValue })
+  }
+})
 
 // 曲线数据变了（重新取了数据、筛选变了、过期被清空）就重画。数据先到、图表可能还没初始化（组件刚挂载），
 // 所以没有图表时先初始化；画之前等一个 tick，让空状态 / 加载遮罩的 DOM 先更新完

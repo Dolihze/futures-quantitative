@@ -55,6 +55,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
 import { getReviewDayTrades, getReviewDayKline } from '@/api'
+import { chartColors, onThemeChange } from '@/utils/chartTheme'
 
 const props = defineProps({
   reviewId: { type: String, default: '' },
@@ -370,7 +371,7 @@ function drawChart() {
     if (!t.openTime) hidden.push(`${symbol.value} ${t.side}单 ${t.lots} 手：平仓 ${t.closeTime} @ ${t.closePrice}（文件里找不到对应的开仓），盈亏 ${t.pnl}`)
     if (t.closeTime && !closeOk) hidden.push(`${symbol.value} ${t.side}单 ${t.lots} 手：开仓 ${t.openTime} @ ${t.openPrice} → 平仓 ${t.closeTime} @ ${t.closePrice}（不在当天），盈亏 ${t.pnl}`)
     // 连线颜色表示这笔交易的盈亏：盈利红、亏损绿（和项目其它页面一致），盈亏为 0 用灰色
-    const winColor = t.pnl > 0 ? UP : t.pnl < 0 ? DOWN : '#94a3b8'
+    const winColor = t.pnl > 0 ? UP : t.pnl < 0 ? DOWN : chartColors().text
     // info 里只放订单本身：不管鼠标悬停在开仓点、连线还是平仓点上，提示框都按订单展示，格式一样
     const info = { n, t }
     if (openOk) {
@@ -412,17 +413,18 @@ function drawChart() {
   const yMax = Math.max(...highs, ...prices)
   const pad = (yMax - yMin) * 0.05 || 1
 
+  const c = chartColors()
   chart.setOption(
     {
-      backgroundColor: '#16213e',
+      backgroundColor: c.bg,
       animation: false,
       grid: { left: GRID_LEFT, right: GRID_RIGHT, top: 30, bottom: 90 },
       tooltip: {
         trigger: 'item',
         // 背景的不透明度 0.8 -> 0.6，更透一点，不会把后面的 K 线完全遮住
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderColor: '#00d4ff',
-        textStyle: { color: '#fff' },
+        backgroundColor: c.tooltipBgLight,
+        borderColor: c.accent,
+        textStyle: { color: c.tooltipText },
         // K 线（蜡烛）不响应鼠标，没有提示框，只有订单的开仓点、连线、平仓点有。
         // 三者作为一个整体：不管悬停在哪一个上，提示框都是同一种格式——订单（连线）的格式。
         formatter: (p) => {
@@ -435,7 +437,8 @@ function drawChart() {
             ? points.filter((q) => q.value[0] === p.data.value[0] && q.value[1] === p.data.value[1] && q.name === p.data.name)
             : [p.data]
           const block = ({ t }) => {
-            const pc = t.pnl > 0 ? UP : t.pnl < 0 ? DOWN : '#fff'
+            const tc = chartColors()   // 运行时取当前主题色，切换主题后不用重建 formatter
+            const pc = t.pnl > 0 ? UP : t.pnl < 0 ? DOWN : tc.neutral
             const pnl = `${t.pnl > 0 ? '+' : ''}${t.pnl.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             // 第一行“做多/做空 手数”；第二行是开仓“买/卖：价格”（做多开仓是买、做空开仓是卖），
             // 第三行平仓不再区分买卖，统一写“平：价格”。不显示时间。
@@ -445,7 +448,7 @@ function drawChart() {
               <div>平：${t.closePrice}</div>
               <div>盈亏：<b style="color:${pc}">${pnl}</b></div>`
           }
-          return same.map((q) => block(q.info)).join('<div style="height:1px;background:#475569;margin:6px 0"></div>')
+          return same.map((q) => block(q.info)).join(`<div style="height:1px;background:${chartColors().divider};margin:6px 0"></div>`)
         }
       },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
@@ -453,8 +456,8 @@ function drawChart() {
         type: 'category',
         data: labels,
         boundaryGap: true,
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8', fontSize: 11, lineHeight: 15, hideOverlap: true },
+        axisLine: { lineStyle: { color: c.axisLineSoft } },
+        axisLabel: { color: c.text, fontSize: 11, lineHeight: 15, hideOverlap: true },
         axisTick: { show: false }
       },
       yAxis: {
@@ -462,15 +465,15 @@ function drawChart() {
         scale: true,
         min: Math.floor(yMin - pad),
         max: Math.ceil(yMax + pad),
-        axisLine: { show: true, lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' },
-        splitLine: { lineStyle: { color: 'rgba(71, 85, 105, 0.3)' } }
+        axisLine: { show: true, lineStyle: { color: c.axisLineSoft } },
+        axisLabel: { color: c.text },
+        splitLine: { lineStyle: { color: c.splitLineSoft } }
       },
       // maxValueSpan：一屏最多显示的 K 线根数，缩到 K 线实体窄于 CANDLE_MIN_PX 就不让再缩（见 maxVisibleBars）。
       // 窗口大小变化时由 handleResize 更新。一天有 300~500 根 1 分钟线，鼠标滚轮 / 拖滑块可以放大看细节、平移看其他时段
       dataZoom: [
         { type: 'inside', xAxisIndex: 0, filterMode: 'none', maxValueSpan: maxVisibleBars() },
-        { type: 'slider', xAxisIndex: 0, filterMode: 'none', maxValueSpan: maxVisibleBars(), height: 24, bottom: 20, borderColor: '#334155', textStyle: { color: '#94a3b8' } }
+        { type: 'slider', xAxisIndex: 0, filterMode: 'none', maxValueSpan: maxVisibleBars(), height: 24, bottom: 20, borderColor: c.sliderBorder, textStyle: { color: c.text } }
       ],
       series: [
         {
@@ -598,16 +601,17 @@ function bindOrderHover() {
 // 也没有用 setOption({ graphic })：鼠标每动一下就 setOption，会干扰订单的悬停联动和提示框。
 // 直接把图形加到 ZRender 画布上，不经过 setOption，也不属于任何系列；实测合并更新、整体替换、clear、resize 之后都还在。
 // 所有元素 silent，不接收鼠标，不会挡住下面订单图形的悬停。
-const CROSS_COLOR = '#B9BEC9'       // ECharts 默认十字指示器的线色，和资金曲线那边一致
 const CROSS_DASH = [2, 2]           // 虚线：线段 2px、间隔 2px（原来 4/4），越小越密
 const CROSS_OPACITY = 0.5           // 十字线的不透明度，越小越浅；只作用在两条线上，轴上的标签不受影响
-const CROSS_LABEL_BG = '#6a7985'    // 轴上标签的底色（ECharts 默认指示器标签的灰底）
 let cross = null                     // { group, vLine, hLine, xBg, xText, yBg, yText }
 
 function createCross() {
   const { Group, Line, Rect, Text } = echarts.graphic
+  const c = chartColors()   // 十字线颜色（线色 / 轴标签底色 / 文字）随主题
+  const CROSS_COLOR = c.crossColor
+  const CROSS_LABEL_BG = c.crossLabelBg
   const lineStyle = { stroke: CROSS_COLOR, lineWidth: 1, lineDash: CROSS_DASH, opacity: CROSS_OPACITY }
-  const textStyle = { fill: '#fff', fontSize: 12 }
+  const textStyle = { fill: c.axisPointerLabelText, fontSize: 12 }
   const group = new Group()
   group.ignore = true
   const vLine = new Line({ silent: true, z: 100, style: lineStyle, shape: { x1: 0, y1: 0, x2: 0, y2: 0 } })
@@ -751,6 +755,29 @@ watch(
     loadDay()
   }
 )
+
+// 主题切换：合并更新颜色，保留用户当前的缩放窗口和数据；十字线图形直接挂在 ZRender 上，需要销毁重建（下次鼠标移动时自动重建）
+onThemeChange((c) => {
+  if (cross && chart && !chart.isDisposed()) chart.getZr().remove(cross.group)
+  cross = null
+  if (!chart || chart.isDisposed() || !kline.value.length) return
+  // 盈亏为 0 的连线用主题里的灰色，需要同步更新缓存的数据
+  orderLinks.forEach((l) => {
+    if (l.info.t.pnl === 0) l.lineStyle.color = c.text
+  })
+  chart.setOption({
+    backgroundColor: c.bg,
+    tooltip: { backgroundColor: c.tooltipBgLight, borderColor: c.accent, textStyle: { color: c.tooltipText } },
+    xAxis: { axisLine: { lineStyle: { color: c.axisLineSoft } }, axisLabel: { color: c.text } },
+    yAxis: {
+      axisLine: { lineStyle: { color: c.axisLineSoft } },
+      axisLabel: { color: c.text },
+      splitLine: { lineStyle: { color: c.splitLineSoft } }
+    },
+    dataZoom: [{}, { borderColor: c.sliderBorder, textStyle: { color: c.text } }],
+    series: [{ name: '交易连线', data: linkSeriesData(hoveredOrder) }]
+  })
+})
 
 onMounted(() => {
   // 不再 await nextTick()：onMounted 时模板已经渲染完，chartRef 一定有值；

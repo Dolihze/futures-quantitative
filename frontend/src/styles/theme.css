@@ -1,0 +1,234 @@
+/* 全局主题令牌
+   通过 <html data-theme="gray | blue | light"> 切换，默认 gray（深灰）。
+   - gray  深灰：中性灰底色
+   - blue  深蓝：原有的深蓝配色（保持不变）
+   - light 白色：浅色配色
+   红涨绿跌（--up / --down）为语义色，三套主题含义不变，仅在浅色下微调明度。 */
+
+/* ==================== 深灰（默认） ==================== */
+:root,
+:root[data-theme='gray'] {
+  color-scheme: dark;
+
+  /* 页面 / 容器 */
+  --bg-page: #18181b;
+  --bg-page-alt: #18181b;            /* Backtest / Review 页面背景 */
+  --bg-gradient: linear-gradient(135deg, #18181b 0%, #2a2a30 50%, #18181b 100%);
+  --bg-navbar: rgba(24, 24, 27, 0.95);
+  --bg-card: rgba(39, 39, 42, 0.6);
+  --bg-card-solid: #27272a;
+  --bg-input: rgba(24, 24, 27, 0.6);
+  --bg-input-focus: rgba(24, 24, 27, 0.8);
+  --bg-login-card: rgba(24, 24, 27, 0.8);
+  --bg-field: rgba(39, 39, 42, 0.8);
+  --bg-popup: rgba(39, 39, 42, 0.98);
+  --bg-dropdown: #27272a;
+  --bg-overlay: rgba(24, 24, 27, 0.95);
+  --bg-overlay-chart: rgba(24, 24, 27, 0.7);
+  --bg-mask: rgba(0, 0, 0, 0.6);
+  --bg-mask-strong: rgba(0, 0, 0, 0.9);
+
+  /* Backtest / Review 专用层级 */
+  --bg-sidebar: #202024;
+  --bg-panel: #2e2e33;
+  --bg-chart: #202024;
+  --border-panel: #2e2e33;
+  --accent2: #38bdf8;                /* 原 #00d4ff 的强调色 */
+  --accent2-rgb: 56, 189, 248;
+  --text-muted2: #a1a1aa;            /* 原 #888 / #999 / #aaa */
+  --text-tab: #a1a1aa;
+
+  /* 边框 */
+  --border: rgba(113, 113, 122, 0.3);
+  --border-strong: rgba(113, 113, 122, 0.5);
+  --border-navbar: rgba(59, 130, 246, 0.15);
+  --border-popup: rgba(59, 130, 246, 0.3);
+
+  /* 文字 */
+  --text-primary: #f4f4f5;
+  --text-body: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-faint: #52525b;
+  --text-dim: #3f3f46;
+  --text-option: #d4d4d8;
+  --text-on-primary: #ffffff;
+
+  /* 主色 / 强调 */
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-active: #1d4ed8;
+  --primary-light: #60a5fa;
+  --primary-rgb: 59, 130, 246;
+  --cyan: #06b6d4;
+  --purple: #8b5cf6;
+  --purple-rgb: 139, 92, 246;
+  --orange: #fb923c;
+  --orange-rgb: 249, 115, 22;
+  --amber: #fbbf24;
+  --amber-rgb: 251, 191, 36;
+
+  /* 涨跌（红涨绿跌） */
+  --up: #ef4444;
+  --up-rgb: 239, 68, 68;
+  --up-text: #f87171;
+  --up-soft: #fca5a5;
+  --down: #22c55e;
+  --down-rgb: 34, 197, 94;
+  --neutral: #f4f4f5;
+
+  /* 阴影 / 其它 */
+  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-login: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --spinner-track: #3f3f46;
+  --grid-line: rgba(59, 130, 246, 0.08);
+  --glow-dot: rgba(59, 130, 246, 0.4);
+  --tab-bg: rgba(255, 255, 255, 0.03);
+}
+
+/* ==================== 深蓝（原有配色） ==================== */
+:root[data-theme='blue'] {
+  color-scheme: dark;
+
+  --bg-page: #0f172a;
+  --bg-page-alt: #1a1a2e;
+  --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+  --bg-navbar: rgba(15, 23, 42, 0.95);
+  --bg-card: rgba(30, 41, 59, 0.6);
+  --bg-card-solid: #1e293b;
+  --bg-input: rgba(15, 23, 42, 0.6);
+  --bg-input-focus: rgba(15, 23, 42, 0.8);
+  --bg-login-card: rgba(15, 23, 42, 0.8);
+  --bg-field: rgba(30, 41, 59, 0.8);
+  --bg-popup: rgba(30, 41, 59, 0.98);
+  --bg-dropdown: #1e293b;
+  --bg-overlay: rgba(15, 23, 42, 0.95);
+  --bg-overlay-chart: rgba(15, 23, 42, 0.7);
+  --bg-mask: rgba(0, 0, 0, 0.6);
+  --bg-mask-strong: rgba(0, 0, 0, 0.9);
+
+  --bg-sidebar: #16213e;
+  --bg-panel: #0f3460;
+  --bg-chart: #16213e;
+  --border-panel: #0f3460;
+  --accent2: #00d4ff;
+  --accent2-rgb: 0, 212, 255;
+  --text-muted2: #888888;
+  --text-tab: #8892a6;
+
+  --border: rgba(71, 85, 105, 0.3);
+  --border-strong: rgba(71, 85, 105, 0.5);
+  --border-navbar: rgba(59, 130, 246, 0.15);
+  --border-popup: rgba(59, 130, 246, 0.3);
+
+  --text-primary: #f1f5f9;
+  --text-body: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-faint: #475569;
+  --text-dim: #334155;
+  --text-option: #cbd5e1;
+  --text-on-primary: #ffffff;
+
+  --neutral: #f1f5f9;
+
+  --spinner-track: #334155;
+}
+
+/* ==================== 白色 ==================== */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-page: #f1f5f9;
+  --bg-page-alt: #f1f5f9;
+  --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #dbeafe 50%, #f8fafc 100%);
+  --bg-navbar: rgba(255, 255, 255, 0.92);
+  --bg-card: #ffffff;
+  --bg-card-solid: #ffffff;
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --bg-login-card: rgba(255, 255, 255, 0.85);
+  --bg-field: #ffffff;
+  --bg-popup: #ffffff;
+  --bg-dropdown: #ffffff;
+  --bg-overlay: rgba(255, 255, 255, 0.95);
+  --bg-overlay-chart: rgba(255, 255, 255, 0.7);
+  --bg-mask: rgba(15, 23, 42, 0.35);
+  --bg-mask-strong: rgba(255, 255, 255, 0.92);
+
+  --bg-sidebar: #ffffff;
+  --bg-panel: #eef2f7;
+  --bg-chart: #ffffff;
+  --border-panel: #e2e8f0;
+  --accent2: #2563eb;
+  --accent2-rgb: 37, 99, 235;
+  --text-muted2: #64748b;
+  --text-tab: #64748b;
+
+  --border: rgba(148, 163, 184, 0.45);
+  --border-strong: rgba(148, 163, 184, 0.8);
+  --border-navbar: rgba(148, 163, 184, 0.35);
+  --border-popup: rgba(148, 163, 184, 0.5);
+
+  --text-primary: #0f172a;
+  --text-body: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --text-dim: #94a3b8;
+  --text-option: #334155;
+  --text-on-primary: #ffffff;
+
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-active: #1e40af;
+  --primary-light: #3b82f6;
+  --primary-rgb: 37, 99, 235;
+  --orange: #ea580c;
+  --amber: #d97706;
+  --amber-rgb: 217, 119, 6;
+
+  --up: #dc2626;
+  --up-rgb: 220, 38, 38;
+  --up-text: #dc2626;
+  --up-soft: #b91c1c;
+  --down: #16a34a;
+  --down-rgb: 22, 163, 74;
+  --neutral: #0f172a;
+
+  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --shadow-popup: 0 8px 24px rgba(15, 23, 42, 0.15);
+  --shadow-login: 0 20px 60px rgba(15, 23, 42, 0.12);
+  --shadow-dropdown: 0 12px 32px rgba(15, 23, 42, 0.15);
+  --spinner-track: #e2e8f0;
+  --grid-line: rgba(37, 99, 235, 0.08);
+  --glow-dot: rgba(37, 99, 235, 0.35);
+  --tab-bg: rgba(15, 23, 42, 0.04);
+}
+
+/* ==================== Element Plus 变量映射 ====================
+   用 html:root（特异性与 Element 的 html.dark 相同，且本文件后加载）确保覆盖其暗色变量 */
+html:root {
+  --el-bg-color: var(--bg-card-solid);
+  --el-bg-color-overlay: var(--bg-dropdown);
+  --el-bg-color-page: var(--bg-page);
+  --el-text-color-primary: var(--text-body);
+  --el-text-color-regular: var(--text-option);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-muted);
+  --el-border-color: var(--border-strong);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-fill-color-blank: var(--bg-field);
+  --el-mask-color: var(--bg-mask);
+}
+
+/* 主题切换时的平滑过渡（仅背景/边框/文字，不影响动画元素） */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease !important;
+}

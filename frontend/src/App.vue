@@ -15,8 +15,8 @@
 
 body {
   font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--bg-page);
+  color: var(--text-body);
   min-height: 100vh;
 }
 

@@ -11,6 +11,7 @@
         </router-link>
       </div>
       <div class="nav-right">
+        <ThemeSwitcher />
         <div class="user-info">
           <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
           <span class="username">{{ userStore.username || '未登录' }}</span>
@@ -117,18 +118,18 @@
               v-for="(trade, index) in backtestResult.trades" 
               :key="index"
               class="trade-item"
-              :style="{ borderLeftColor: trade.type === 'long' ? '#ef4444' : '#22c55e' }"
+              :style="{ borderLeftColor: trade.type === 'long' ? 'var(--up)' : 'var(--down)' }"
             >
               <div class="trade-header">
                 <span 
                   class="trade-type"
-                  :style="{ color: trade.type === 'long' ? '#ef4444' : '#22c55e' }"
+                  :style="{ color: trade.type === 'long' ? 'var(--up)' : 'var(--down)' }"
                 >
                   #{{ index + 1 }} {{ trade.type === 'long' ? '多头' : '空头' }}
                 </span>
                 <span 
                   class="trade-profit"
-                  :style="{ color: trade.profit > 0 ? '#ef4444' : trade.profit < 0 ? '#22c55e' : '#fff' }"
+                  :style="{ color: trade.profit > 0 ? 'var(--up)' : trade.profit < 0 ? 'var(--down)' : 'var(--neutral)' }"
                 >
                   {{ trade.profit > 0 ? '+' : '' }}{{ trade.profit.toFixed(2) }}元
                 </span>
@@ -187,6 +188,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import { getKlineData, logout } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { chartColors, onThemeChange } from '@/utils/chartTheme'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -280,17 +282,18 @@ function initCharts() {
   
   klineChart = echarts.init(klineChartRef.value)
   
+  const c = chartColors()
   const klineOption = {
-    backgroundColor: '#16213e',
+    backgroundColor: c.bg,
     tooltip: {
       trigger: 'axis',
       axisPointer: {
         type: 'cross'
       },
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      borderColor: '#00d4ff',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.accent,
       textStyle: {
-        color: '#fff'
+        color: c.tooltipText
       },
       formatter: function (params) {
         if (!params || !params[0]) return ''
@@ -328,7 +331,7 @@ function initCharts() {
       data: [],
       axisLine: {
         lineStyle: {
-          color: '#333'
+          color: c.axisLine
         }
       },
       axisLabel: {
@@ -343,15 +346,15 @@ function initCharts() {
       scale: true,
       axisLine: {
         lineStyle: {
-          color: '#333'
+          color: c.axisLine
         }
       },
       axisLabel: {
-        color: '#aaa'
+        color: c.axisLabel
       },
       splitLine: {
         lineStyle: {
-          color: '#2a2a3e'
+          color: c.splitLine
         }
       }
     },
@@ -370,14 +373,14 @@ function initCharts() {
         height: 20,
         start: 0,
         end: 100,
-        borderColor: '#00d4ff',
-        backgroundColor: '#0f3460',
+        borderColor: c.accent,
+        backgroundColor: c.panel,
         dataBackground: {
           lineStyle: {
-            color: '#00d4ff'
+            color: c.accent
           },
           areaStyle: {
-            color: 'rgba(0, 212, 255, 0.2)'
+            color: `rgba(${c.accentRgb}, 0.2)`
           }
         }
       }
@@ -406,13 +409,13 @@ function initCharts() {
   indicatorChart = echarts.init(indicatorChartRef.value)
   
   const indicatorOption = {
-    backgroundColor: '#16213e',
+    backgroundColor: c.bg,
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      borderColor: '#00d4ff',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.accent,
       textStyle: {
-        color: '#fff'
+        color: c.tooltipText
       }
     },
     grid: {
@@ -427,7 +430,7 @@ function initCharts() {
       data: [],
       axisLine: {
         lineStyle: {
-          color: '#333'
+          color: c.axisLine
         }
       },
       axisLabel: {
@@ -442,15 +445,15 @@ function initCharts() {
       scale: true,
       axisLine: {
         lineStyle: {
-          color: '#333'
+          color: c.axisLine
         }
       },
       axisLabel: {
-        color: '#aaa'
+        color: c.axisLabel
       },
       splitLine: {
         lineStyle: {
-          color: '#2a2a3e'
+          color: c.splitLine
         }
       }
     },
@@ -1149,6 +1152,39 @@ const handleLogout = async () => {
 
 // 生命周期
 let isComponentMounted = true // 跟踪组件挂载状态
+
+// 主题切换：只合并更新与主题相关的颜色，不动数据和标记点
+function applyChartTheme(c) {
+  const common = {
+    backgroundColor: c.bg,
+    tooltip: { backgroundColor: c.tooltipBg, borderColor: c.accent, textStyle: { color: c.tooltipText } },
+    xAxis: { axisLine: { lineStyle: { color: c.axisLine } } },
+    yAxis: {
+      axisLine: { lineStyle: { color: c.axisLine } },
+      axisLabel: { color: c.axisLabel },
+      splitLine: { lineStyle: { color: c.splitLine } }
+    }
+  }
+  if (klineChart) {
+    klineChart.setOption({
+      ...common,
+      dataZoom: [
+        {},
+        {
+          borderColor: c.accent,
+          backgroundColor: c.panel,
+          dataBackground: {
+            lineStyle: { color: c.accent },
+            areaStyle: { color: `rgba(${c.accentRgb}, 0.2)` }
+          }
+        }
+      ]
+    })
+  }
+  if (indicatorChart) indicatorChart.setOption(common)
+}
+
+onThemeChange(applyChartTheme)
 
 onMounted(() => {
   // 使用 nextTick 确保 DOM 完全渲染

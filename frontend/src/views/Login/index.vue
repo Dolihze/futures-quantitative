@@ -7,6 +7,11 @@
     <div class="glow-dot"></div>
     <div class="glow-dot"></div>
 
+    <!-- 主题切换 -->
+    <div class="theme-corner">
+      <ThemeSwitcher />
+    </div>
+
     <div class="login-wrapper">
       <!-- Logo -->
       <div class="logo-area">

@@ -2,7 +2,7 @@
 
 .trading-container {
   min-height: 100vh;
-  background: #0f172a;
+  background: var(--bg-page);
 }
 
 /* 顶部导航栏 */
@@ -12,8 +12,8 @@
   justify-content: space-between;
   height: 56px;
   padding: 0 24px;
-  background: rgba(15, 23, 42, 0.95);
-  border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+  background: var(--bg-navbar);
+  border-bottom: 1px solid var(--border-navbar);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -28,10 +28,10 @@
 
 .back-btn {
   padding: 6px 14px;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-radius: 6px;
-  color: #3b82f6;
+  color: var(--primary);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
@@ -42,8 +42,8 @@
 }
 
 .back-btn:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(var(--primary-rgb), 0.2);
+  border-color: rgba(var(--primary-rgb), 0.5);
 }
 
 .back-btn svg {
@@ -62,13 +62,13 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .user-avatar {
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(135deg, var(--primary), var(--purple));
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -94,21 +94,21 @@
 }
 
 .stat-card {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.3);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
   transition: border-color 0.2s, transform 0.2s;
 }
 
 .stat-card:hover {
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(var(--primary-rgb), 0.4);
   transform: translateY(-2px);
 }
 
 .stat-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-muted);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -117,17 +117,17 @@
 .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--text-primary);
 }
 
-.stat-value.positive { color: #ef4444; }  /* 盈利 - 红色 */
-.stat-value.negative { color: #22c55e; }  /* 亏损 - 绿色 */
-.stat-value.zero { color: #f1f5f9; }  /* 0 - 白色 */
+.stat-value.positive { color: var(--up); }  /* 盈利 - 红色 */
+.stat-value.negative { color: var(--down); }  /* 亏损 - 绿色 */
+.stat-value.zero { color: var(--text-primary); }  /* 0 - 白色 */
 
 .stat-change {
   font-size: 12px;
   margin-top: 4px;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 /* 下单交易模块 */
@@ -141,7 +141,7 @@
 .section-title {
   font-size: 16px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--text-body);
   margin: 0;
 }
 
@@ -156,14 +156,14 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+  background: var(--up);
+  box-shadow: 0 0 6px rgba(var(--up-rgb), 0.4);
   animation: pulse 2s infinite;
 }
 
 .status-indicator.connected {
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+  background: var(--down);
+  box-shadow: 0 0 6px rgba(var(--down-rgb), 0.4);
 }
 
 @keyframes pulse {
@@ -173,17 +173,17 @@
 
 .status-text {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .status-text.connected {
-  color: #22c55e;
+  color: var(--down);
 }
 
 /* el-switch 连接开关样式 */
 .connection-switch {
   --el-switch-on-color: #409EFF;
-  --el-switch-off-color: #DCDFE6;
+  --el-switch-off-color: var(--border-strong);
   /* 调小尺寸 */
   --el-switch-height: 16px;
   --el-switch-button-size: 12px;
@@ -215,10 +215,10 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-radius: 6px;
-  color: #3b82f6;
+  color: var(--primary);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -227,8 +227,8 @@
 }
 
 .connect-btn-icon:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(var(--primary-rgb), 0.2);
+  border-color: rgba(var(--primary-rgb), 0.5);
 }
 
 .connect-btn-icon:disabled {
@@ -237,9 +237,9 @@
 }
 
 .connect-btn-icon.connected {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: rgba(34, 197, 94, 0.3);
-  color: #22c55e;
+  background: rgba(var(--down-rgb), 0.1);
+  border-color: rgba(var(--down-rgb), 0.3);
+  color: var(--down);
 }
 
 .connect-btn-icon svg {
@@ -248,9 +248,9 @@
 }
 
 .connect-btn-icon.loading {
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
+  background: rgba(var(--amber-rgb), 0.1);
+  border-color: rgba(var(--amber-rgb), 0.3);
+  color: var(--amber);
 }
 
 .connect-btn-icon .spinner {
@@ -279,19 +279,19 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--bg-overlay);
   padding: 12px 24px;
   border-radius: 8px;
-  color: #f87171;
+  color: var(--up-text);
   font-size: 14px;
   font-weight: 600;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(var(--up-rgb), 0.3);
   z-index: 10;
 }
 
 .trading-panel {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.3);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
 }
@@ -315,7 +315,7 @@
 
 .input-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-muted);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -325,16 +325,16 @@
   position: relative;
   display: flex;
   align-items: center;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 8px;
   transition: all 0.2s;
   height: 48px;
 }
 
 .input-wrapper:focus-within {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(15, 23, 42, 0.8);
+  border-color: rgba(var(--primary-rgb), 0.5);
+  background: var(--bg-input-focus);
 }
 
 .input-wrapper input {
@@ -342,7 +342,7 @@
   background: transparent;
   border: none;
   outline: none;
-  color: #f1f5f9;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
   padding: 0 12px;
@@ -357,7 +357,7 @@
 .input-btn-group {
   display: flex;
   flex-direction: column;
-  border-left: 1px solid rgba(71, 85, 105, 0.3);
+  border-left: 1px solid var(--border);
 }
 
 .input-btn {
@@ -365,7 +365,7 @@
   width: 32px;
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -374,12 +374,12 @@
 }
 
 .input-btn:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
 }
 
 .input-btn:first-child {
-  border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+  border-bottom: 1px solid var(--border);
 }
 
 .input-btn svg {
@@ -393,13 +393,13 @@
   top: calc(100% + 4px);
   left: 0;
   width: 100%;
-  background: rgba(30, 41, 59, 0.98);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--bg-popup);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-radius: 8px;
   padding: 6px;
   display: none;
   z-index: 10;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popup);
 }
 
 .price-type-selector.active {
@@ -412,17 +412,17 @@
   cursor: pointer;
   transition: all 0.2s;
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--text-option);
 }
 
 .price-type-option:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #f1f5f9;
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--text-primary);
 }
 
 .price-type-option.selected {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+  background: rgba(var(--primary-rgb), 0.15);
+  color: var(--primary);
 }
 
 /* 交易按钮 */
@@ -441,60 +441,60 @@
 }
 
 .trading-btn.long {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #ef4444;
+  background: rgba(var(--up-rgb), 0.15);
+  border: 1px solid rgba(var(--up-rgb), 0.3);
+  color: var(--up);
 }
 
 .trading-btn.long:hover {
-  background: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(var(--up-rgb), 0.25);
+  border-color: rgba(var(--up-rgb), 0.5);
 }
 
 .trading-btn.short {
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  color: #22c55e;
+  background: rgba(var(--down-rgb), 0.15);
+  border: 1px solid rgba(var(--down-rgb), 0.3);
+  color: var(--down);
 }
 
 .trading-btn.short:hover {
-  background: rgba(34, 197, 94, 0.25);
-  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(var(--down-rgb), 0.25);
+  border-color: rgba(var(--down-rgb), 0.5);
 }
 
 .trading-btn.close {
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #3b82f6;
+  background: rgba(var(--primary-rgb), 0.15);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  color: var(--primary);
 }
 
 .trading-btn.close:hover {
-  background: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(var(--primary-rgb), 0.25);
+  border-color: rgba(var(--primary-rgb), 0.5);
 }
 
 .trading-btn.reverse {
-  background: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  color: #8b5cf6;
+  background: rgba(var(--purple-rgb), 0.15);
+  border: 1px solid rgba(var(--purple-rgb), 0.3);
+  color: var(--purple);
 }
 
 .trading-btn.reverse:hover {
-  background: rgba(139, 92, 246, 0.25);
-  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(var(--purple-rgb), 0.25);
+  border-color: rgba(var(--purple-rgb), 0.5);
 }
 
 /* 快捷下单按钮 */
 .quick-order-section {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid rgba(71, 85, 105, 0.3);
+  border-top: 1px solid var(--border);
 }
 
 .quick-order-btn {
   width: 100%;
   height: 52px;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   border: none;
   border-radius: 8px;
   color: white;
@@ -509,9 +509,9 @@
 }
 
 .quick-order-btn:hover {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  background: linear-gradient(135deg, var(--primary-hover), var(--primary-active));
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.3);
 }
 
 .quick-order-btn svg {
@@ -527,7 +527,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--bg-mask);
   backdrop-filter: blur(4px);
   z-index: 1000;
   align-items: center;
@@ -540,12 +540,12 @@
 }
 
 .modal-content {
-  background: rgba(30, 41, 59, 0.95);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--bg-popup);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-radius: 16px;
   padding: 32px 40px;
   text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popup);
   animation: slideUp 0.3s ease;
 }
 
@@ -553,7 +553,7 @@
   width: 56px;
   height: 56px;
   margin: 0 auto 16px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2));
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--purple-rgb), 0.2));
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -563,19 +563,19 @@
 .modal-icon svg {
   width: 28px;
   height: 28px;
-  color: #3b82f6;
+  color: var(--primary);
 }
 
 .modal-title {
   font-size: 18px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
 .modal-message {
   font-size: 14px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 @keyframes fadeIn {
@@ -596,12 +596,12 @@
 
 /* Element Plus 样式覆盖 */
 :deep(.el-button--danger.is-plain) {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  background: rgba(var(--up-rgb), 0.1);
+  border-color: rgba(var(--up-rgb), 0.3);
+  color: var(--up-text);
 }
 
 :deep(.el-button--danger.is-plain:hover) {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(var(--up-rgb), 0.2);
+  border-color: rgba(var(--up-rgb), 0.5);
 }

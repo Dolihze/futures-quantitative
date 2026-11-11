@@ -11,6 +11,7 @@
         </router-link>
       </div>
       <div class="nav-right">
+        <ThemeSwitcher />
         <div class="user-info">
           <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
           <span>{{ userStore.username || '未登录' }}</span>
