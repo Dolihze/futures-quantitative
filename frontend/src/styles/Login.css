@@ -424,20 +424,6 @@
   border-color: rgba(var(--orange-rgb), 0.6);
 }
 
-/* 选项标签 */
-.option-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(var(--primary-rgb), 0.15);
-  color: var(--primary-light);
-}
-
-.option-tag.hot {
-  background: rgba(var(--orange-rgb), 0.15);
-  color: var(--orange);
-}
-
 /* �����л��������Ͻǣ� */
 .theme-corner {
   position: absolute;

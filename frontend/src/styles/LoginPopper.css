@@ -41,3 +41,22 @@
   justify-content: space-between;
   width: 100%;
 }
+
+/* 选项标签（如“模拟”）：高度只包住文字，垂直居中，不被 flex 拉伸 */
+.broker-select-popper .option-tag {
+  flex: none;
+  align-self: center;
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 1px 6px;
+  margin-left: 8px;
+  border-radius: 4px;
+  background: rgba(var(--primary-rgb), 0.15);
+  color: var(--primary-light);
+}
+
+.broker-select-popper .option-tag.hot {
+  background: rgba(var(--orange-rgb), 0.15);
+  color: var(--orange);
+}

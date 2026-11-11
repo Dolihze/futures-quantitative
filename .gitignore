@@ -1,4 +1,4 @@
-﻿# Tauri
+# Tauri
 src-tauri/target/
 
 # Python
@@ -31,6 +31,9 @@ wheels/
 src-tauri/sidecar/*.exe
 src-tauri/sidecar/python-backend
 !src-tauri/sidecar/README.md
+
+# CTP 真实期货公司接入参数（含认证码，不提交）
+data/ctp_brokers.local.json
 
 # 交易复盘：导入过的交易记录文件（个人交易数据，不提交）
 review_files/

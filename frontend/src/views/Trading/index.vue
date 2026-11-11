@@ -186,7 +186,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { logout, quantLogin } from '@/api'
+import { logout, quantLogin, getAccount } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -208,6 +208,74 @@ const accountInfo = reactive({
   profitClass: 'zero',
   profitChange: '暂无数据'
 })
+
+const NO_DATA = '暂无数据'
+const fmtMoney = (n) =>
+  Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// 清空账户展示
+const resetAccountInfo = () => {
+  Object.assign(accountInfo, {
+    balance: '0.00',
+    balanceChange: NO_DATA,
+    available: '0.00',
+    availableChange: NO_DATA,
+    usageRate: '0.00',
+    usageRateChange: NO_DATA,
+    profit: '0.00',
+    profitClass: 'zero',
+    profitChange: NO_DATA
+  })
+}
+
+// 用后端 CTP 会话的快照刷新账户展示
+const applyAccountSnapshot = (snap) => {
+  const acc = snap?.account
+  if (!acc) return // 首次资金回报还没到，保持原样，下一次轮询再刷新
+
+  const balance = Number(acc.balance) || 0
+  const available = Number(acc.available) || 0
+  const frozen = Number(acc.frozen) || 0
+  const profit = Number(snap.position_profit) || 0
+  const used = balance > 0 ? Math.max(balance - available, 0) : 0
+
+  accountInfo.balance = fmtMoney(balance)
+  accountInfo.balanceChange = `账号 ${acc.account}`
+  accountInfo.available = fmtMoney(available)
+  accountInfo.availableChange = `冻结 ¥ ${fmtMoney(frozen)}`
+  accountInfo.usageRate = balance > 0 ? ((used / balance) * 100).toFixed(2) : '0.00'
+  accountInfo.usageRateChange = `占用 ¥ ${fmtMoney(used)}`
+  accountInfo.profit = fmtMoney(profit)
+  accountInfo.profitClass = profit > 0 ? 'positive' : profit < 0 ? 'negative' : 'zero'
+  accountInfo.profitChange = `持仓 ${snap.positions?.length || 0} 个合约`
+}
+
+// 连接期间每 3 秒刷新一次资金；连接断开（网络 / 前置掉线）时自动切回未连接
+let accountTimer = null
+const stopAccountPolling = () => {
+  if (accountTimer) {
+    clearInterval(accountTimer)
+    accountTimer = null
+  }
+}
+const startAccountPolling = () => {
+  stopAccountPolling()
+  accountTimer = setInterval(async () => {
+    try {
+      const res = await getAccount()
+      if (res.success) {
+        applyAccountSnapshot(res.data)
+      } else if (isQuantConnected.value) {
+        isQuantConnected.value = false
+        stopAccountPolling()
+        resetAccountInfo()
+        ElMessage.warning('量化账号连接已断开')
+      }
+    } catch (error) {
+      // 后端暂时不可达，下次轮询再试
+    }
+  }, 3000)
+}
 
 // 价格相关
 const priceInput = ref('市价')
@@ -264,6 +332,8 @@ const toggleQuantConnection = async (val) => {
       
       if (result.success) {
         isQuantConnected.value = true
+        applyAccountSnapshot(result.data)
+        startAccountPolling()
         ElMessage.success('量化账号连接成功')
       } else {
         ElMessage.error(result.message || '连接失败')
@@ -285,6 +355,8 @@ const toggleQuantConnection = async (val) => {
 // 断开量化账号连接
 const disconnectQuantAccount = () => {
   isQuantConnected.value = false
+  stopAccountPolling()
+  resetAccountInfo()
   ElMessage.info('已断开量化账号连接')
 }
 
@@ -387,6 +459,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  stopAccountPolling()
   document.removeEventListener('click', handleClickOutside)
 })
 </script>

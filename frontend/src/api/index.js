@@ -8,12 +8,22 @@ export function getBrokers() {
   })
 }
 
-// 登录
+// 登录：后端通过 CTP 连接期货公司（终端认证 + 登录），最长约 25 秒，因此放宽超时
 export function login(data) {
   return request({
     url: '/api/login',
     method: 'post',
-    data
+    data,
+    timeout: 45000
+  })
+}
+
+// 当前账号的资金、持仓快照（来自后端 CTP 会话）
+export function getAccount() {
+  return request({
+    url: '/api/account',
+    method: 'get',
+    silent: true
   })
 }
 

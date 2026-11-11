@@ -195,7 +195,8 @@ const brokerOptions = computed(() => brokerGroups.value.flatMap((group) => group
 // 当前对外开放的期货公司（value 对应 data/brokers.json）。
 // 全量数据仍由接口返回、不做删除；以后要开放更多公司，往这里追加 value 即可，
 // 设为 null 则展示全部。
-const ENABLED_BROKERS = ['citic', 'guoyuan']
+// simnow：SimNow 仿真环境（公开参数，用于联调验证登录流程，拿到真实参数后可移除）。
+const ENABLED_BROKERS = ['citic', 'guoyuan', 'simnow']
 
 const filterBrokerGroups = (groups) => {
   if (!ENABLED_BROKERS) return groups
@@ -265,7 +266,9 @@ const handleLogin = async () => {
         errorMsg.value = result.message || '账号或密码错误'
       }
     } catch (error) {
-      errorMsg.value = '网络连接失败，请检查网络后重试'
+      errorMsg.value = error.code === 'ECONNABORTED'
+        ? '登录超时，请检查网络后重试'
+        : '网络连接失败，请检查网络后重试'
     } finally {
       loading.value = false
     }

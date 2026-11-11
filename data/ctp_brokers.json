@@ -1,0 +1,12 @@
+{
+  "_说明": "CTP 接入参数。key 对应 data/brokers.json 里期货公司的 value。真实期货公司的参数（含 auth_code）请写到 data/ctp_brokers.local.json（已加入 .gitignore，同名配置会覆盖本文件），不要提交到仓库。environment: 实盘=使用生产环境看穿式认证密钥（SimNow、期货公司生产环境均选此项）；测试=测评环境密钥。",
+  "simnow": {
+    "name": "SimNow 仿真交易（7x24 环境）",
+    "broker_id": "9999",
+    "td_address": "tcp://182.254.243.31:40001",
+    "md_address": "tcp://182.254.243.31:40011",
+    "app_id": "simnow_client_test",
+    "auth_code": "0000000000000000",
+    "environment": "实盘"
+  }
+}

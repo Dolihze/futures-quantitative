@@ -12,6 +12,7 @@ import uuid
 from collections import OrderedDict
 
 import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
+import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -76,11 +77,12 @@ except Exception as e:
     print(f"[Backend] 警告：加载数据文件失败: {e}")
     BROKER_GROUPS = {}
 
-# 模拟账户数据
-USERS = {
-    "admin": {"password": "123456", "broker": "ctp"},
-    "test":  {"password": "test123", "broker": "simnow"},
-}
+# CTP 接入参数：data/ctp_brokers.json（入库，仅含公开的 SimNow）
+# + data/ctp_brokers.local.json（不入库，放真实期货公司参数，同名覆盖）
+ctp_service.load_configs([
+    find_data_file('data', 'ctp_brokers.json'),
+    find_data_file('data', 'ctp_brokers.local.json'),
+])
 
 
 @app.route('/api/brokers')
@@ -91,20 +93,36 @@ def get_brokers():
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    """处理登录请求"""
-    data = request.get_json()
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    broker   = data.get('broker', '').strip()
+    """期货账号登录：通过 CTP 完成终端认证 + 登录，成功后保存会话"""
+    data = request.get_json(silent=True) or {}
+    username = str(data.get('username', '')).strip()
+    password = str(data.get('password', '')).strip()
+    broker   = str(data.get('broker', '')).strip()
 
+    if not broker:
+        return jsonify({"success": False, "message": "请选择期货公司"}), 400
     if not username or not password:
         return jsonify({"success": False, "message": "请输入账号和密码"}), 400
 
-    # 调试模式：暂时跳过验证
+    # 密码只传给 CTP 接口，不写入 session / 日志
+    result = ctp_service.login(broker, username, password)
+    if not result.get("success"):
+        session.clear()
+        return jsonify({"success": False, "message": result.get("message", "登录失败")})
+
     session['logged_in'] = True
     session['username']  = username
     session['broker']    = broker
-    return jsonify({"success": True, "message": "登录成功"})
+    return jsonify({"success": True, "message": "登录成功", "data": result.get("data")})
+
+
+@app.route('/api/account')
+def get_account():
+    """当前登录账号的资金、持仓快照（来自 CTP 会话）"""
+    snap = ctp_service.snapshot()
+    if snap is None:
+        return jsonify({"success": False, "connected": False, "message": "未连接期货账户或连接已断开"})
+    return jsonify({"success": True, "connected": True, "data": snap})
 
 
 @app.route('/api/backtest/kline')
@@ -491,30 +509,25 @@ def review_day_kline():
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
-    """退出登录"""
+    """退出登录：同时关闭 CTP 会话"""
+    ctp_service.logout()
     session.clear()
     return jsonify({"success": True})
 
 
 @app.route('/api/quant-login', methods=['POST'])
 def quant_login():
-    """处理量化账号登录请求"""
-    # 调试模式：暂时跳过实际登录
-    # TODO: 接入真实 CTP 登录（vnpy_ctp.CtpGateway + vnpy.trader.engine.MainEngine）。
-    #   账号/密码/交易密码/brokerid/td_address/md_address/auth_code 应从环境变量或
-    #   加密配置读取，不要写进源码。旧的参考实现见 git 历史中的 app.py（提交 ed08d7c）。
-    print(f"[调试模式] 量化账号登录请求 - 跳过实际验证")
-    
-    return jsonify({
-        "success": True,
-        "message": "登录成功（调试模式）",
-        "data": {
-            "account": "30522730",
-            "balance": 100000.00,
-            "available": 80000.00,
-            "frozen": 20000.00
-        }
-    })
+    """交易页「连接量化账号」：复用登录页建立的 CTP 会话，返回真实资金、持仓。
+
+    不再使用写死的账号；没有真实会话（例如用调试模式进入）时返回失败。
+    """
+    snap = ctp_service.snapshot()
+    if snap is None:
+        return jsonify({
+            "success": False,
+            "message": "未登录期货账户或连接已断开，请退出后用期货账号重新登录（调试模式无真实账户）"
+        })
+    return jsonify({"success": True, "message": "连接成功", "data": snap})
 
 
 if __name__ == '__main__':
