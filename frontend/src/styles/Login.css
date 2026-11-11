@@ -235,6 +235,9 @@
 }
 
 /* 调试模式按钮 */
+.debug-actions {
+  text-align: center;
+}
 .debug-btn {
   margin-top: 20px;
   padding: 10px 28px;

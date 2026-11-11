@@ -1,17 +1,27 @@
-/* 
- * 期货量化交易系统 - 全局样式
- * 
- * 样式目录结构：
- * - Trading.css: 交易页面样式
- * - Home.css: 首页样式
- * - Backtest.css: 回测页面样式
- * - Login.css: 登录页面样式
+/*
+ * 期货量化交易系统 - 样式目录说明
+ *
+ * 样式隔离规范：
+ * 1. 页面 / 组件样式一律放在本目录，在对应 .vue 里用 scoped 方式引入：
+ *      <style scoped>
+ *      @import '@/styles/Xxx.css';
+ *      </style>
+ *    不要在 .vue 里直接写样式块，也不要用 style="..." 写静态行内样式（动态值用 :style）。
+ * 2. 覆盖 Element Plus 内部节点用 :deep()。
+ * 3. 挂载到 <body> 的内容（下拉面板 popper / 弹窗 teleport）scoped 命不中，
+ *    需要单独建 xxxPopper.css，用 popper-class 作为前缀，并以「非 scoped」方式引入：
+ *      <style>
+ *      @import '@/styles/XxxPopper.css';
+ *      </style>
+ * 4. 全局生效的内容只允许放在：
+ *    - theme.css: 主题变量
+ *    - base.css : reset / body / #app
+ *    两者由 main.js 引入。
+ *
+ * 文件对应关系：
+ * - Home.css / Login.css / LoginPopper.css / Trading.css / Backtest.css
+ * - Review.css / ReviewKline.css（复盘页及其子组件）
+ * - ThemeSwitcher.css（主题切换组件）
+ *
+ * 注意：本文件不应被 import（页面样式不能全局引入，否则会破坏 scoped 隔离）。
  */
-
-/* 可以在这里添加全局共享的样式变量和基础样式 */
-
-/* 导入所有页面样式（可选，便于全局管理） */
-@import './Trading.css';
-@import './Home.css';
-@import './Backtest.css';
-@import './Login.css';

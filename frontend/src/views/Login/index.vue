@@ -60,24 +60,20 @@
                 placeholder="请选择期货公司"
                 filterable
                 class="custom-broker-select"
+                popper-class="broker-select-popper"
               >
-                <el-option-group
-                  v-for="group in brokerGroups"
-                  :key="group.label"
-                  :label="group.label"
+                <!-- 不展示分组标题，平铺所有选项（分组数据仍保留在 brokerGroups 中） -->
+                <el-option
+                  v-for="item in brokerOptions"
+                  :key="item.value"
+                  :label="item.name"
+                  :value="item.value"
                 >
-                  <el-option
-                    v-for="item in group.items"
-                    :key="item.value"
-                    :label="item.name"
-                    :value="item.value"
-                  >
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <span>{{ item.name }}</span>
-                      <span v-if="item.tag" :class="['option-tag', item.tagType || '']">{{ item.tag }}</span>
-                    </div>
-                  </el-option>
-                </el-option-group>
+                  <div class="broker-option">
+                    <span>{{ item.name }}</span>
+                    <span v-if="item.tag" :class="['option-tag', item.tagType || '']">{{ item.tag }}</span>
+                  </div>
+                </el-option>
               </el-select>
             </div>
           </el-form-item>
@@ -137,7 +133,7 @@
         </el-form>
 
         <!-- 调试模式按钮 -->
-        <div style="text-align: center;">
+        <div class="debug-actions">
           <el-button
             type="warning"
             plain
@@ -157,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getBrokers, login } from '@/api'
@@ -193,11 +189,29 @@ const loginRules = reactive({
 
 const brokerGroups = ref([])
 
+// 平铺后的下拉选项（不显示分组标题）
+const brokerOptions = computed(() => brokerGroups.value.flatMap((group) => group.items))
+
+// 当前对外开放的期货公司（value 对应 data/brokers.json）。
+// 全量数据仍由接口返回、不做删除；以后要开放更多公司，往这里追加 value 即可，
+// 设为 null 则展示全部。
+const ENABLED_BROKERS = ['citic', 'guoyuan']
+
+const filterBrokerGroups = (groups) => {
+  if (!ENABLED_BROKERS) return groups
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => ENABLED_BROKERS.includes(item.value))
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
 // 加载期货公司列表
 onMounted(async () => {
   try {
     const data = await getBrokers()
-    brokerGroups.value = data
+    brokerGroups.value = filterBrokerGroups(data)
     
     // 恢复记住的账号
     const savedUsername = localStorage.getItem('futures_username')
@@ -206,7 +220,8 @@ onMounted(async () => {
       loginForm.username = savedUsername
       rememberAccount.value = true
     }
-    if (savedBroker) {
+    // 仅当记住的期货公司仍在可选列表中时才恢复
+    if (savedBroker && brokerGroups.value.some((g) => g.items.some((i) => i.value === savedBroker))) {
       loginForm.broker = savedBroker
     }
   } catch (error) {
@@ -271,4 +286,9 @@ const handleDebugLogin = async () => {
 
 <style scoped>
 @import '@/styles/Login.css';
+</style>
+
+<!-- 下拉面板通过 teleport 挂到 body 下，scoped / :deep 命中不了，需以非 scoped 方式引入 -->
+<style>
+@import '@/styles/LoginPopper.css';
 </style>

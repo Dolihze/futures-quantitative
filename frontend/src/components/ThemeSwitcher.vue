@@ -36,46 +36,5 @@ const current = computed(() => THEMES.find((t) => t.value === themeStore.theme) 
 </script>
 
 <style scoped>
-.theme-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--nav-btn-bg);
-  border: 1px solid var(--nav-btn-border);
-  border-radius: 6px;
-  color: var(--nav-btn-color);
-  font-size: 12px;
-  cursor: pointer;
-  outline: none;
-  transition: all 0.2s;
-}
-
-.theme-switcher:hover {
-  background: var(--nav-btn-bg-hover);
-  border-color: var(--nav-btn-border-hover);
-}
-
-.theme-switcher svg {
-  width: 14px;
-  height: 14px;
-}
-
-.theme-swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 8px;
-  border-radius: 50%;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-}
-
-.theme-check {
-  margin-left: 10px;
-  color: var(--primary);
-}
-
-.is-active-theme {
-  color: var(--primary);
-}
+@import '@/styles/ThemeSwitcher.css';
 </style>

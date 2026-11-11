@@ -53,7 +53,7 @@
               @click="loadKlineData" 
               :loading="loading"
               :disabled="loading"
-              style="width: 100%; margin-top: 10px;"
+              class="load-btn"
             >
               📈 加载数据
             </el-button>
@@ -65,7 +65,7 @@
           @click="runBacktest"
           :loading="backtesting"
           :disabled="backtesting || !currentKlineData"
-          style="width: 100%; margin-bottom: 20px;"
+          class="run-backtest-btn"
         >
           🔄 反转信号回测
         </el-button>

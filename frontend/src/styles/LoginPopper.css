@@ -1,0 +1,43 @@
+/* Login 页期货公司下拉面板样式
+ *
+ * 下拉面板通过 teleport 挂载到 <body> 下，不在组件 DOM 内，
+ * scoped / :deep 都命中不了，所以这里必须以「非 scoped」方式引入。
+ * 所有选择器都以 .broker-select-popper 开头（对应 el-select 的 popper-class），
+ * 避免污染其它页面。 */
+
+.broker-select-popper .el-select-dropdown__list {
+  padding: 6px;
+}
+
+.broker-select-popper .el-select-dropdown__item {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  line-height: 36px;
+  padding: 0 12px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  color: var(--text-option);
+}
+
+.broker-select-popper .el-select-dropdown__item:last-child {
+  margin-bottom: 0;
+}
+
+.broker-select-popper .el-select-dropdown__item.is-hovering,
+.broker-select-popper .el-select-dropdown__item:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+.broker-select-popper .el-select-dropdown__item.is-selected {
+  background: rgba(var(--primary-rgb), 0.18);
+  color: var(--primary-light);
+}
+
+.broker-select-popper .broker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}

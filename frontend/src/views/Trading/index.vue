@@ -61,7 +61,6 @@
             :disabled="isConnecting"
             size="small"
             class="connection-switch"
-            style="--el-switch-button-size: 14px; --el-switch-height: 20px;"
           >
             <template #loading>
               <svg class="switch-loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -184,9 +184,9 @@
 .connection-switch {
   --el-switch-on-color: #409EFF;
   --el-switch-off-color: var(--border-strong);
-  /* 调小尺寸 */
-  --el-switch-height: 16px;
-  --el-switch-button-size: 12px;
+  /* 调小尺寸（原行内样式，已合并到这里） */
+  --el-switch-height: 20px;
+  --el-switch-button-size: 14px;
 }
 
 /* 隐藏 switch 内部的文字 */

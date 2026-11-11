@@ -299,6 +299,17 @@
   line-height: 1.6;
 }
 
+/* 侧边栏操作按钮（原行内样式） */
+.load-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.run-backtest-btn {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
 :deep(.el-button--danger.is-plain) {
   background: rgba(var(--up-rgb), 0.1);
   border-color: rgba(var(--up-rgb), 0.3);
