@@ -20,7 +20,7 @@
     </nav>
 
     <div class="main-container">
-      <!-- 左侧：导入与筛选 -->
+      <!-- 左侧：导入与统计 -->
       <aside class="sidebar">
         <div class="control-panel">
           <h3>📂 导入交易记录</h3>
@@ -44,7 +44,7 @@
             <div class="file-meta">
               {{ fileInfo.tradeCount }} 笔成交 · {{ fileInfo.products.length }} 个品种
             </div>
-            <div class="file-meta">交易日 {{ fileInfo.start.slice(0, 10) }} ~ {{ fileInfo.end.slice(0, 10) }}</div>
+            <div class="file-meta">交易日 {{ tradeDateText }}</div>
           </div>
 
           <!-- 已导入的文件：保存在项目的 review_files 文件夹里，点一下就能直接切换分析 -->
@@ -80,56 +80,29 @@
           <div v-for="(w, i) in warnings" :key="i" class="review-warning">⚠ {{ w }}</div>
         </div>
 
-        <div v-if="fileInfo" class="control-panel">
-          <h3>🔎 筛选条件</h3>
-          <el-form label-position="top" size="default">
-            <el-form-item label="时间范围">
-              <el-date-picker
-                v-model="range"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                value-format="YYYY-MM-DD"
-                :disabled-date="disabledDate"
-                :clearable="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-            <el-form-item label="交易品种">
-              <el-select
-                v-model="selectedProducts"
-                multiple
-                collapse-tags
-                collapse-tags-tooltip
-                placeholder="全部品种"
-                style="width: 100%"
-              >
-                <el-option v-for="p in fileInfo.products" :key="p" :label="p" :value="p" />
-              </el-select>
-              <div class="filter-actions">
-                <a @click="selectedProducts = [...fileInfo.products]">全选</a>
-                <a @click="selectedProducts = []">清空（= 全部）</a>
-              </div>
-            </el-form-item>
-            <el-form-item>
-              <el-checkbox v-model="includeFee" :disabled="!fileInfo.hasFee">扣除手续费</el-checkbox>
-              <div v-if="!fileInfo.hasFee" class="fee-hint">该文件没有手续费数据，曲线为未扣手续费的平仓盈亏</div>
-            </el-form-item>
-            <el-button style="width: 100%" @click="resetFilters">重置筛选</el-button>
-          </el-form>
-        </div>
-
         <!-- 统计 -->
         <div v-if="curve && curve.trades > 0" class="backtest-result">
-          <h4>📊 统计（当前筛选）</h4>
+          <h4>📊 统计</h4>
+          <!-- 三行：累计盈亏 / 交易日期 + 手续费合计 / 交易笔数 + 胜率。
+               没有手续费数据时第二行只有交易日期，让它占满整行，避免半行留空 -->
           <div class="result-grid">
             <div class="result-item wide">
               <div class="result-label">累计盈亏{{ feeApplied ? '（已扣手续费）' : '' }}</div>
               <div class="result-value" :class="pnlClass(stats.totalPnl)">{{ money(stats.totalPnl) }}</div>
             </div>
+            <div class="result-item" :class="{ wide: !fileInfo.hasFee }">
+              <div class="result-label">交易日期</div>
+              <!-- 跨多天时 “起 ~ 止” 放不进半行：每个日期保持完整，只允许在两个日期之间换行 -->
+              <div class="result-value neutral">
+                <span v-for="(d, i) in statDateParts" :key="i" class="result-date-part">{{ d }}</span>
+              </div>
+            </div>
+            <div v-if="fileInfo.hasFee" class="result-item">
+              <div class="result-label">手续费合计</div>
+              <div class="result-value neutral">{{ plain(stats.totalFee) }}</div>
+            </div>
             <div class="result-item">
-              <div class="result-label">平仓笔数</div>
+              <div class="result-label">交易笔数</div>
               <div class="result-value neutral">{{ stats.closeCount }}</div>
             </div>
             <div class="result-item">
@@ -137,22 +110,6 @@
               <div class="result-value" :class="stats.winRate >= 50 ? 'positive' : 'negative'">
                 {{ stats.winRate.toFixed(2) }}%
               </div>
-            </div>
-            <div class="result-item">
-              <div class="result-label">最大回撤</div>
-              <div class="result-value negative">{{ plain(stats.maxDrawdown) }}</div>
-            </div>
-            <div v-if="fileInfo.hasFee" class="result-item">
-              <div class="result-label">手续费合计</div>
-              <div class="result-value neutral">{{ plain(stats.totalFee) }}</div>
-            </div>
-            <div class="result-item">
-              <div class="result-label">单笔最大盈利</div>
-              <div class="result-value positive">{{ money(stats.maxProfit) }}</div>
-            </div>
-            <div class="result-item">
-              <div class="result-label">单笔最大亏损</div>
-              <div class="result-value negative">{{ money(stats.maxLoss) }}</div>
             </div>
           </div>
         </div>
@@ -231,7 +188,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { uploadReviewFile, getReviewFiles, openReviewFile, deleteReviewFile, getReviewCurve, logout } from '@/api'
@@ -249,10 +206,15 @@ const loadingText = ref('')
 const errorMsg = ref('')
 const warnings = ref([])
 const fileInfo = ref(null)         // { reviewId, filename, products, start, end, tradeCount }
-const range = ref(null)            // ['YYYY-MM-DD', 'YYYY-MM-DD']
-const selectedProducts = ref([])   // 空 = 全部
-const includeFee = ref(true)
 const curve = ref(null)            // { points, stats, trades }
+
+// 交易日文字：导出的 Excel 通常只有一天，只有一天时显示 “2026-10-29”，跨多天（比如夜盘归到下一交易日）才显示范围
+const tradeDateText = computed(() => {
+  if (!fileInfo.value) return ''
+  const start = fileInfo.value.start.slice(0, 10)
+  const end = fileInfo.value.end.slice(0, 10)
+  return start === end ? start : `${start} ~ ${end}`
+})
 
 // 右侧视图：资金曲线 / 当天 K 线
 const viewMode = ref('curve')
@@ -261,8 +223,7 @@ const klineVisited = ref(false)
 watch(viewMode, (mode) => {
   if (mode === 'kline') klineVisited.value = true
 })
-// 当天交易回放选中的品种（右上角下拉框）：选项是导入文件里包含的品种，导入新文件时默认选第一个。
-// 它独立于左侧「交易品种」筛选（那个只影响账户盈亏曲线）
+// 当天交易回放选中的品种（右上角下拉框）：选项是导入文件里包含的品种，导入新文件时默认选第一个
 const klineProduct = ref('')
 // 传给回放组件的品种数组用 computed 缓存：模板里直接写 [klineProduct] 每次渲染都会生成新数组
 const klineProducts = computed(() => (klineProduct.value ? [klineProduct.value] : []))
@@ -274,16 +235,21 @@ watch(
   },
   { immediate: true }
 )
-// 当天 K 线能选的交易日 = 文件里有成交的交易日，且在左侧“时间范围”之内
-const tradingDays = computed(() => {
-  const all = fileInfo.value?.days || []
-  if (!range.value) return all
-  return all.filter((d) => d >= range.value[0] && d <= range.value[1])
+// 统计里的“交易日期”，格式 YYYY/MM/DD；规则同上：一天只写一天，跨多天写“起 ~ 止”。
+// 拆成数组渲染：跨多天时两个日期各自成段，窄的格子里只在两个日期之间换行，不会把一个日期从中间截断
+const statDateParts = computed(() => {
+  if (!fileInfo.value) return []
+  const start = fileInfo.value.start.slice(0, 10).replaceAll('-', '/')
+  const end = fileInfo.value.end.slice(0, 10).replaceAll('-', '/')
+  return start === end ? [start] : [`${start} ~`, end]
 })
 
+// 当天交易回放能看的交易日 = 文件里有成交的交易日
+const tradingDays = computed(() => fileInfo.value?.days || [])
+
 const stats = computed(() => curve.value?.stats || {})
-// 实际是否扣了手续费：用户勾选了，并且文件里确实有手续费数据
-const feeApplied = computed(() => includeFee.value && !!fileInfo.value?.hasFee)
+// 是否扣手续费：文件里有手续费数据就扣（没有就是未扣手续费的平仓盈亏）。不再提供开关
+const feeApplied = computed(() => !!fileInfo.value?.hasFee)
 
 // ---------- 格式化（红涨绿跌，与项目其它页面一致）----------
 const plain = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -363,20 +329,10 @@ async function handleFileChange(uploadFile) {
   }
 }
 
-// 把一份解析结果（上传或从文件夹选择，返回结构相同）设为当前数据：重置筛选条件并取一次曲线
+// 把一份解析结果（上传或从文件夹选择，返回结构相同）设为当前数据，并取一次曲线
 async function applyReviewResult(res) {
   fileInfo.value = res
   warnings.value = res.warnings || []
-  // 下面改筛选条件是程序设置的，不是用户操作；这里会马上自己取一次曲线，
-  // 所以让 watch 跳过这一轮，否则同一份数据会被请求两次（watch 是异步触发的，clearTimeout 来不及取消）
-  skipNextFilterWatch = true
-  selectedProducts.value = []
-  includeFee.value = true
-  range.value = [res.start.slice(0, 10), res.end.slice(0, 10)]
-  // watch 在下一个 tick 才触发。如果新值和旧值相同（重复导入同一份文件），watch 根本不会触发，
-  // 标志就不会被消费，会误吞用户之后真正的筛选操作——所以这里等一个 tick 后无条件复位。
-  await nextTick()
-  skipNextFilterWatch = false
   await fetchCurve(true)
 }
 
@@ -463,17 +419,15 @@ loadFileList()
 
 let requestSeq = 0
 async function fetchCurve(isFirst = false) {
-  if (!fileInfo.value || !range.value) return
-  // 防止快速切换筛选条件时，旧请求的结果覆盖新请求
+  if (!fileInfo.value) return
+  // 防止快速切换文件时，旧请求的结果覆盖新请求
   const seq = ++requestSeq
   loading.value = true
   loadingText.value = '正在生成曲线...'
   try {
+    // 不再有筛选条件：全部品种、整个文件的时间范围（不传 products / start / end），有手续费数据就扣
     const res = await getReviewCurve({
       reviewId: fileInfo.value.reviewId,
-      products: selectedProducts.value.join(','),
-      start: range.value[0],
-      end: range.value[1],
       fee: feeApplied.value ? 1 : 0
     })
     if (seq !== requestSeq) return
@@ -501,34 +455,6 @@ async function fetchCurve(isFirst = false) {
   }
 }
 
-// 筛选条件变化后自动刷新（防抖，避免连续点选时频繁请求）
-let filterTimer = null
-let skipNextFilterWatch = false
-watch([range, selectedProducts, includeFee], () => {
-  if (skipNextFilterWatch) {
-    skipNextFilterWatch = false
-    return
-  }
-  if (!fileInfo.value) return
-  clearTimeout(filterTimer)
-  filterTimer = setTimeout(() => fetchCurve(), 250)
-})
-
-function disabledDate(date) {
-  if (!fileInfo.value) return false
-  const d = date.getTime()
-  const min = new Date(fileInfo.value.start.slice(0, 10) + 'T00:00:00').getTime()
-  const max = new Date(fileInfo.value.end.slice(0, 10) + 'T23:59:59').getTime()
-  return d < min || d > max
-}
-
-function resetFilters() {
-  if (!fileInfo.value) return
-  range.value = [fileInfo.value.start.slice(0, 10), fileInfo.value.end.slice(0, 10)]
-  selectedProducts.value = []
-  includeFee.value = true
-}
-
 // 退出登录（与其它页面一致）
 const handleLogout = async () => {
   try {
@@ -545,10 +471,6 @@ const handleLogout = async () => {
     // 用户取消操作
   }
 }
-
-onUnmounted(() => {
-  clearTimeout(filterTimer)
-})
 </script>
 
 <style scoped>

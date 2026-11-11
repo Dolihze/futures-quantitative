@@ -65,7 +65,7 @@ def test_detail_sheet_upload_merge_fee_and_flags():
     assert j["success"] and j["products"] == ["FU", "IF", "RB"]
     assert j["tradeCount"] == 13, "tradeCount 是文件里的成交行数（开+平）；曲线上的笔数以 curve 接口为准"
     assert j["hasFee"] is True and "dateOnly" not in j
-    assert any("成交明细" in w for w in j["warnings"])
+    assert not any("已读取工作表" in w for w in j["warnings"])
     rid = j["reviewId"]
     gross = client.get(f"/api/review/curve?reviewId={rid}&fee=0").get_json()
     net = client.get(f"/api/review/curve?reviewId={rid}&fee=1").get_json()

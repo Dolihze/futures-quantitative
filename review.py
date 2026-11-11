@@ -212,9 +212,7 @@ def read_trades(file_bytes: bytes, filename: str = "") -> tuple[pd.DataFrame, li
     """
     warnings: list[str] = []
     sheets = _load_sheets(file_bytes, filename)
-    raw, sheet_name, header_row, cols = _pick_sheet(sheets)
-    if len(sheets) > 1:
-        warnings.append(f"已读取工作表「{sheet_name}」")
+    raw, _sheet_name, header_row, cols = _pick_sheet(sheets)
 
     body = raw.iloc[header_row + 1:].reset_index(drop=True)
 
@@ -237,14 +235,10 @@ def read_trades(file_bytes: bytes, filename: str = "") -> tuple[pd.DataFrame, li
     # 成交序号：同一时刻的多笔成交靠它还原先后顺序（可能是 "00012345" 这样的文本）
     df["seq"] = pd.to_numeric(col("seq"), errors="coerce") if "seq" in cols else float("nan")
 
-    # 丢掉汇总行 / 空行：时间、合约、手数任一缺失
-    before = len(df)
+    # 丢掉汇总行 / 空行：时间、合约、手数任一缺失（静默丢弃，不再提示丢了几行）
     df = df.dropna(subset=["time", "volume"])
     df = df[df["symbol"].ne("") & df["symbol"].ne("nan")]
     df = df[df["volume"] > 0]
-    dropped = before - len(df)
-    if dropped:
-        warnings.append(f"已忽略 {dropped} 行无法识别的数据（空行、合计行等）")
     if df.empty:
         raise ReviewParseError("没有读取到有效的成交记录")
     # 曲线按“成交时间”聚合、按时间排列：如果所有记录都只有日期（时间全是 00:00:00），同一天的成交分不出先后，

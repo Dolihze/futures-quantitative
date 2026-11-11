@@ -46,7 +46,7 @@ def test_header_detection_and_columns():
     assert len(df) == 6, "合计行应被丢弃"
     assert set(df["product"]) == {"FU", "RB"}
     assert df["pnl"].notna().any()
-    assert any("忽略" in w for w in warnings)
+    assert not any("忽略" in w for w in warnings), "合计行 / 空行静默丢弃，不再提示丢了几行"
 
 
 def test_curve_with_pnl_column():
@@ -278,7 +278,7 @@ def test_detail_sheet_is_chosen_and_old_closed_sheet_is_ignored():
     # 文件里同时有“资金状况”“平仓明细”“成交明细”：只读“成交明细”（旧的平仓明细里放了 99999 的陷阱数据）
     df, w = review.read_trades(make_detail_sheet(ROWS_D), "s.xlsx")
     assert len(df) == 13 and set(df["product"]) == {"FU", "RB", "IF"}
-    assert any("成交明细" in x for x in w)
+    assert not any("已读取工作表" in x for x in w), "读了哪张工作表不再作为提示显示给用户"
     g = review.build_curve(review.analyze(make_detail_sheet(ROWS_D), "s.xlsx").records, include_fee=False)["stats"]["grossPnl"]
     assert g == GROSS_D, "读到了错误的工作表" if g != GROSS_D else ""
 

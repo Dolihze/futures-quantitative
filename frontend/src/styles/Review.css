@@ -281,29 +281,6 @@
   line-height: 1.6;
 }
 
-.fee-hint {
-  margin-top: 4px;
-  color: #94a3b8;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 14px;
-  margin-top: 6px;
-  font-size: 12px;
-}
-
-.filter-actions a {
-  color: #3b82f6;
-  cursor: pointer;
-}
-
-.filter-actions a:hover {
-  text-decoration: underline;
-}
-
 /* 统计 */
 .backtest-result {
   background: #0f3460;
@@ -346,6 +323,12 @@
   font-size: 16px;
   font-weight: bold;
   word-break: break-all;
+}
+
+/* 交易日期：一个日期不可拆开；跨多天时两段之间可以换行，每段独占一行 */
+.result-date-part {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .result-item.wide .result-value {
@@ -544,14 +527,6 @@
 
 :deep(.el-upload-dragger:hover) {
   border-color: #3b82f6;
-}
-
-:deep(.el-form-item__label) {
-  color: #cbd5e1;
-}
-
-:deep(.el-checkbox__label) {
-  color: #cbd5e1;
 }
 
 :deep(.el-button--danger.is-plain) {
