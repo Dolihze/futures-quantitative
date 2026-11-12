@@ -9,7 +9,7 @@ styles/
 ├── index.css          # 样式入口文件（可选，用于全局导入）
 ├── Trading.css        # 交易页面样式
 ├── Home.css           # 首页样式
-├── Backtest.css       # 回测页面样式
+├── Backtest.css       # 回测页面样式（策略总览 index.vue 与策略详情 Detail.vue 共用）
 ├── Login.css          # 登录页面样式
 ├── Review.css         # 交易复盘页面样式（index.vue 和它的子组件共用的部分：布局、空状态、加载中等）
 ├── ReviewKline.css    # 复盘页「当天交易回放」组件（ReviewKline.vue）自己的样式
@@ -39,7 +39,7 @@ styles/
 例如：
 - `views/Trading/index.vue` → `@import '@/styles/Trading.css';`
 - `views/Home/index.vue` → `@import '@/styles/Home.css';`
-- `views/Backtest/index.vue` → `@import '@/styles/Backtest.css';`
+- `views/Backtest/index.vue`、`views/Backtest/Detail.vue` → `@import '@/styles/Backtest.css';`
 - `views/Login/index.vue` → `@import '@/styles/Login.css';`
 - `views/Review/index.vue`、`views/Review/ReviewFunding.vue` → `@import '@/styles/Review.css';`
 - `views/Review/ReviewKline.vue` → 先 `@import '@/styles/Review.css';`（共用部分），再 `@import '@/styles/ReviewKline.css';`（自己的样式，顺序不能反）

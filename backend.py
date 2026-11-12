@@ -15,6 +15,7 @@ import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
 import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
 import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
 import copy_trading  # 量化监控：监控账号成交 -> 自动跟单（copy_trading.py）
+import backtest_engine  # 量化回测：策略注册表、回测引擎与统计（backtest_engine.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -152,63 +153,125 @@ def get_account():
     return jsonify({"success": True, "connected": True, "data": snap})
 
 
+# ---------------------------------------------------------------------------
+# 量化回测
+# ---------------------------------------------------------------------------
+# 新浪 K 线按 (合约, 周期) 缓存几分钟：首页一次要对所有策略回测，详情页又会再取一次，不必每次都请求网络。
+BACKTEST_KLINE_CACHE = {}
+BACKTEST_KLINE_TTL = 300  # 秒
+BACKTEST_DEFAULT_SYMBOL = 'FU2611'
+BACKTEST_PERIODS = ('1', '5', '15', '30', '60')
+
+
+def fetch_backtest_bars(symbol, period):
+    """取某合约某周期的全部可得 K 线（新浪每个周期只给最近约 1023 根）。返回 dict 列表，升序。"""
+    import time as _time
+    import akshare as ak
+    import pandas as pd
+
+    key = (symbol, period)
+    cached = BACKTEST_KLINE_CACHE.get(key)
+    if cached and _time.time() - cached[0] < BACKTEST_KLINE_TTL:
+        return cached[1]
+    df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
+    if df is None or df.empty:
+        return []
+    df = df.copy()
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = df.sort_values('datetime')
+    bars = [{
+        'time': r.datetime.strftime('%Y-%m-%d %H:%M:%S'),
+        'open': float(r.open), 'high': float(r.high), 'low': float(r.low), 'close': float(r.close),
+        'volume': int(r.volume) if hasattr(r, 'volume') else 0,
+    } for r in df.itertuples(index=False)]
+    BACKTEST_KLINE_CACHE[key] = (_time.time(), bars)
+    return bars
+
+
+def _backtest_params():
+    symbol = request.args.get('symbol', BACKTEST_DEFAULT_SYMBOL).strip() or BACKTEST_DEFAULT_SYMBOL
+    days = int(request.args.get('days', 30))
+    lots = int(request.args.get('lots', backtest_engine.DEFAULT_LOTS))
+    if days <= 0 or lots <= 0:
+        raise ValueError('days 和 lots 必须大于 0')
+    return symbol, days, lots
+
+
 @app.route('/api/backtest/kline')
 def get_kline_data():
     """获取K线数据API"""
-    from datetime import datetime, timedelta
-    import akshare as ak
-    import pandas as pd
-    
     try:
-        symbol = request.args.get('symbol', 'FU2611')
+        symbol = request.args.get('symbol', BACKTEST_DEFAULT_SYMBOL)
         period = request.args.get('period', '1')
         days = int(request.args.get('days', 30))
-        
-        print(f"[API] 请求参数: symbol={symbol}, period={period}, days={days}")
-        
-        df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
-        
-        if df is not None and not df.empty:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-            
-            if 'datetime' in df.columns:
-                df['datetime'] = pd.to_datetime(df['datetime'])
-                df = df[df['datetime'] >= start_date]
-            
-            data = []
-            for _, row in df.iterrows():
-                data.append({
-                    'time': row['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
-                    'open': float(row['open']),
-                    'high': float(row['high']),
-                    'low': float(row['low']),
-                    'close': float(row['close']),
-                    'volume': int(row['volume']) if 'volume' in row else 0
-                })
-            
-            return jsonify({
-                'success': True,
-                'data': data,
-                'symbol': symbol,
-                'count': len(data)
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': '未获取到数据'
-            }), 404
-            
+        bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, period), days)
+        if not bars:
+            return jsonify({'success': False, 'message': '未获取到数据'}), 404
+        return jsonify({'success': True, 'data': bars, 'symbol': symbol, 'count': len(bars)})
     except Exception as e:
-        print(f"[API] 获取K线数据失败: {str(e)}")
-        import traceback
-        error_detail = traceback.format_exc()
-        print(f"[API] 详细错误信息:\n{error_detail}")
-        return jsonify({
-            'success': False,
-            'message': f'获取数据失败: {str(e)}',
-            'error': error_detail
-        }), 500
+        print(f"[API] 获取K线数据失败: {e}")
+        return jsonify({'success': False, 'message': f'获取数据失败: {e}'}), 500
+
+
+@app.route('/api/backtest/strategies')
+def backtest_strategies():
+    """已注册的量化策略列表（不含回测结果）"""
+    return jsonify({'success': True, 'data': backtest_engine.list_strategies()})
+
+
+@app.route('/api/backtest/overview')
+def backtest_overview():
+    """首页：对所有策略在最近 days 天内回测，返回每个策略的胜率、盈亏比、总盈亏和缩略净值曲线。
+
+    参数：symbol（默认 FU2611）、days（默认 30）、lots（默认 5）。
+    每个策略使用它自己声明的 K 线周期；某个策略失败不影响其它策略，失败原因放在该策略的 error 字段里。
+    """
+    try:
+        symbol, days, lots = _backtest_params()
+    except ValueError as e:
+        return jsonify({'success': False, 'message': f'参数错误：{e}'}), 400
+
+    items = []
+    for sdef in backtest_engine.STRATEGIES.values():
+        info = {'id': sdef.id, 'name': sdef.name, 'description': sdef.description,
+                'category': sdef.category, 'period': sdef.period}
+        try:
+            bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, sdef.period), days)
+            if not bars:
+                raise ValueError('未获取到K线数据')
+            result = backtest_engine.run_backtest(bars, sdef.id, symbol, lots)
+            info.update(stats=result['stats'], equity=result['equity'], error=None)
+        except Exception as e:
+            print(f"[Backtest] 策略 {sdef.id} 回测失败: {e}")
+            info.update(stats=None, equity=[], error=str(e))
+        items.append(info)
+    return jsonify({'success': True, 'symbol': symbol, 'days': days, 'lots': lots, 'data': items})
+
+
+@app.route('/api/backtest/run')
+def backtest_run():
+    """详情页：回测单个策略，返回 K 线、成交明细（含买卖点）、净值曲线和完整统计。
+
+    参数：strategy（策略 id）、symbol、days、lots。
+    """
+    strategy = request.args.get('strategy', '').strip()
+    if strategy not in backtest_engine.STRATEGIES:
+        return jsonify({'success': False, 'message': f'未知策略：{strategy}'}), 404
+    try:
+        symbol, days, lots = _backtest_params()
+    except ValueError as e:
+        return jsonify({'success': False, 'message': f'参数错误：{e}'}), 400
+    sdef = backtest_engine.STRATEGIES[strategy]
+    try:
+        bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, sdef.period), days)
+        if not bars:
+            return jsonify({'success': False, 'message': '未获取到K线数据'}), 404
+        result = backtest_engine.run_backtest(bars, strategy, symbol, lots)
+        result.update(success=True, days=days, period=sdef.period, kline=bars)
+        return jsonify(result)
+    except Exception as e:
+        print(f"[Backtest] 回测失败 {strategy}: {e}")
+        return jsonify({'success': False, 'message': f'回测失败：{e}'}), 500
 
 
 # ---------------------------------------------------------------------------

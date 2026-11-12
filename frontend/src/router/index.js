@@ -32,6 +32,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/backtest/:strategyId',
+    name: 'BacktestDetail',
+    component: () => import('@/views/Backtest/Detail.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/review',
     name: 'Review',
     component: () => import('@/views/Review/index.vue'),

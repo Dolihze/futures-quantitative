@@ -112,6 +112,9 @@ npm run backend:build
 | `/api/logout` | POST | 退出登录 |
 | `/api/quant-login` | POST | 量化账号登录（目前为调试模式） |
 | `/api/backtest/kline` | GET | K 线数据，参数 `symbol` `period` `days` |
+| `/api/backtest/strategies` | GET | 量化回测：已注册策略列表 |
+| `/api/backtest/overview` | GET | 量化回测首页：所有策略的胜率、盈亏比、总盈亏、缩略净值曲线，参数 `symbol` `days` `lots` |
+| `/api/backtest/run` | GET | 量化回测详情：单个策略的 K 线、逐笔成交、净值曲线、完整统计，参数 `strategy` `symbol` `days` `lots` |
 | `/api/review/upload` | POST | 交易复盘：上传交易记录（multipart，字段 `file`，≤20MB），返回 `reviewId`、品种列表、数据时间范围、解析提示 |
 | `/api/review/curve` | GET | 交易复盘：按 `reviewId`、`products`（逗号分隔，空=全部）、`start`、`end`、`fee`（1=扣手续费）返回累计盈亏曲线和统计 |
 

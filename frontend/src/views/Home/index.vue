@@ -98,7 +98,7 @@
           </div>
           <div class="feature-title">量化回测</div>
           <div class="feature-description">
-            历史数据回测，策略验证，绩效分析，风险评估
+            多策略历史回测，胜率与盈亏比总览，K线买卖点与盈利曲线详情
           </div>
           <div class="feature-arrow">
             <span>进入回测</span>

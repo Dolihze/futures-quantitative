@@ -49,22 +49,26 @@ export function logout() {
   })
 }
 
-// 获取K线数据
-export function getKlineData(params) {
-  console.log('🌐 [API] getKlineData 请求:')
-  console.log('   URL:', '/api/backtest/kline')
-  console.log('   参数:', params)
-  
+// 量化回测首页：所有策略在最近 days 天内的胜率、盈亏比、总盈亏、缩略净值曲线。
+// 后端要对每个策略取 K 线并回测，首次可能较慢，放宽超时；失败由页面自己展示，不弹全局提示。
+export function getBacktestOverview(params) {
   return request({
-    url: '/api/backtest/kline',
+    url: '/api/backtest/overview',
     method: 'get',
-    params
-  }).then(response => {
-    console.log('📨 [API] getKlineData 响应:', response)
-    return response
-  }).catch(error => {
-    console.error('❌ [API] getKlineData 错误:', error)
-    throw error
+    params,
+    timeout: 90000,
+    silent: true
+  })
+}
+
+// 量化回测详情：单个策略的 K 线、买卖成交点、逐笔明细、净值曲线、完整统计
+export function runBacktest(params) {
+  return request({
+    url: '/api/backtest/run',
+    method: 'get',
+    params,
+    timeout: 90000,
+    silent: true
   })
 }
 
