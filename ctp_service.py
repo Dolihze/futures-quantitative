@@ -385,8 +385,8 @@ def get_quote(vt_symbol):
         "limit_up": None, "limit_down": None, "pre_close": None, "time": None,
     }
     if tick:
-        def pos(v):  # CTP 无效价格会被置 0，当作“没有”
-            return v if v else None
+        def pos(v):  # CTP 无效价格会被置 0，当作“没有”；同时把浮点误差（如 7187.400000000001）规整到最小变动价位
+            return _round_to_tick(v, contract.pricetick) if v else None
         quote.update({
             "last_price": pos(tick.last_price),
             "bid_price": pos(tick.bid_price_1),
@@ -397,6 +397,20 @@ def get_quote(vt_symbol):
             "time": tick.datetime.strftime("%H:%M:%S") if tick.datetime else None,
         })
     return quote, ""
+
+
+def _round_to_tick(price, tick):
+    """把价格规整到最小变动价位的整数倍，并去掉浮点误差。
+
+    CTP 推送的涨跌停价是按“昨结算价 × 比例”算出来的，常带 7187.400000000001 这样的尾巴；
+    按最小变动价位四舍五入后，再按价位的小数位数取整，显示和后续比较都干净。"""
+    if not tick or tick <= 0:
+        return price
+    n = round(price / tick)
+    # 价位小数位数：0.2 -> 1，0.02 -> 2，1 -> 0，0.5 -> 1
+    s = f"{tick:.10f}".rstrip("0").rstrip(".")
+    decimals = len(s.split(".")[1]) if "." in s else 0
+    return round(n * tick, decimals)
 
 
 def _is_tick_multiple(price, tick):

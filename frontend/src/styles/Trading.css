@@ -657,7 +657,7 @@
 
 .quote-detail {
   display: flex;
-  gap: 14px;
+  gap: 8px;
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-muted);
@@ -665,14 +665,34 @@
 
 .quote-detail b { font-weight: 600; }
 
+/* 行情明细每一项（标签 + 数字）整体固定 80px 宽：
+   标签 2 个汉字约 24px + 间隙 4px，数字可用约 52px，常见的 4~7 字符价格都放得下。
+   “--” 和真实价格都从同一位置起笔，四项的起点永远不变；等宽数字让 “1111” 和 “8888” 一样宽，数字跳动时不抖动。
+   只有 8 字符的 120000.0（碳酸锂）会比 52px 多出约 3px：不换行、不截断，向右溢出到项间空白里
+   （截断价格比越界几个像素更危险）。 */
+.q-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: none;
+  width: 80px;
+  white-space: nowrap;
+  overflow: visible;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-val {
+  text-align: left;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 涨停 / 跌停不加粗，沿用普通文字色 */
+.q-val.q-plain { font-weight: 400; }
+
 .up-text { color: var(--up-text); }
 .down-text { color: var(--down); }
 
-.quote-empty {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding-bottom: 14px;
-}
 
 .fill-last {
   margin-left: 8px;
@@ -812,3 +832,211 @@
 .reverse-tag.opened { background: rgba(var(--down-rgb), 0.15); color: var(--down); }
 .reverse-tag.cancelled { background: rgba(113, 113, 122, 0.2); color: var(--text-muted); }
 .reverse-tag.failed { background: rgba(var(--up-rgb), 0.15); color: var(--up-text); }
+
+/* ------------------------------------------------------------------ */
+/* 下单交易（左）与当前委托（右）并排，各占一半宽度                       */
+/* ------------------------------------------------------------------ */
+
+.trade-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* minmax(0, …)：防止表格 / 输入框把列撑宽 */
+  gap: 24px;
+  align-items: stretch;                             /* 两列等高：右侧委托面板和左侧下单面板一样高 */
+  margin-bottom: 0;
+}
+
+.trade-col { min-width: 0; }
+
+/* 右列：标题固定在上，委托面板填满剩余高度。
+   面板用 contain: size 声明“自己不提供固有高度”，这样行高只由左侧下单面板决定；
+   委托很多时不会把整行撑高，而是在面板内部滚动。 */
+.orders-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.orders-col .orders-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  contain: size;
+  overflow: hidden;       /* 滚动交给内部的 .paged-body，面板自己不滚，分页条才能固定在底部 */
+}
+
+/* 带分页的面板：上面是可滚动的表格区，底部是固定的分页条 */
+.paged-panel {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;      /* 底部留白由分页条自己负责，避免分页条下面多出一截空 */
+}
+
+.paged-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+/* 分页条固定在面板右下角；高度固定，没有委托（只有“0 条 / 1 页”）时也占位，位置不跳 */
+.paged-footer {
+  flex: none;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+
+/* Element Plus 分页：颜色全部走项目主题变量，深灰 / 深蓝 / 白色三套主题都能正确显示 */
+.paged-footer :deep(.el-pagination) {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: transparent;
+  --el-pagination-button-color: var(--text-secondary);
+  --el-pagination-button-disabled-bg-color: transparent;
+  --el-pagination-button-disabled-color: var(--text-muted);
+  --el-pagination-text-color: var(--text-secondary);
+  --el-pagination-hover-color: var(--primary);
+  --el-pagination-font-size: 12px;
+  --el-pagination-button-width: 26px;
+  --el-pagination-button-height: 26px;
+  padding: 0;
+  font-weight: 400;
+}
+
+.paged-footer :deep(.el-pagination.is-background .btn-prev),
+.paged-footer :deep(.el-pagination.is-background .btn-next),
+.paged-footer :deep(.el-pagination.is-background .el-pager li) {
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  margin: 0 2px;
+}
+
+.paged-footer :deep(.el-pagination.is-background .el-pager li:not(.is-disabled).is-active) {
+  background: var(--primary);
+  color: #fff;
+}
+
+.paged-footer :deep(.el-pagination.is-background .btn-prev:disabled),
+.paged-footer :deep(.el-pagination.is-background .btn-next:disabled) {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* “共 N 条”：通过 layout 的 slot 渲染（不是 Element Plus 自带的英文 Total） */
+.paged-footer :deep(.pager-total) {
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* “当前委托”表所有列（表头和内容）统一居左。
+   .num 默认是居右（持仓、成交明细表的数字列也在用，那两张表保持居右不变），所以只在这个列容器里覆盖。 */
+.orders-col .orders-table th,
+.orders-col .orders-table td,
+.orders-col .orders-table .num {
+  text-align: left;
+}
+
+/* 表头固定，表格内部滚动时表头始终可见（当前委托 / 当前持仓 / 成交明细三张分页表都用） */
+.orders-col .orders-table thead th,
+.paged-col .orders-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 1;
+}
+
+/* 当前持仓（左）与成交明细（右）：和上面的“下单交易 | 当前委托”同样的两列版式，
+   两个面板都是带分页的纯表格，没有谁给谁当高度基准，所以直接固定成和上一行一样的 326px 高。
+   两列同高，分页条固定在各自面板的右下角。 */
+.paged-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.paged-col .orders-panel {
+  flex: none;
+  height: 326px;
+  overflow: hidden;       /* 滚动交给内部的 .paged-body，分页条才能固定在底部 */
+}
+
+/* 第二行和第一行之间的间距（原来靠 .orders-header 的 margin-top，在 .trade-col 里被清零了） */
+.trade-row + .trade-row { margin-top: 28px; }
+
+/* 反手任务面板紧跟在第二行下面，间距和各区块之间一致 */
+.trade-row + .reverse-panel { margin-top: 28px; }
+
+/* 右列的“当前委托”标题要和左列“下单交易”在同一高度，不能再保留上方的 28px 间距 */
+.trade-col .orders-header { margin-top: 0; }
+
+/* 左列标题行里有开关（24px 高），右列标题行只有文字（21px 高）：统一成相同高度，两个标题文字才真正对齐 */
+.trade-col .section-header { min-height: 24px; }
+
+/* <input> 自带的最小宽度会让输入框在半宽下收缩不动，把右侧的上下箭头挤出边框；允许它随容器收缩 */
+.trade-col .input-wrapper input { min-width: 0; width: 100%; }
+.trade-col .input-btn-group { flex: none; }
+
+/* 半宽下，合约行（下拉 + 行情）和价格 / 手数行允许换行，避免挤成一团 */
+.trade-col .trading-row { flex-wrap: wrap; }
+.trade-col .contract-group { flex: 1 1 100%; }
+/* 行情区固定高度：未选合约 / 加载中 / 有行情（大字价格 + 明细）三种状态占位一致，下单面板高度不再随状态变化。
+   52px = 26px 大字（行高 1.1）+ 4px 间距 + 明细一行 + 余量；内容在盒子里垂直居中。 */
+.trade-col .quote-box {
+  flex: 1 1 100%;
+  height: 52px;
+  min-height: 52px;
+  max-height: 52px;
+  justify-content: center;
+  overflow: hidden;
+}
+.trade-col .input-group { flex: 1 1 calc(50% - 6px); min-width: 160px; }
+
+/* 行情明细：固定盒子高度下不换行（4 项在半宽内放得下；放不下时省略号，而不是撑高盒子） */
+.trade-col .quote-detail { flex-wrap: nowrap; gap: 4px 8px; white-space: nowrap; overflow: hidden; }
+
+/* 半宽下面板内边距和按钮字号略收紧 */
+.trade-col .trading-panel { padding: 20px; }
+.trade-col .trading-btn { font-size: 13px; padding: 0 4px; white-space: nowrap; }
+
+/* 委托表只有半宽：收紧单元格间距，放不下时由 .orders-panel 横向滚动 */
+.trade-col .orders-table th,
+.trade-col .orders-table td { padding: 10px 6px; }
+
+/* 当前持仓有 8 列（合约、方向、持仓、可平、开仓均价、最新价、浮动盈亏、操作），放进半宽会比可视宽度多出约 23px，
+   “操作”列里的“反手”会被挤到可视区外点不到。只对持仓表收紧列内边距和操作列链接间距，不影响其它两张表的版式。 */
+.positions-col .orders-table th,
+.positions-col .orders-table td { padding: 10px 4px; }
+.positions-col .orders-table .reverse-link { margin-left: 8px; }
+
+/* 半宽放不下时（合约名长、盈亏位数多等）持仓表可以横向滚动，但最右边的“操作”列（平仓 / 反手）固定不动，
+   不管数据多长，关键操作按钮永远点得到。
+   背景要和面板实际显示的颜色一致：面板用的是半透明的 --bg-card（叠在页面底色上），所以先垫一层 --bg-page 再叠 --bg-card，
+   这样滚动时下面的文字不会透出来，也不会出现一块颜色不同的色块（--bg-card-solid 比面板实际颜色亮）。 */
+.positions-col .orders-table th:last-child,
+.positions-col .orders-table td:last-child {
+  position: sticky;
+  right: 0;
+  background-color: var(--bg-page);
+  background-image: linear-gradient(var(--bg-card), var(--bg-card));
+  z-index: 1;
+}
+
+/* 表头里的“操作”要同时固定在顶部和右边，层级比普通表头 / 单元格都高 */
+.positions-col .orders-table thead th:last-child { z-index: 2; }
+
+/* 操作列左侧加一条细分隔线，提示“这里下面还有被盖住的列可以滚动” */
+.positions-col .orders-table th:last-child,
+.positions-col .orders-table td:last-child { box-shadow: -1px 0 0 var(--border); }
+
+/* 窗口较窄时恢复上下堆叠，避免两列都被压得过窄 */
+@media (max-width: 1000px) {
+  .trade-row { grid-template-columns: minmax(0, 1fr); }
+  .trade-col + .trade-col { margin-top: 28px; }
+  .trade-col + .trade-col .orders-header { margin-top: 0; }
+  /* 上下堆叠时没有“左侧高度”可跟随，委托面板给一个固定高度，内容多时内部滚动 */
+  .orders-col .orders-panel { flex: none; height: 308px; contain: none; }
+  /* 持仓 / 成交明细同样：堆叠后沿用固定高度，上下两块之间留出间距 */
+  .paged-col .orders-panel { height: 308px; }
+  .trade-row + .trade-row { margin-top: 28px; }
+}

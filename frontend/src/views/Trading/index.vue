@@ -46,196 +46,329 @@
         </div>
       </div>
 
-      <!-- 下单交易模块标题 -->
-      <div class="section-header">
-        <h2 class="section-title">下单交易</h2>
-        <div class="connection-status">
-          <div class="status-indicator" :class="{ connected: isQuantConnected }"></div>
-          <span class="status-text" :class="{ connected: isQuantConnected }">
-            {{ isQuantConnected ? '量化账号已连接' : '未连接量化账号' }}
-          </span>
-          <el-switch
-            v-model="isQuantConnected"
-            :loading="isConnecting"
-            @change="toggleQuantConnection"
-            :disabled="isConnecting"
-            size="small"
-            class="connection-switch"
-          >
-            <template #loading>
-              <svg class="switch-loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
-                <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
-              </svg>
-            </template>
-          </el-switch>
-        </div>
-      </div>
-
-      <!-- 下单交易面板 -->
-      <div class="trading-panel" :class="{ disabled: !isQuantConnected }">
-        <!-- 第一行：合约选择 + 最新行情 -->
-        <div class="trading-row">
-          <div class="input-group contract-group">
-            <div class="input-label">合约</div>
-            <el-select
-              v-model="selectedSymbol"
-              filterable
-              :filter-method="filterContracts"
-              :loading="contractsLoading"
-              :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612 / 白银'"
-              no-data-text="没有匹配的合约"
-              class="contract-select"
-              popper-class="contract-select-popper"
-              @change="onContractChange"
-              @visible-change="onContractDropdown"
-            >
-              <el-option
-                v-for="item in filteredContracts"
-                :key="item.vt_symbol"
-                :label="`${item.name}（${item.symbol}）`"
-                :value="item.vt_symbol"
+      <!-- 下单交易（左）与当前委托（右）并排，各占一半宽度 -->
+      <div class="trade-row">
+        <div class="trade-col">
+          <!-- 下单交易模块标题 -->
+          <div class="section-header">
+            <h2 class="section-title">下单交易</h2>
+            <div class="connection-status">
+              <div class="status-indicator" :class="{ connected: isQuantConnected }"></div>
+              <span class="status-text" :class="{ connected: isQuantConnected }">
+                {{ isQuantConnected ? '量化账号已连接' : '未连接量化账号' }}
+              </span>
+              <el-switch
+                v-model="isQuantConnected"
+                :loading="isConnecting"
+                @change="toggleQuantConnection"
+                :disabled="isConnecting"
+                size="small"
+                class="connection-switch"
               >
-                <div class="contract-option">
-                  <span class="contract-option-name">{{ item.name }}</span>
-                  <span class="contract-option-code">{{ item.symbol }} · {{ item.exchange }}</span>
+                <template #loading>
+                  <svg class="switch-loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+                  </svg>
+                </template>
+              </el-switch>
+            </div>
+          </div>
+
+          <!-- 下单交易面板 -->
+          <div class="trading-panel" :class="{ disabled: !isQuantConnected }">
+            <!-- 第一行：合约选择 + 最新行情 -->
+            <div class="trading-row">
+              <div class="input-group contract-group">
+                <div class="input-label">合约</div>
+                <el-select
+                  v-model="selectedSymbol"
+                  filterable
+                  :filter-method="filterContracts"
+                  :loading="contractsLoading"
+                  :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612 / 白银'"
+                  no-data-text="没有匹配的合约"
+                  class="contract-select"
+                  popper-class="contract-select-popper"
+                  @change="onContractChange"
+                  @visible-change="onContractDropdown"
+                >
+                  <el-option
+                    v-for="item in filteredContracts"
+                    :key="item.vt_symbol"
+                    :label="`${item.name}（${item.symbol}）`"
+                    :value="item.vt_symbol"
+                  >
+                    <div class="contract-option">
+                      <span class="contract-option-name">{{ item.name }}</span>
+                      <span class="contract-option-code">{{ item.symbol }} · {{ item.exchange }}</span>
+                    </div>
+                  </el-option>
+                </el-select>
+              </div>
+
+              <!-- 行情区：不论有没有行情都是同一套结构，没有数据的字段显示 “--”，布局不跳动 -->
+              <div class="quote-box">
+                <div class="quote-main" :class="quote ? quoteTrend : ''">
+                  {{ fmtPrice(quote?.last_price) }}
                 </div>
-              </el-option>
-            </el-select>
-          </div>
+                <!-- 每项的数字区是固定宽度的等宽数字，“--” 和真实价格占位一致，标签位置不会跳 -->
+                <div class="quote-detail">
+                  <span class="q-item">买一<b class="q-val up-text">{{ fmtPrice(quote?.bid_price) }}</b></span>
+                  <span class="q-item">卖一<b class="q-val down-text">{{ fmtPrice(quote?.ask_price) }}</b></span>
+                  <span class="q-item">涨停<b class="q-val q-plain">{{ fmtPrice(quote?.limit_up) }}</b></span>
+                  <span class="q-item">跌停<b class="q-val q-plain">{{ fmtPrice(quote?.limit_down) }}</b></span>
+                </div>
+              </div>
+            </div>
 
-          <div class="quote-box">
-            <template v-if="quote">
-              <div class="quote-main" :class="quoteTrend">
-                {{ fmtPrice(quote.last_price) }}
+            <!-- 第二行：限价和手数 -->
+            <div class="trading-row">
+              <!-- 限价输入 -->
+              <div class="input-group">
+                <div class="input-label">
+                  限价
+                  <a v-if="quote?.last_price" class="fill-last" @click="fillLastPrice">填入最新价</a>
+                </div>
+                <div class="input-wrapper">
+                  <input
+                    type="number"
+                    v-model.number="priceInput"
+                    :step="priceTick"
+                    placeholder="请输入限价"
+                  >
+                  <div class="input-btn-group">
+                    <button class="input-btn" @click="adjustPrice(1)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
+                    </button>
+                    <button class="input-btn" @click="adjustPrice(-1)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="quote-detail">
-                <span>买一 <b class="up-text">{{ fmtPrice(quote.bid_price) }}</b></span>
-                <span>卖一 <b class="down-text">{{ fmtPrice(quote.ask_price) }}</b></span>
-                <span>涨停 {{ fmtPrice(quote.limit_up) }}</span>
-                <span>跌停 {{ fmtPrice(quote.limit_down) }}</span>
+
+              <!-- 手数输入 -->
+              <div class="input-group">
+                <div class="input-label">手数</div>
+                <div class="input-wrapper">
+                  <input
+                    type="number"
+                    v-model.number="volumeInput"
+                    min="1"
+                    step="1"
+                  >
+                  <div class="input-btn-group">
+                    <button class="input-btn" @click="adjustVolume(1)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
+                    </button>
+                    <button class="input-btn" @click="adjustVolume(-1)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
               </div>
-            </template>
-            <div v-else class="quote-empty">
-              {{ selectedSymbol ? '行情加载中…' : '请先选择合约' }}
+            </div>
+
+            <!-- 第三行：交易操作（均为限价单） -->
+            <div class="trading-row">
+              <button class="trading-btn long" :disabled="ordering" @click="submitOrder('open_long')">
+                买多（开仓）
+              </button>
+              <button class="trading-btn short" :disabled="ordering" @click="submitOrder('open_short')">
+                卖空（开仓）
+              </button>
+              <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_long')">
+                平多
+              </button>
+              <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_short')">
+                平空
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- 第二行：限价和手数 -->
-        <div class="trading-row">
-          <!-- 限价输入 -->
-          <div class="input-group">
-            <div class="input-label">
-              限价
-              <a v-if="quote?.last_price" class="fill-last" @click="fillLastPrice">填入最新价</a>
+        <div class="trade-col orders-col">
+          <!-- 委托列表：高度跟随左侧下单面板，内容多时在面板内部滚动 -->
+          <div class="section-header orders-header">
+            <h2 class="section-title">当前委托</h2>
+          </div>
+          <div class="orders-panel paged-panel">
+            <!-- 表格区：占满面板剩余高度，分页条固定在面板底部（右下角），不随表格滚动 -->
+            <div class="paged-body">
+              <table class="orders-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>合约</th>
+                    <th>方向</th>
+                    <th>开平</th>
+                    <th class="num">委托价</th>
+                    <th class="num">已成 / 委托</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!orders.length">
+                    <td colspan="8" class="orders-empty">暂无委托</td>
+                  </tr>
+                  <tr v-for="o in pagedOrders" :key="o.vt_orderid">
+                    <td>{{ o.time }}</td>
+                    <td>{{ o.symbol }}</td>
+                    <td :class="o.direction === '多' ? 'up-text' : 'down-text'">{{ o.direction }}</td>
+                    <td>{{ o.offset }}</td>
+                    <td class="num">{{ fmtPrice(o.price) }}</td>
+                    <td class="num">{{ o.traded }} / {{ o.volume }}</td>
+                    <td><span class="order-status" :class="orderStatusClass(o)">{{ o.status }}</span></td>
+                    <td>
+                      <a v-if="o.active" class="cancel-link" @click="cancelOne(o)">撤单</a>
+                      <span v-else class="muted">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="input-wrapper">
-              <input
-                type="number"
-                v-model.number="priceInput"
-                :step="priceTick"
-                placeholder="请输入限价"
+
+            <!-- 分页条始终占位（没有委托时也在，只是禁用），位置不跳动 -->
+            <div class="paged-footer">
+              <!-- 总数文案用默认插槽自己渲染成“共 N 条”（数字两侧各一个空格）：
+                   Element Plus 自带的 total 在没配语言包时是英文 “Total N”，而引入整套中文语言包会带来别的组件文案变化 -->
+              <el-pagination
+                v-model:current-page="orderPage"
+                :page-size="PAGE_SIZE"
+                :total="orders.length"
+                layout="slot, prev, pager, next"
+                size="small"
+                background
+                :pager-count="5"
               >
-              <div class="input-btn-group">
-                <button class="input-btn" @click="adjustPrice(1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="18 15 12 9 6 15"/>
-                  </svg>
-                </button>
-                <button class="input-btn" @click="adjustPrice(-1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
-              </div>
+                <span class="pager-total">共 {{ orders.length }} 条</span>
+              </el-pagination>
             </div>
           </div>
+        </div>
+      </div>
 
-          <!-- 手数输入 -->
-          <div class="input-group">
-            <div class="input-label">手数</div>
-            <div class="input-wrapper">
-              <input
-                type="number"
-                v-model.number="volumeInput"
-                min="1"
-                step="1"
+      <!-- 当前持仓（左）与成交明细（右）并排，各占一半宽度，各自每页 5 条 -->
+      <div class="trade-row">
+        <div class="trade-col paged-col positions-col">
+          <div class="section-header orders-header">
+            <h2 class="section-title">当前持仓</h2>
+          </div>
+          <div class="orders-panel paged-panel">
+            <div class="paged-body">
+              <table class="orders-table">
+                <thead>
+                  <tr>
+                    <th>合约</th>
+                    <th>方向</th>
+                    <th class="num" title="括号里依次是：今仓 / 昨仓">持仓</th>
+                    <th class="num">可平</th>
+                    <th class="num">开仓均价</th>
+                    <th class="num">最新价</th>
+                    <th class="num">浮动盈亏</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!positions.length">
+                    <td colspan="8" class="orders-empty">暂无持仓</td>
+                  </tr>
+                  <tr v-for="p in pagedPositions" :key="p.vt_symbol + p.direction">
+                    <!-- 合约列只显示代码（如 IF2612）：代码里已含品种和月份，足以区分合约；中文名放进悬停提示，不占列宽 -->
+                    <td :title="p.name">{{ p.symbol }}</td>
+                    <td :class="p.direction === '多' ? 'up-text' : 'down-text'">{{ p.direction }}</td>
+                    <td class="num">{{ p.volume }}（{{ p.td_volume }} / {{ p.yd_volume }}）</td>
+                    <td class="num">{{ p.available }}</td>
+                    <td class="num">{{ fmtPrice(p.price ? Number(p.price.toFixed(2)) : null) }}</td>
+                    <td class="num">{{ fmtPrice(p.last_price) }}</td>
+                    <td class="num" :class="p.pnl > 0 ? 'up-text' : p.pnl < 0 ? 'down-text' : ''">{{ fmtMoney(p.pnl) }}</td>
+                    <td>
+                      <a class="cancel-link" @click="useForClose(p)">平仓</a>
+                      <a class="cancel-link reverse-link" @click="submitReverse(p)">反手</a>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="paged-footer">
+              <el-pagination
+                v-model:current-page="positionPage"
+                :page-size="PAGE_SIZE"
+                :total="positions.length"
+                layout="slot, prev, pager, next"
+                size="small"
+                background
+                :pager-count="5"
               >
-              <div class="input-btn-group">
-                <button class="input-btn" @click="adjustVolume(1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="18 15 12 9 6 15"/>
-                  </svg>
-                </button>
-                <button class="input-btn" @click="adjustVolume(-1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
-              </div>
+                <span class="pager-total">共 {{ positions.length }} 条</span>
+              </el-pagination>
             </div>
           </div>
         </div>
 
-        <!-- 第三行：交易操作（均为限价单） -->
-        <div class="trading-row">
-          <button class="trading-btn long" :disabled="ordering" @click="submitOrder('open_long')">
-            买多（开仓）
-          </button>
-          <button class="trading-btn short" :disabled="ordering" @click="submitOrder('open_short')">
-            卖空（开仓）
-          </button>
-          <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_long')">
-            平多
-          </button>
-          <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_short')">
-            平空
-          </button>
+        <div class="trade-col paged-col">
+          <div class="section-header orders-header">
+            <h2 class="section-title">成交明细</h2>
+          </div>
+          <div class="orders-panel paged-panel">
+            <div class="paged-body">
+              <table class="orders-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>合约</th>
+                    <th>方向</th>
+                    <th>开平</th>
+                    <th class="num">成交价</th>
+                    <th class="num">成交手数</th>
+                    <th>成交编号</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!trades.length">
+                    <td colspan="7" class="orders-empty">暂无成交</td>
+                  </tr>
+                  <tr v-for="t in pagedTrades" :key="t.vt_tradeid">
+                    <td>{{ t.time }}</td>
+                    <td>{{ t.symbol }}</td>
+                    <td :class="t.direction === '多' ? 'up-text' : 'down-text'">{{ t.direction }}</td>
+                    <td>{{ t.offset }}</td>
+                    <td class="num">{{ fmtPrice(t.price) }}</td>
+                    <td class="num">{{ t.volume }}</td>
+                    <td class="muted">{{ t.vt_tradeid.split('.').pop() }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="paged-footer">
+              <el-pagination
+                v-model:current-page="tradePage"
+                :page-size="PAGE_SIZE"
+                :total="trades.length"
+                layout="slot, prev, pager, next"
+                size="small"
+                background
+                :pager-count="5"
+              >
+                <span class="pager-total">共 {{ trades.length }} 条</span>
+              </el-pagination>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- 当前持仓 -->
-      <div class="section-header orders-header">
-        <h2 class="section-title">当前持仓</h2>
-        <span class="orders-hint">浮动盈亏按最新价实时计算 · 每 3 秒刷新</span>
-      </div>
-      <div class="orders-panel">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>合约</th>
-              <th>方向</th>
-              <th class="num">持仓（今 / 昨）</th>
-              <th class="num">可平</th>
-              <th class="num">开仓均价</th>
-              <th class="num">最新价</th>
-              <th class="num">浮动盈亏</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!positions.length">
-              <td colspan="8" class="orders-empty">暂无持仓</td>
-            </tr>
-            <tr v-for="p in positions" :key="p.vt_symbol + p.direction">
-              <td>{{ p.name }}<span class="muted">（{{ p.symbol }}）</span></td>
-              <td :class="p.direction === '多' ? 'up-text' : 'down-text'">{{ p.direction }}</td>
-              <td class="num">{{ p.volume }}（{{ p.td_volume }} / {{ p.yd_volume }}）</td>
-              <td class="num">{{ p.available }}</td>
-              <td class="num">{{ fmtPrice(p.price ? Number(p.price.toFixed(2)) : null) }}</td>
-              <td class="num">{{ fmtPrice(p.last_price) }}</td>
-              <td class="num" :class="p.pnl > 0 ? 'up-text' : p.pnl < 0 ? 'down-text' : ''">{{ fmtMoney(p.pnl) }}</td>
-              <td>
-                <a class="cancel-link" @click="useForClose(p)">平仓</a>
-                <a class="cancel-link reverse-link" @click="submitReverse(p)">反手</a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 反手任务：先平仓，平仓全部成交后才会自动反向开仓 -->
+      <!-- 反手任务：先平仓，平仓全部成交后才会自动反向开仓。放在持仓 / 成交两列的下面、整行宽度，有任务才出现，
+           不会影响上面两个面板的高度和位置 -->
       <div v-if="reverseTasks.length" class="reverse-panel">
         <div class="reverse-title">反手任务</div>
         <div v-for="t in reverseTasks" :key="t.task_id" class="reverse-item" :class="t.state">
@@ -247,81 +380,6 @@
           </div>
           <div class="reverse-msg">{{ t.message }}</div>
         </div>
-      </div>
-
-      <!-- 委托列表 -->
-      <div class="section-header orders-header">
-        <h2 class="section-title">当前委托</h2>
-        <span class="orders-hint">每 3 秒自动刷新</span>
-      </div>
-      <div class="orders-panel">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>合约</th>
-              <th>方向</th>
-              <th>开平</th>
-              <th class="num">委托价</th>
-              <th class="num">已成 / 委托</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!orders.length">
-              <td colspan="8" class="orders-empty">暂无委托</td>
-            </tr>
-            <tr v-for="o in orders" :key="o.vt_orderid">
-              <td>{{ o.time }}</td>
-              <td>{{ o.symbol }}</td>
-              <td :class="o.direction === '多' ? 'up-text' : 'down-text'">{{ o.direction }}</td>
-              <td>{{ o.offset }}</td>
-              <td class="num">{{ fmtPrice(o.price) }}</td>
-              <td class="num">{{ o.traded }} / {{ o.volume }}</td>
-              <td><span class="order-status" :class="orderStatusClass(o)">{{ o.status }}</span></td>
-              <td>
-                <a v-if="o.active" class="cancel-link" @click="cancelOne(o)">撤单</a>
-                <span v-else class="muted">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 成交明细 -->
-      <div class="section-header orders-header">
-        <h2 class="section-title">成交明细</h2>
-        <span class="orders-hint">每 3 秒自动刷新</span>
-      </div>
-      <div class="orders-panel">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>合约</th>
-              <th>方向</th>
-              <th>开平</th>
-              <th class="num">成交价</th>
-              <th class="num">成交手数</th>
-              <th>成交编号</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!trades.length">
-              <td colspan="7" class="orders-empty">暂无成交</td>
-            </tr>
-            <tr v-for="t in trades" :key="t.vt_tradeid">
-              <td>{{ t.time }}</td>
-              <td>{{ t.symbol }}</td>
-              <td :class="t.direction === '多' ? 'up-text' : 'down-text'">{{ t.direction }}</td>
-              <td>{{ t.offset }}</td>
-              <td class="num">{{ fmtPrice(t.price) }}</td>
-              <td class="num">{{ t.volume }}</td>
-              <td class="muted">{{ t.vt_tradeid.split('.').pop() }}</td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
 
@@ -342,7 +400,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -505,7 +563,9 @@ const lastQuotePrice = ref(null)
 const quoteTrend = ref('')
 let quoteTimer = null
 
-const fmtPrice = (v) => (v === null || v === undefined || v === '' ? '--' : Number(v).toString())
+// 价格显示：最多保留 6 位小数并去掉末尾的 0，吞掉 7187.400000000001 这类浮点误差
+const fmtPrice = (v) =>
+  v === null || v === undefined || v === '' ? '--' : String(Number(Number(v).toFixed(6)))
 
 const selectedContract = computed(() => contracts.value.find((c) => c.vt_symbol === selectedSymbol.value))
 const priceTick = computed(() => selectedContract.value?.pricetick || 1)
@@ -623,9 +683,28 @@ const submitOrder = async (action) => {
   }
 }
 
+// 前端分页（后端每 3 秒返回全量，一天的委托 / 持仓 / 成交量级不大，不需要改接口）。
+// 每页 5 条：面板高 326px，扣掉表头约 37px、分页条约 48px，剩下的高度刚好放得下 5 行（每行约 39px）。
+// 当前委托、当前持仓、成交明细三个列表共用这一套逻辑，保证行为一致。
+const PAGE_SIZE = 5
+
+const usePaged = (list) => {
+  const page = ref(1)
+  const pageCount = computed(() => Math.max(1, Math.ceil(list.value.length / PAGE_SIZE)))
+  const paged = computed(() => list.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+
+  // 每 3 秒轮询刷新会整体替换列表：停留在第几页就保持第几页，不要被强制跳回第一页；
+  // 只有当前页超出了范围（比如列表缩短 / 被清空 / 断开重连）才退回到最后一页。
+  watch(pageCount, (count) => {
+    if (page.value > count) page.value = count
+  })
+  return { page, paged }
+}
+
 // 委托列表
 const orders = ref([])
 let ordersTimer = null
+const { page: orderPage, paged: pagedOrders } = usePaged(orders)
 
 const refreshOrders = async () => {
   try {
@@ -661,6 +740,8 @@ const cancelOne = async (o) => {
 const positions = ref([])
 const trades = ref([])
 const reverseTasks = ref([])
+const { page: positionPage, paged: pagedPositions } = usePaged(positions)
+const { page: tradePage, paged: pagedTrades } = usePaged(trades)
 
 const refreshPositions = async () => {
   try {
@@ -813,8 +894,11 @@ const stopTradingPolling = () => {
   selectedSymbol.value = ''
   quote.value = null
   orders.value = []
+  orderPage.value = 1
   positions.value = []
+  positionPage.value = 1
   trades.value = []
+  tradePage.value = 1
   reverseTasks.value = []
 }
 
