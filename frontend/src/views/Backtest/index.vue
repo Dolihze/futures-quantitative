@@ -11,12 +11,7 @@
         </router-link>
       </div>
       <div class="nav-right">
-        <ThemeSwitcher />
-        <div class="user-info">
-          <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
-          <span class="username">{{ userStore.username || '未登录' }}</span>
-        </div>
-        <el-button type="danger" size="small" plain @click="handleLogout">退出登录</el-button>
+        <UserMenu />
       </div>
     </nav>
 
@@ -183,15 +178,10 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { getKlineData, logout } from '@/api'
-import { useUserStore } from '@/stores/user'
+import { getKlineData } from '@/api'
 import { chartColors, onThemeChange } from '@/utils/chartTheme'
-
-const router = useRouter()
-const userStore = useUserStore()
 
 // 全局状态
 const loading = ref(false)
@@ -1130,24 +1120,6 @@ function updateKlineMarkPoints(markPoints) {
   }
   
   klineChart.setOption(option)
-}
-
-// 退出登录
-const handleLogout = async () => {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    await logout()
-    userStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  } catch (error) {
-    // 用户取消操作
-  }
 }
 
 // 生命周期

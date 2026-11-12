@@ -1,0 +1,110 @@
+/* UserMenu 下拉面板样式（popper 挂载在 body，需要非 scoped） */
+
+.el-popover.el-popper.user-menu-popper {
+  min-width: 0;
+  padding: 5px 0;
+}
+
+/* ---------- 一级：通用行 ---------- */
+.user-menu-popper .user-menu-item,
+.user-menu-popper .user-menu-parent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 5px 16px;
+  line-height: 22px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.user-menu-popper .user-menu-item:hover,
+.user-menu-popper .user-menu-parent:hover,
+.user-menu-popper .user-menu-parent.is-open {
+  background-color: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.user-menu-popper .user-menu-item-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.user-menu-popper .user-menu-parent-label {
+  flex: 1;
+}
+
+/* 箭头指向二级菜单展开的方向（下），展开后翻转向上 */
+.user-menu-popper .user-menu-parent-arrow {
+  width: 12px;
+  height: 12px;
+  margin-left: 12px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.user-menu-popper .user-menu-parent-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.user-menu-popper .user-menu-divider {
+  height: 1px;
+  margin: 5px 0;
+  background-color: var(--el-border-color-lighter);
+}
+
+/* ---------- 二级：主题选项（在「切换主题」行下方向下展开，选项缩进） ---------- */
+.user-menu-popper .user-menu-submenu {
+  padding: 2px 0;
+  background-color: var(--el-fill-color-light);
+}
+
+.user-menu-popper .user-menu-submenu-item {
+  display: flex;
+  align-items: center;
+  padding: 5px 16px 5px 28px;
+  line-height: 22px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  user-select: none;
+}
+
+.user-menu-popper .user-menu-submenu-item:hover {
+  background-color: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.user-menu-popper .theme-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+.user-menu-popper .theme-check {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--primary);
+}
+
+.user-menu-popper .is-active-theme,
+.user-menu-popper .is-active-theme:hover {
+  color: var(--primary);
+}
+
+/* ---------- 一级：退出登录 ---------- */
+.user-menu-popper .user-menu-logout,
+.user-menu-popper .user-menu-logout:hover {
+  color: var(--el-color-danger);
+}
+
+.user-menu-popper .user-menu-logout:hover {
+  background-color: var(--el-color-danger-light-9);
+}

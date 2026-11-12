@@ -1,0 +1,46 @@
+/* UserMenu.vue 样式（触发器） */
+
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger:focus-visible {
+  background: var(--nav-btn-bg);
+  border-color: var(--nav-btn-border);
+  color: var(--text-primary);
+}
+
+.user-avatar {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+}
+
+.user-menu-caret {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s;
+}
+
+.user-menu-caret.is-open {
+  transform: rotate(180deg);
+}

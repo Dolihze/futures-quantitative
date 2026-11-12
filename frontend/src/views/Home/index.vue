@@ -11,12 +11,7 @@
         <span class="nav-title">期货量化交易系统</span>
       </div>
       <div class="nav-right">
-        <ThemeSwitcher />
-        <div class="user-info">
-          <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
-          <span>{{ userStore.username || '未登录' }}</span>
-        </div>
-        <el-button type="danger" size="small" plain @click="handleLogout">退出登录</el-button>
+        <UserMenu />
       </div>
     </nav>
 
@@ -104,31 +99,11 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { logout } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
-
-// 退出登录
-const handleLogout = async () => {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    await logout()
-    userStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  } catch (error) {
-    // 用户取消操作
-  }
-}
 
 // 回测卡片点击处理（显示加载遮罩）
 const handleBacktestClick = (e) => {

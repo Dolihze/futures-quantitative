@@ -11,12 +11,7 @@
         </router-link>
       </div>
       <div class="nav-right">
-        <ThemeSwitcher />
-        <div class="user-info">
-          <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
-          <span class="username">{{ userStore.username || '未登录' }}</span>
-        </div>
-        <el-button type="danger" size="small" plain @click="handleLogout">退出登录</el-button>
+        <UserMenu />
       </div>
     </nav>
 
@@ -43,7 +38,7 @@
           <div v-if="fileInfo" class="file-info">
             <div class="file-name" :title="fileInfo.filename">📄 {{ fileInfo.filename }}</div>
             <div class="file-meta">
-              {{ fileInfo.tradeCount }} 笔成交 · {{ fileInfo.products.length }} 个品种
+              {{ fileInfo.tradeCount }} 手成交 · {{ fileInfo.products.length }} 个品种
             </div>
             <div class="file-meta">交易日 {{ tradeDateText }}</div>
           </div>
@@ -190,15 +185,10 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadReviewFile, getReviewFiles, openReviewFile, deleteReviewFile, getReviewCurve, logout } from '@/api'
-import { useUserStore } from '@/stores/user'
+import { uploadReviewFile, getReviewFiles, openReviewFile, deleteReviewFile, getReviewCurve } from '@/api'
 import ReviewKline from './ReviewKline.vue'
 import ReviewFunding from './ReviewFunding.vue'
-
-const router = useRouter()
-const userStore = useUserStore()
 
 // ---------- 状态 ----------
 const uploadRef = ref(null)
@@ -319,7 +309,7 @@ async function handleFileChange(uploadFile) {
       res = await uploadReviewFile(file, true)
     }
     await applyReviewResult(res)
-    ElMessage.success(res.overwritten ? `已覆盖并导入 ${res.tradeCount} 笔成交` : `已导入 ${res.tradeCount} 笔成交`)
+    ElMessage.success(res.overwritten ? `已覆盖并导入 ${res.tradeCount} 手成交` : `已导入 ${res.tradeCount} 手成交`)
     // 上传的文件会保存到 review_files 文件夹，刷新“已导入文件”列表
     loadFileList()
   } catch (error) {
@@ -370,7 +360,7 @@ async function handleOpenFile(name) {
     const res = await openReviewFile(name)
     if (seq !== openSeq) return
     await applyReviewResult(res)
-    ElMessage.success(`已切换到 ${name}（${res.tradeCount} 笔成交）`)
+    ElMessage.success(`已切换到 ${name}（${res.tradeCount} 手成交）`)
   } catch (error) {
     if (seq !== openSeq) return
     errorMsg.value = errorText(error, '文件解析失败')
@@ -456,22 +446,6 @@ async function fetchCurve(isFirst = false) {
   }
 }
 
-// 退出登录（与其它页面一致）
-const handleLogout = async () => {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    await logout()
-    userStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  } catch (error) {
-    // 用户取消操作
-  }
-}
 </script>
 
 <style scoped>

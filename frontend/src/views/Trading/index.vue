@@ -11,12 +11,7 @@
         </router-link>
       </div>
       <div class="nav-right">
-        <ThemeSwitcher />
-        <div class="user-info">
-          <div class="user-avatar">{{ userStore.username[0]?.toUpperCase() || 'U' }}</div>
-          <span>{{ userStore.username || '未登录' }}</span>
-        </div>
-        <el-button type="danger" size="small" plain @click="handleLogout">退出登录</el-button>
+        <UserMenu />
       </div>
     </nav>
 
@@ -380,9 +375,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { logout } from '@/api'
 // 交易相关接口走入口层：真实账号请求后端 CTP；调试模式（跳过登录进入）用前端假数据，见 api/trading.js
 import {
   getAccount,
@@ -395,10 +388,6 @@ import {
   getTrades,
   startReverse
 } from '@/api/trading'
-import { useUserStore } from '@/stores/user'
-
-const router = useRouter()
-const userStore = useUserStore()
 
 // 量化账号会话是否可用（后端有登录会话）。页面不再展示这个状态，只用来驱动数据加载 / 掉线处理：
 // 会话可用时才加载合约、委托、持仓；掉线时清空数据并提示一次；之后自动重连
@@ -958,24 +947,6 @@ const stopTradingPolling = () => {
 const showModal = ref(false)
 const modalTitle = ref('')
 const modalMessage = ref('')
-
-// 退出登录
-const handleLogout = async () => {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    await logout()
-    userStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  } catch (error) {
-    // 用户取消操作
-  }
-}
 
 // 关闭弹窗
 const closeModal = () => {

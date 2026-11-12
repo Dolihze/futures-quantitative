@@ -7,9 +7,8 @@
     <div class="glow-dot"></div>
     <div class="glow-dot"></div>
 
-    <!-- 右上角：主题切换 + 调试模式（只有一个扳手图标，悬停提示“调试模式”） -->
+    <!-- 右上角：调试模式（只有一个扳手图标，悬停提示“调试模式”）；主题切换需登录后在用户菜单中操作 -->
     <div class="theme-corner">
-      <ThemeSwitcher />
       <el-tooltip content="调试模式" placement="bottom" :show-after="200">
         <button type="button" class="debug-btn" aria-label="调试模式" @click="handleDebugLogin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
