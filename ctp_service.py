@@ -409,13 +409,15 @@ def _friendly_error(raw):
     return f"{hint}（{info}）" if hint else f"{stage}：{info}（代码 {code}）"
 
 
-def login(broker, username, password):
-    """连接 CTP 并登录，返回 {"success", "message", "data"?}。阻塞至多 LOGIN_TIMEOUT 秒。"""
-    global _session
+def _connect(broker, username, password, on_trade=None):
+    """建立一个新的 CTP 会话并登录（不改任何全局状态）。
 
+    返回 (session, None) 或 (None, 错误信息)。阻塞至多 LOGIN_TIMEOUT 秒。
+    on_trade：可选，成交回报回调 on_trade(session, trade)，运行在 vnpy 事件线程，不能阻塞。
+    主账号 login() 与量化监控的只读会话共用这段流程。"""
     cfg = get_config(broker)
     if not cfg:
-        return _fail("该期货公司暂未开通实盘接入（缺少 CTP 前置地址等参数），请联系管理员配置")
+        return None, "该期货公司暂未开通实盘接入（缺少 CTP 前置地址等参数），请联系管理员配置"
 
     try:
         MainEngine, CtpGateway, EVENT_LOG = _import_vnpy()
@@ -426,60 +428,162 @@ def login(broker, username, password):
         # 把真实异常带给界面，才能定位问题
         kind = "未安装 CTP 接口组件（vnpy / vnpy_ctp）" if isinstance(e, ModuleNotFoundError) \
             else "CTP 接口组件加载失败"
-        return _fail(f"{kind}：{type(e).__name__}: {e}")
+        return None, f"{kind}：{type(e).__name__}: {e}"
+
+    engine = MainEngine()
+    session = _Session(broker, username, engine)
+    engine.event_engine.register(EVENT_LOG, session.on_log)
+    # 反手任务靠委托状态推送推进：平仓全部成交 -> 开仓；被撤 / 被拒 -> 取消
+    from vnpy.trader.event import EVENT_ORDER, EVENT_TRADE
+    engine.event_engine.register(EVENT_ORDER, lambda event, _s=session: _on_order_event(_s, event))
+    if on_trade:
+        engine.event_engine.register(
+            EVENT_TRADE, lambda event, _s=session: on_trade(_s, event.data))
+    engine.add_gateway(CtpGateway, GATEWAY_NAME)
+
+    setting = {
+        "用户名": username,
+        "密码": password,
+        "经纪商代码": str(cfg["broker_id"]).strip(),
+        "交易服务器": str(cfg["td_address"]).strip(),
+        "行情服务器": str(cfg["md_address"]).strip(),
+        "产品名称": str(cfg.get("app_id", "")).strip(),
+        "授权编码": str(cfg.get("auth_code", "")).strip(),
+        "柜台环境": cfg.get("environment", "实盘"),
+    }
+    print(f"[CTP] 开始登录 broker={broker} user={username} "
+          f"td={setting['交易服务器']} md={setting['行情服务器']}")
+
+    try:
+        engine.connect(setting, GATEWAY_NAME)
+    except Exception as e:  # noqa: BLE001
+        print(f"[CTP] 连接异常: {e}")
+        _close_session(session)
+        return None, f"连接 CTP 失败：{e}"
+
+    session.done.wait(LOGIN_TIMEOUT)
+
+    if not session.td_logged_in:
+        _close_session(session)
+        if session.error:
+            return None, _friendly_error(session.error)
+        if not session.td_connected:
+            return None, (f"无法连接交易服务器（{setting['交易服务器']}），"
+                          "请检查网络，或确认该环境当前是否在服务时间内")
+        return None, "登录超时，期货公司未返回登录结果，请稍后重试"
+
+    return session, None
+
+
+def login(broker, username, password):
+    """连接 CTP 并登录，返回 {"success", "message", "data"?}。阻塞至多 LOGIN_TIMEOUT 秒。"""
+    global _session
 
     with _lock:
         # 先关闭旧会话（重新登录 / 切换账号）
         _close_session(_session)
         _session = None
 
-        engine = MainEngine()
-        session = _Session(broker, username, engine)
-        engine.event_engine.register(EVENT_LOG, session.on_log)
-        # 反手任务靠委托状态推送推进：平仓全部成交 -> 开仓；被撤 / 被拒 -> 取消
-        from vnpy.trader.event import EVENT_ORDER
-        engine.event_engine.register(EVENT_ORDER, lambda event, _s=session: _on_order_event(_s, event))
-        engine.add_gateway(CtpGateway, GATEWAY_NAME)
-
-        setting = {
-            "用户名": username,
-            "密码": password,
-            "经纪商代码": str(cfg["broker_id"]).strip(),
-            "交易服务器": str(cfg["td_address"]).strip(),
-            "行情服务器": str(cfg["md_address"]).strip(),
-            "产品名称": str(cfg.get("app_id", "")).strip(),
-            "授权编码": str(cfg.get("auth_code", "")).strip(),
-            "柜台环境": cfg.get("environment", "实盘"),
-        }
-        print(f"[CTP] 开始登录 broker={broker} user={username} "
-              f"td={setting['交易服务器']} md={setting['行情服务器']}")
-
-        try:
-            engine.connect(setting, GATEWAY_NAME)
-        except Exception as e:  # noqa: BLE001
-            print(f"[CTP] 连接异常: {e}")
-            _close_session(session)
-            return _fail(f"连接 CTP 失败：{e}")
-
-        session.done.wait(LOGIN_TIMEOUT)
-
-        if not session.td_logged_in:
-            _close_session(session)
-            if session.error:
-                return _fail(_friendly_error(session.error))
-            if not session.td_connected:
-                return _fail(f"无法连接交易服务器（{setting['交易服务器']}），"
-                             "请检查网络，或确认该环境当前是否在服务时间内")
-            return _fail("登录超时，期货公司未返回登录结果，请稍后重试")
-
+        session, err = _connect(broker, username, password)
+        if not session:
+            return _fail(err)
         _session = session
 
     # 首次资金回报由网关定时查询触发（约 2 秒一次），这里尽量等一下，拿不到也不算失败
+    engine = session.engine
     deadline = time.time() + FIRST_ACCOUNT_WAIT
     while time.time() < deadline and not engine.get_all_accounts():
         time.sleep(0.3)
 
     return {"success": True, "message": "登录成功", "data": snapshot()}
+
+
+# ----------------------------------------------------------------------------
+# 量化监控：第二个【只读】会话（被监控的账号）
+#
+# 与主会话 _session 完全独立：独立的 MainEngine / CTP 连接，主账号重新登录不会影响它。
+# 本模块不提供任何「用监控会话下单」的函数——监控账号只订阅委托 / 成交回报，
+# 绝不会被本程序下单；跟单单子永远只通过主会话（send_limit_order 等）发出。
+# ----------------------------------------------------------------------------
+
+_monitor_session = None
+_monitor_lock = threading.Lock()
+
+
+def monitor_login(broker, username, password, on_trade):
+    """登录被监控账号。on_trade(session, trade) 在成交回报到达时被调用（vnpy 事件线程）。"""
+    global _monitor_session
+    me = current_user()
+    if me and me == (broker, username):
+        # 同一个账号两个会话在 CTP 上是允许的，但极大概率是误操作（自己跟自己），直接拦住
+        return _fail("被监控账号不能与当前交易账号相同")
+
+    with _monitor_lock:
+        _close_session(_monitor_session)
+        _monitor_session = None
+        session, err = _connect(broker, username, password, on_trade=on_trade)
+        if not session:
+            return _fail(err)
+        _monitor_session = session
+
+    engine = session.engine
+    deadline = time.time() + FIRST_ACCOUNT_WAIT
+    while time.time() < deadline and not engine.get_all_accounts():
+        time.sleep(0.3)
+    return {"success": True, "message": "监控账号登录成功", "data": monitor_snapshot()}
+
+
+def monitor_logout():
+    global _monitor_session
+    with _monitor_lock:
+        _close_session(_monitor_session)
+        _monitor_session = None
+
+
+def monitor_connected():
+    s = _monitor_session
+    if not s:
+        return False
+    try:
+        return bool(s.engine.get_gateway(GATEWAY_NAME).td_api.login_status)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def monitor_user():
+    s = _monitor_session
+    return (s.broker, s.username) if s else None
+
+
+def monitor_snapshot():
+    """监控账号的权益与持仓快照（只读）；未连接返回 None。"""
+    s = _monitor_session
+    if not s or not monitor_connected():
+        return None
+    accounts = s.engine.get_all_accounts()
+    account = None
+    if accounts:
+        a = accounts[0]
+        account = {"account": a.accountid, "balance": a.balance,
+                   "available": a.available, "frozen": a.frozen}
+    positions = [{
+        "vt_symbol": p.vt_symbol, "symbol": p.symbol, "direction": p.direction.value,
+        "volume": p.volume, "price": p.price, "pnl": p.pnl,
+    } for p in s.engine.get_all_positions() if p.volume]
+    return {"broker": s.broker, "username": s.username, "account": account, "positions": positions}
+
+
+def monitor_balance():
+    """监控账号权益；拿不到返回 None。"""
+    snap = monitor_snapshot()
+    acc = snap and snap.get("account")
+    return acc["balance"] if acc else None
+
+
+def monitor_contract(vt_symbol):
+    """监控会话里的合约信息（用来在主会话合约未就绪时兜底判断）。没有返回 None。"""
+    s = _monitor_session
+    return s.engine.get_contract(vt_symbol) if s else None
 
 
 def logout():
@@ -1128,4 +1232,99 @@ def cancel_order(vt_orderid):
     return {"success": True, "message": "撤单请求已发送，请稍后在委托列表确认"}
 
 
+# ----------------------------------------------------------------------------
+# 跟单专用的主会话查询（只读辅助，下单仍走 send_limit_order / _place）
+# ----------------------------------------------------------------------------
+
+def my_balance():
+    """主账号权益；拿不到返回 None。"""
+    s = _session
+    if not s or not is_connected():
+        return None
+    accounts = s.engine.get_all_accounts()
+    return accounts[0].balance if accounts else None
+
+
+def my_contract(vt_symbol):
+    """主会话中的合约信息（含 size / pricetick / min_volume / max_volume）；没有返回 None。"""
+    s = _session
+    if not s or not s.contracts_ready:
+        return None
+    return s.engine.get_contract(vt_symbol)
+
+
+def my_position_volume(vt_symbol, side):
+    """主账号某合约某方向（'多' / '空'）的持仓手数。"""
+    s = _session
+    if not s or not is_connected():
+        return 0
+    from vnpy.trader.constant import Direction
+    want = Direction.LONG if side == "多" else Direction.SHORT
+    return sum(p.volume for p in s.engine.get_all_positions()
+               if p.vt_symbol == vt_symbol and p.direction == want)
+
+
+def my_available_close(vt_symbol, side):
+    """主账号某合约某方向可平手数（扣除已被挂单冻结的）。"""
+    s = _session
+    if not s or not is_connected():
+        return 0
+    from vnpy.trader.constant import Direction
+    want = Direction.LONG if side == "多" else Direction.SHORT
+    return sum(max(p.volume - p.frozen, 0) for p in s.engine.get_all_positions()
+               if p.vt_symbol == vt_symbol and p.direction == want)
+
+
+def my_symbol_volume(vt_symbol):
+    """主账号某合约多空合计持仓（用于最大持仓风控）。"""
+    s = _session
+    if not s or not is_connected():
+        return 0
+    return sum(p.volume for p in s.engine.get_all_positions() if p.vt_symbol == vt_symbol)
+
+
+def my_order(vt_orderid):
+    """主会话委托的当前快照 dict；不存在返回 None。"""
+    s = _session
+    if not s:
+        return None
+    o = s.engine.get_order(vt_orderid)
+    return _order_dict(o) if o else None
+
+
+def my_cancel(vt_orderid):
+    """撤销主会话的一笔委托（不阻塞等待应答）。返回是否发出了撤单请求。"""
+    s = _session
+    if not s:
+        return False
+    o = s.engine.get_order(vt_orderid)
+    if not o or not o.is_active():
+        return False
+    s.engine.cancel_order(o.create_cancel_request(), GATEWAY_NAME)
+    return True
+
+
+def follow_price(vt_symbol, action, mode):
+    """跟单价格。mode: counter 对手价 / last 最新价 / market 涨跌停模拟市价。
+
+    返回 (price, error)。价格已规整到最小变动价位。拿不到行情时返回 (None, 原因)，
+    调用方据此放弃本次跟单——绝不能拿一个猜的价格去下真实委托。"""
+    quote, err = get_quote(vt_symbol)
+    if quote is None:
+        return None, err
+    is_buy = action in ("open_long", "close_short")
+    if mode == "counter":
+        price = quote["ask_price"] if is_buy else quote["bid_price"]
+    elif mode == "last":
+        price = quote["last_price"]
+    elif mode == "market":
+        price = quote["limit_up"] if is_buy else quote["limit_down"]
+    else:
+        return None, f"不支持的价格模式：{mode}"
+    if not price:
+        return None, "行情尚未到达，无法确定下单价格"
+    return price, ""
+
+
 atexit.register(logout)
+atexit.register(monitor_logout)

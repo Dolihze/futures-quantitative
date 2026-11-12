@@ -14,6 +14,7 @@ from collections import OrderedDict
 import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
 import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
 import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
+import copy_trading  # 量化监控：监控账号成交 -> 自动跟单（copy_trading.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -535,7 +536,9 @@ def review_day_kline():
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
-    """退出登录：同时关闭 CTP 会话"""
+    """退出登录：先停止跟单，再关闭 CTP 会话（含被监控账号）"""
+    copy_trading.engine.stop("退出登录")
+    ctp_service.monitor_logout()
     ctp_service.logout()
     session.clear()
     return jsonify({"success": True})
@@ -652,6 +655,84 @@ def quant_login():
             "message": "未登录期货账户或连接已断开，请退出后用期货账号重新登录（调试模式无真实账户）"
         })
     return jsonify({"success": True, "message": "连接成功", "data": snap})
+
+
+# ---------------------------------------------------------------------------
+# 量化监控：登录被监控账号（只读会话）+ 跟单引擎
+# ---------------------------------------------------------------------------
+
+@app.route('/api/monitor/login', methods=['POST'])
+def monitor_login():
+    """登录被监控账号（只读，不会用它下单）：{broker, username, password}"""
+    data = request.get_json(silent=True) or {}
+    broker = str(data.get('broker', '')).strip()
+    username = str(data.get('username', '')).strip()
+    password = str(data.get('password', '')).strip()
+    if not broker:
+        return jsonify({"success": False, "message": "请选择期货公司"}), 400
+    if not username or not password:
+        return jsonify({"success": False, "message": "请输入被监控账号和密码"}), 400
+    if copy_trading.engine.running:
+        return jsonify({"success": False, "message": "跟单运行中，请先停止跟单再更换被监控账号"})
+    return jsonify(ctp_service.monitor_login(broker, username, password,
+                                             copy_trading.engine.on_source_trade))
+
+
+@app.route('/api/monitor/logout', methods=['POST'])
+def monitor_logout():
+    """断开被监控账号（同时停止跟单）"""
+    copy_trading.engine.stop("断开被监控账号")
+    ctp_service.monitor_logout()
+    return jsonify({"success": True})
+
+
+@app.route('/api/monitor/account')
+def monitor_account():
+    """被监控账号的权益与持仓"""
+    snap = ctp_service.monitor_snapshot()
+    if snap is None:
+        return jsonify({"success": False, "message": "被监控账号未连接"})
+    return jsonify({"success": True, "data": snap})
+
+
+@app.route('/api/monitor/status')
+def monitor_status():
+    """跟单引擎状态（含配置、连接状态、权益）"""
+    return jsonify({"success": True, "data": copy_trading.engine.status()})
+
+
+@app.route('/api/monitor/records')
+def monitor_records():
+    """跟单记录与运行日志"""
+    return jsonify({"success": True, "data": {
+        "records": copy_trading.engine.get_records(),
+        "logs": copy_trading.engine.get_logs(),
+    }})
+
+
+@app.route('/api/monitor/start', methods=['POST'])
+def monitor_start():
+    """启动跟单：{config: {...}}。必须由前端二次确认后调用"""
+    data = request.get_json(silent=True) or {}
+    return jsonify(copy_trading.engine.start(data.get('config')))
+
+
+@app.route('/api/monitor/stop', methods=['POST'])
+def monitor_stop():
+    return jsonify(copy_trading.engine.stop())
+
+
+@app.route('/api/monitor/config', methods=['POST'])
+def monitor_config():
+    """运行中更新跟单配置（模拟 -> 实盘不允许）"""
+    data = request.get_json(silent=True) or {}
+    return jsonify(copy_trading.engine.update_config(data.get('config')))
+
+
+@app.route('/api/monitor/resume', methods=['POST'])
+def monitor_resume():
+    """人工解除风控 / 断连造成的自动暂停"""
+    return jsonify(copy_trading.engine.resume())
 
 
 if __name__ == '__main__':

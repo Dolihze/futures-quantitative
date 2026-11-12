@@ -142,6 +142,14 @@
   color: var(--purple);
 }
 
+.feature-icon.monitor {
+  background: linear-gradient(135deg, rgba(var(--amber-rgb), 0.15), rgba(var(--amber-rgb), 0.05));
+}
+
+.feature-icon.monitor svg {
+  color: var(--amber);
+}
+
 .feature-title {
   font-size: 20px;
   font-weight: 600;

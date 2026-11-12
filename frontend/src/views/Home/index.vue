@@ -24,6 +24,28 @@
 
       <!-- 功能卡片 -->
       <div class="feature-grid">
+        <!-- 量化监控卡片 -->
+        <router-link to="/monitor" class="feature-card">
+          <div class="feature-icon monitor">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+              <polyline points="6 11 9 8 12 11 16 7"/>
+            </svg>
+          </div>
+          <div class="feature-title">量化监控</div>
+          <div class="feature-description">
+            实时监控策略运行状态、持仓与信号，及时掌握账户风险与盈亏变化
+          </div>
+          <div class="feature-arrow">
+            <span>进入监控</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+        </router-link>
+
         <!-- 交易卡片 -->
         <router-link to="/trading" class="feature-card">
           <div class="feature-icon trading">
@@ -38,27 +60,6 @@
           </div>
           <div class="feature-arrow">
             <span>进入交易</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </div>
-        </router-link>
-
-        <!-- 量化回测卡片 -->
-        <router-link to="/backtest" class="feature-card" @click="handleBacktestClick">
-          <div class="feature-icon backtest">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-              <line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
-          </div>
-          <div class="feature-title">量化回测</div>
-          <div class="feature-description">
-            历史数据回测，策略验证，绩效分析，风险评估
-          </div>
-          <div class="feature-arrow">
-            <span>进入回测</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
@@ -80,6 +81,27 @@
           </div>
           <div class="feature-arrow">
             <span>进入复盘</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+        </router-link>
+
+        <!-- 量化回测卡片 -->
+        <router-link to="/backtest" class="feature-card" @click="handleBacktestClick">
+          <div class="feature-icon backtest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <div class="feature-title">量化回测</div>
+          <div class="feature-description">
+            历史数据回测，策略验证，绩效分析，风险评估
+          </div>
+          <div class="feature-arrow">
+            <span>进入回测</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
