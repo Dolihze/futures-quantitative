@@ -47,138 +47,162 @@
 
           <!-- 下单交易面板 -->
           <div class="trading-panel">
-            <!-- 第一行：合约选择 + 最新行情 -->
-            <div class="trading-row">
-              <div class="input-group contract-group">
-                <div class="input-label">合约</div>
-                <el-select
-                  v-model="selectedSymbol"
-                  filterable
-                  :filter-method="filterContracts"
-                  :loading="contractsLoading"
-                  :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612'"
-                  no-data-text="没有匹配的合约"
-                  class="contract-select"
-                  popper-class="contract-select-popper"
-                  @change="onContractPicked"
-                  @visible-change="onContractDropdown"
-                >
-                  <!-- 分组：“常用”（最近选择过的 3 个合约，本地存储）固定在顶部，下面是“全部合约”。
-                       没有常用合约时只有一个不带标题的组，外观和以前一样。
-                       “全部合约”里不包含已在“常用”里的合约：同一个 value 出现两次会让选中高亮错乱。 -->
-                  <template v-for="group in contractGroups" :key="group.key">
-                    <!-- 带标题的分组（有常用合约时）：标题用 el-option-group 渲染 -->
-                    <el-option-group v-if="group.label" :label="group.label">
-                      <el-option
-                        v-for="item in group.items"
-                        :key="group.key + item.vt_symbol"
-                        :label="contractLabel(item.name, item.symbol)"
-                        :value="item.vt_symbol"
-                      >
-                        <div class="contract-option">
-                          <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
-                          <span class="contract-option-code">{{ item.exchange }}</span>
-                        </div>
-                      </el-option>
-                    </el-option-group>
-                    <!-- 没有标题（没有常用合约时）：直接平铺，不渲染分组标题行，外观和以前一样 -->
-                    <template v-else>
-                      <el-option
-                        v-for="item in group.items"
-                        :key="group.key + item.vt_symbol"
-                        :label="contractLabel(item.name, item.symbol)"
-                        :value="item.vt_symbol"
-                      >
-                        <div class="contract-option">
-                          <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
-                          <span class="contract-option-code">{{ item.exchange }}</span>
-                        </div>
-                      </el-option>
+            <!-- 第一块：左侧 3 个下拉框（合约 / 限价 / 手数），右侧 5 项信息（最新 / 买一 / 卖一 / 可开仓 / 占用保证金） -->
+            <div class="order-form">
+              <div class="order-fields">
+                <!-- 合约 -->
+                <div class="input-group contract-group">
+                  <el-select
+                    v-model="selectedSymbol"
+                    filterable
+                    :filter-method="filterContracts"
+                    :loading="contractsLoading"
+                    :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612'"
+                    no-data-text="没有匹配的合约"
+                    class="contract-select"
+                    popper-class="contract-select-popper"
+                    @change="onContractPicked"
+                    @visible-change="onContractDropdown"
+                  >
+                    <!-- 分组：“常用”（最近选择过的 3 个合约，本地存储）固定在顶部，下面是“全部合约”。
+                         没有常用合约时只有一个不带标题的组，外观和以前一样。
+                         “全部合约”里不包含已在“常用”里的合约：同一个 value 出现两次会让选中高亮错乱。 -->
+                    <template v-for="group in contractGroups" :key="group.key">
+                      <!-- 带标题的分组（有常用合约时）：标题用 el-option-group 渲染 -->
+                      <el-option-group v-if="group.label" :label="group.label">
+                        <el-option
+                          v-for="item in group.items"
+                          :key="group.key + item.vt_symbol"
+                          :label="contractLabel(item.name, item.symbol)"
+                          :value="item.vt_symbol"
+                        >
+                          <div class="contract-option">
+                            <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
+                            <span class="contract-option-code">{{ item.exchange }}</span>
+                          </div>
+                        </el-option>
+                      </el-option-group>
+                      <!-- 没有标题（没有常用合约时）：直接平铺，不渲染分组标题行，外观和以前一样 -->
+                      <template v-else>
+                        <el-option
+                          v-for="item in group.items"
+                          :key="group.key + item.vt_symbol"
+                          :label="contractLabel(item.name, item.symbol)"
+                          :value="item.vt_symbol"
+                        >
+                          <div class="contract-option">
+                            <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
+                            <span class="contract-option-code">{{ item.exchange }}</span>
+                          </div>
+                        </el-option>
+                      </template>
                     </template>
-                  </template>
-                </el-select>
+                  </el-select>
+                </div>
+
+                <!-- 价格：数字框，左减右加，步长为合约最小变动价位。
+                     点击数字框弹出“最新价 / 对手价 / 市价”三个选项：选中后数字框显示这个文字（下单时再按方向换算成具体价格），
+                     手动输入数字或点 −/+ 则回到“指定价格”。 -->
+                <div class="input-group">
+                  <el-popover
+                    :visible="pricePopoverVisible"
+                    placement="bottom"
+                    :width="'auto'"
+                    :show-arrow="true"
+                    :offset="5"
+                    :teleported="true"
+                    popper-class="price-mode-popper"
+                  >
+                    <template #reference>
+                      <div
+                        class="price-field"
+                        :class="{ 'is-mode': priceMode !== 'fixed' }"
+                        v-click-outside="closePricePopover"
+                        @click="onPriceFieldClick"
+                      >
+                        <el-input-number
+                          v-model="priceInput"
+                          :step="priceTick"
+                          :min="0"
+                          :precision="pricePrecision"
+                          :value-on-clear="null"
+                          placeholder="请输入价格"
+                          class="trade-number"
+                          @change="onPriceChange"
+                        />
+                        <!-- 非“指定价格”模式：盖在输入区上显示模式名称，不挡住两侧的 −/+ -->
+                        <div v-if="priceMode !== 'fixed'" class="price-mode-label">{{ PRICE_MODE_TEXT[priceMode] }}</div>
+                      </div>
+                    </template>
+                    <div class="price-mode-options" ref="priceOptionsRef">
+                      <button
+                        v-for="m in PRICE_MODES"
+                        :key="m.value"
+                        type="button"
+                        class="price-mode-btn"
+                        :class="{ active: priceMode === m.value }"
+                        @click="pickPriceMode(m.value)"
+                      >{{ m.label }}</button>
+                    </div>
+                  </el-popover>
+                </div>
+                <!-- 手数：数字框，左减右加，正整数 -->
+                <div class="input-group">
+                  <el-input-number
+                    v-model="volumeInput"
+                    :min="1"
+                    :step="1"
+                    :precision="0"
+                    step-strictly
+                    :value-on-clear="1"
+                    class="trade-number"
+                    @change="onVolumeChange"
+                  />
+                </div>
               </div>
 
-              <!-- 行情区：现价 / 买一 / 卖一 三项同一行。不论有没有行情都是同一套结构，没有数据的字段显示 “--”，布局不跳动。
-                   每项的数字区是固定宽度的等宽数字，“--” 和真实价格占位一致，标签位置不会跳 -->
-              <div class="quote-box">
-                <div class="quote-detail">
-                  <span class="q-item">现价<b class="q-val" :class="quote ? quoteTrend : ''">{{ fmtPrice(quote?.last_price) }}</b></span>
-                  <span class="q-item">买一<b class="q-val up-text">{{ fmtPrice(quote?.bid_price) }}</b></span>
-                  <span class="q-item">卖一<b class="q-val down-text">{{ fmtPrice(quote?.ask_price) }}</b></span>
+              <!-- 右侧信息区：5 项固定结构，没有数据时显示 “--”，布局不跳动 -->
+              <div class="order-info">
+                <div class="info-row">
+                  <span class="info-label">最新</span>
+                  <b class="info-val" :class="quote ? quoteTrend : ''">{{ fmtPrice(quote?.last_price) }}</b>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">买一</span>
+                  <b class="info-val up-text">{{ fmtPrice(quote?.bid_price) }}</b>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">卖一</span>
+                  <b class="info-val down-text">{{ fmtPrice(quote?.ask_price) }}</b>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">可开仓</span>
+                  <b class="info-val">{{ maxOpenVolume === null ? '--' : maxOpenVolume + ' 手' }}</b>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">占用保证金</span>
+                  <b class="info-val">{{ marginUsed === null ? '--' : fmtMoney(marginUsed) + ' 元' }}</b>
                 </div>
               </div>
             </div>
 
-            <!-- 第二行：限价和手数 -->
-            <div class="trading-row">
-              <!-- 限价输入 -->
-              <div class="input-group">
-                <div class="input-label">
-                  限价
-                  <a v-if="quote?.last_price" class="fill-last" @click="fillLastPrice">最新价</a>
-                </div>
-                <div class="input-wrapper">
-                  <input
-                    type="number"
-                    v-model.number="priceInput"
-                    :step="priceTick"
-                    placeholder="请输入限价"
-                  >
-                  <div class="input-btn-group">
-                    <button class="input-btn" @click="adjustPrice(1)">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="18 15 12 9 6 15"/>
-                      </svg>
-                    </button>
-                    <button class="input-btn" @click="adjustPrice(-1)">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 手数输入 -->
-              <div class="input-group">
-                <div class="input-label">手数</div>
-                <div class="input-wrapper">
-                  <input
-                    type="number"
-                    v-model.number="volumeInput"
-                    min="1"
-                    step="1"
-                  >
-                  <div class="input-btn-group">
-                    <button class="input-btn" @click="adjustVolume(1)">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="18 15 12 9 6 15"/>
-                      </svg>
-                    </button>
-                    <button class="input-btn" @click="adjustVolume(-1)">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 第三行：交易操作（均为限价单） -->
+            <!-- 第三行：交易操作（均为限价单；按钮里小字是这个操作最多能做几手） -->
             <div class="trading-row">
               <button class="trading-btn long" :disabled="ordering" @click="submitOrder('open_long')">
-                买多
+                <span class="btn-text">买多</span>
+                <span class="btn-limit">{{ fmtLimit(maxOpenVolume) }}</span>
               </button>
               <button class="trading-btn short" :disabled="ordering" @click="submitOrder('open_short')">
-                卖空
+                <span class="btn-text">卖空</span>
+                <span class="btn-limit">{{ fmtLimit(maxOpenVolume) }}</span>
               </button>
               <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_long')">
-                平多
+                <span class="btn-text">平多</span>
+                <span class="btn-limit">{{ fmtLimit(maxCloseLong) }}</span>
               </button>
               <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_short')">
-                平空
+                <span class="btn-text">平空</span>
+                <span class="btn-limit">{{ fmtLimit(maxCloseShort) }}</span>
               </button>
             </div>
           </div>
@@ -375,7 +399,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ClickOutside as vClickOutside } from 'element-plus'
 // 交易相关接口走入口层：真实账号请求后端 CTP；调试模式（跳过登录进入）用前端假数据，见 api/trading.js
 import {
   getAccount,
@@ -618,6 +642,7 @@ const refreshQuote = async () => {
     }
     if (q.last_price !== null) lastQuotePrice.value = q.last_price
     quote.value = q
+    syncPriceInput()
   } catch (error) {
     // 下次轮询再试
   }
@@ -635,7 +660,7 @@ const onContractChange = () => {
   quote.value = null
   lastQuotePrice.value = null
   quoteTrend.value = ''
-  priceInput.value = ''
+  priceInput.value = null
   if (!selectedSymbol.value) return
   refreshQuote()
   quoteTimer = setInterval(refreshQuote, 1000)
@@ -669,29 +694,149 @@ const applyDefaultContract = () => {
   onContractChange()
 }
 
-// 限价 / 手数
-const priceInput = ref('')
+// 限价 / 手数（都是可输入的下拉框：下拉里给常用选项，也可以直接键入任意值）
+const priceInput = ref(null)
 const volumeInput = ref(1)
 const ordering = ref(false)
 
-const fillLastPrice = () => {
-  if (quote.value?.last_price) priceInput.value = quote.value.last_price
+// 限价价格的小数位：由合约最小变动价位推出（0.02 → 2 位，0.2 → 1 位，1 → 0 位），保证 +/- 步进不出浮点误差
+const pricePrecision = computed(() => {
+  const s = String(priceTick.value)
+  const dot = s.indexOf('.')
+  return dot < 0 ? 0 : Math.min(6, s.length - dot - 1)
+})
+
+// ---- 价格模式 ----
+// fixed = 指定价格（数字框里的数字）；last = 最新价；counter = 对手价；market = 市价。
+// 后端只收限价单，所以后三种都在下单那一刻按行情换算成具体价格，再作为限价发出：
+//   最新价：最新成交价
+//   对手价：买入（买多 / 平空）用卖一，卖出（卖空 / 平多）用买一，挂在对手盘上，更容易成交
+//   市价：期货交易所（尤其是上期所 / 能源中心）的限价单不支持真正的市价单，
+//         这里用涨停价（买入）/ 跌停价（卖出）的限价单模拟，价格穿过对手盘，等同市价成交
+// 选了后三种之一，数字框显示模式名称；手动输入数字或点 −/+ 就回到指定价格。
+const PRICE_MODES = [
+  { value: 'last', label: '最新价' },
+  { value: 'counter', label: '对手价' },
+  { value: 'market', label: '市价' }
+]
+const PRICE_MODE_TEXT = { last: '最新价', counter: '对手价', market: '市价' }
+const priceMode = ref('fixed')
+const pricePopoverVisible = ref(false)
+const priceOptionsRef = ref(null)
+
+// 让数字框背后的数字跟着最新价走：
+//   最新价 / 对手价 / 市价三种模式：数字框显示的是模式名，背后的 priceInput 持续同步为最新价，
+//     这样点 −/+ 时是在“此刻的最新价”上加减一个最小变动价位，而不是在很久以前的旧价格上加减。
+//   指定价格模式：数字是用户自己定的，不动；只在还是空的时候（刚选了合约）用最新价预填一次。
+// 注意：priceInput 在非指定价格模式下【只是 −/+ 的起点，不参与下单】。
+// 下单价格由 resolvePrice 按模式取：对手价取买一 / 卖一，市价取涨 / 跌停价，最新价取最新价，
+// 绝不会用 priceInput（最新价）去顶替对手价 / 市价，避免本该挂在对手盘上的单子因为价格不够激进而不成交。
+// 程序给 v-model 赋值不会触发 el-input-number 的 change（只有用户输入 / 点 −、+ 才会），所以这里不会误把模式切回指定价格。
+const syncPriceInput = () => {
+  const last = quote.value?.last_price
+  if (!last) return
+  if (priceMode.value === 'fixed') {
+    if (priceInput.value === null) priceInput.value = last
+  } else {
+    priceInput.value = last
+  }
 }
 
-// 按合约最小变动价位调整价格；用四舍五入消除浮点误差（如 0.1 + 0.2）
-const adjustPrice = (direction) => {
-  const tick = priceTick.value
-  let base = Number(priceInput.value)
-  if (!Number.isFinite(base) || base <= 0) base = quote.value?.last_price || 0
-  if (!base) return
-  const next = Math.round((base + direction * tick) / tick) * tick
-  if (next > 0) priceInput.value = Number(next.toFixed(6))
+const pickPriceMode = (mode) => {
+  priceMode.value = mode
+  pricePopoverVisible.value = false
+  syncPriceInput() // 切换的瞬间就对齐到最新价，不用等下一次行情刷新
 }
 
-const adjustVolume = (direction) => {
-  const next = (Number(volumeInput.value) || 0) + direction
-  if (next >= 1) volumeInput.value = Math.floor(next)
+// 只有点在中间输入区（不是左右的 −/+ 按钮）才弹出选项
+const onPriceFieldClick = (e) => {
+  if (e.target.closest('.el-input-number__decrease, .el-input-number__increase')) {
+    pricePopoverVisible.value = false
+    return
+  }
+  pricePopoverVisible.value = true
 }
+
+// 点在价格框和弹层之外：关闭弹层。弹层 teleport 到 body 里，要把它也算作“里面”
+const closePricePopover = (e) => {
+  if (priceOptionsRef.value && priceOptionsRef.value.contains(e.target)) return
+  pricePopoverVisible.value = false
+}
+
+// 买入方向：买多、平空；其余是卖出方向
+const isBuyAction = (action) => action === 'open_long' || action === 'close_short'
+
+// 按价格模式 + 操作方向算出这一单要发的限价；行情缺失时返回 null
+const resolvePrice = (action) => {
+  const q = quote.value
+  if (priceMode.value === 'fixed') {
+    const n = Number(priceInput.value)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  if (!q) return null
+  const buy = isBuyAction(action)
+  let price = null
+  if (priceMode.value === 'last') price = q.last_price
+  else if (priceMode.value === 'counter') price = buy ? q.ask_price : q.bid_price
+  else if (priceMode.value === 'market') price = buy ? q.limit_up : q.limit_down
+  return price || null
+}
+
+// 手动改数字（输入 / 点 −、+）：回到指定价格。
+// 非指定价格模式下 priceInput 一直跟着最新价（见 syncPriceInput），所以点 −/+ 就是“最新价 ± 一个最小变动价位”。
+// 选择模式、行情刷新给 priceInput 赋值都不会触发 change，所以不会误触发。
+const onPriceChange = (val) => {
+  if (val === undefined) priceInput.value = null
+  if (priceMode.value !== 'fixed') {
+    priceMode.value = 'fixed'
+    // 兜底：万一此刻 priceInput 为空（还没有行情），用最新价起步
+    if (!priceInput.value && quote.value?.last_price) priceInput.value = quote.value.last_price
+  }
+}
+
+const onVolumeChange = (val) => {
+  if (!Number.isInteger(val) || val < 1) volumeInput.value = 1
+}
+// ---- 可开仓手数 / 占用保证金（前端估算）----
+// 后端目前没有提供合约保证金率，这里统一按 10% 估算（调试模式的假数据也是这个比例）。
+// 以后后端返回真实保证金率后，只需要把这里换成合约自带的值。
+const MARGIN_RATE = 0.1
+
+// 每手保证金 = 价格 × 合约乘数 × 保证金率；价格优先用输入的限价，没有就用最新价
+const marginPerLot = computed(() => {
+  const c = selectedContract.value
+  const price = (priceMode.value === 'fixed' ? Number(priceInput.value) : 0) || quote.value?.last_price
+  if (!c || !price || !c.size) return null
+  return price * c.size * MARGIN_RATE
+})
+
+const availableFunds = computed(() => Number(String(accountInfo.available).replace(/,/g, '')) || 0)
+
+// 可开仓手数 = 可用资金 ÷ 每手保证金，向下取整
+const maxOpenVolume = computed(() => {
+  if (marginPerLot.value === null) return null
+  return Math.max(0, Math.floor(availableFunds.value / marginPerLot.value))
+})
+
+// 占用保证金 = 每手保证金 × 手数
+const marginUsed = computed(() => {
+  const vol = Number(volumeInput.value)
+  if (marginPerLot.value === null || !Number.isFinite(vol) || vol < 1) return null
+  return marginPerLot.value * vol
+})
+
+// 当前合约的多头 / 空头可平手数（持仓里的 available：已扣掉被挂单冻结的部分）
+const closableOf = (direction) => {
+  const sym = selectedSymbol.value
+  if (!sym) return null
+  const p = positions.value.find((x) => x.vt_symbol === sym && x.direction === direction)
+  return p ? Number(p.available) || 0 : 0
+}
+const maxCloseLong = computed(() => closableOf('多'))
+const maxCloseShort = computed(() => closableOf('空'))
+
+// 按钮里的小字 ≤n；还没选合约（或开仓手数算不出来）时显示 ≤--
+const fmtLimit = (n) => `≤${n === null || n === undefined ? '--' : n}`
 
 const ACTION_TEXT = {
   open_long: '买多',
@@ -707,10 +852,10 @@ const submitOrder = async (action) => {
     ElMessage.warning('请先选择合约')
     return
   }
-  const price = Number(priceInput.value)
+  const price = resolvePrice(action)
   const volume = Number(volumeInput.value)
-  if (!Number.isFinite(price) || price <= 0) {
-    ElMessage.warning('请输入有效的限价')
+  if (price === null) {
+    ElMessage.warning(priceMode.value === 'fixed' ? '请输入有效的价格' : `暂时没有该合约的行情，无法按${PRICE_MODE_TEXT[priceMode.value]}下单`)
     return
   }
   if (!Number.isInteger(volume) || volume < 1) {
@@ -720,7 +865,7 @@ const submitOrder = async (action) => {
 
   try {
     await ElMessageBox.confirm(
-      `${ACTION_TEXT[action]}　${contractLabel(contract.name, contract.symbol)}\n限价 ${price}　${volume} 手`,
+      `${ACTION_TEXT[action]}　${contractLabel(contract.name, contract.symbol)}\n${priceMode.value === 'fixed' ? '限价' : PRICE_MODE_TEXT[priceMode.value] + '（限价单）'} ${price}　${volume} 手`,
       '确认下单',
       { confirmButtonText: '确认下单', cancelButtonText: '取消', type: 'warning', customStyle: { whiteSpace: 'pre-line' } }
     )
@@ -839,13 +984,14 @@ const refreshAll = () => {
 // 对手价：平多是卖出，用买一价；平空是买入，用卖一价，更容易成交。
 const useForClose = async (p) => {
   selectedSymbol.value = p.vt_symbol
+  priceMode.value = 'fixed' // 平仓入口会填入对手价这个具体数字，用指定价格显示
   if (!filteredContracts.value.find((c) => c.vt_symbol === p.vt_symbol)) filterContracts(p.symbol)
   onContractChange()
   volumeInput.value = Math.max(1, Math.floor(p.available || p.volume))
   await refreshQuote()
   const q = quote.value
   const price = p.direction === '多' ? q?.bid_price : q?.ask_price
-  priceInput.value = price || q?.last_price || ''
+  priceInput.value = price || q?.last_price || null
   ElMessage.info(
     `已选中 ${contractLabel(p.name, p.symbol)}，限价 ${priceInput.value || '待填'}、${volumeInput.value} 手；确认后点上方的「${p.direction === '多' ? '平多' : '平空'}」`
   )

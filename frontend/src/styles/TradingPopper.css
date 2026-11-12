@@ -41,3 +41,59 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* 价格模式弹层（最新价 / 对手价 / 市价）：el-popover 的 popper-class。
+   弹层 teleport 到 body 下，必须写在这个非 scoped 文件里。三个选项一行排开，选中项高亮。 */
+.price-mode-popper.el-popover.el-popper {
+  padding: 6px;
+  min-width: 0;
+  background: var(--bg-popup);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popup);
+}
+
+.price-mode-options {
+  display: flex;
+  gap: 6px;
+}
+
+.price-mode-btn {
+  min-width: 64px;
+  height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-option);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.price-mode-btn:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+.price-mode-btn.active {
+  background: rgba(var(--primary-rgb), 0.18);
+  border-color: rgba(var(--primary-rgb), 0.5);
+  color: var(--primary-light);
+}
+
+/* 弹层的小箭头：指向价格数字框。箭头是个旋转 45° 的小方块，背景 / 边框色和弹层一致，
+   只画朝向数字框的两条边（弹层在数字框下方，箭头在弹层上沿，所以画左、上两条边）。 */
+.price-mode-popper.el-popper .el-popper__arrow::before {
+  background: var(--bg-popup);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  right: 0;
+}
+.price-mode-popper.el-popper[data-popper-placement^='bottom'] .el-popper__arrow::before {
+  border-bottom-color: transparent;
+  border-right-color: transparent;
+}
+.price-mode-popper.el-popper[data-popper-placement^='top'] .el-popper__arrow::before {
+  border-top-color: transparent;
+  border-left-color: transparent;
+}

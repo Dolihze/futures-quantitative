@@ -142,14 +142,6 @@
   position: relative;
 }
 
-.input-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
 .input-wrapper {
   position: relative;
   display: flex;
@@ -439,10 +431,6 @@
 /* 合约选择 / 行情 / 委托列表                                           */
 /* ------------------------------------------------------------------ */
 
-.contract-group {
-  flex: 1.2;
-}
-
 /* 合约下拉：高度、圆角和同一行的输入框保持一致 */
 .contract-select {
   width: 100%;
@@ -465,62 +453,59 @@
   background: var(--bg-input-focus);
 }
 
-.quote-box {
-  flex: 1;
+/* 下单表单：左侧一列 3 个下拉框（合约 / 限价 / 手数），右侧一列 5 项信息 */
+.order-form {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.order-fields {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  min-height: 48px;
-}
-
-.quote-detail {
-  display: flex;
   gap: 8px;
-  font-size: 12px;
+}
+
+/* 5 项信息共用一个外框，行之间不再各自加框 */
+.order-info {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+/* 信息行：标签靠左、数值靠右；等宽数字避免价格跳动时抖动；没有数据时显示 “--”，高度固定 */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1 1 0;
+  font-size: 13px;
   color: var(--text-muted);
-}
-
-/* 现价的涨跌色：红涨绿跌（与项目其它页面一致）；没有行情时是 “--”，用默认色 */
-.q-val.up { color: var(--up); }
-.q-val.down { color: var(--down); }
-
-.quote-detail b { font-weight: 600; }
-
-/* 行情明细每一项（标签 + 数字）整体固定 80px 宽：
-   标签 2 个汉字约 24px + 间隙 4px，数字可用约 52px，常见的 4~7 字符价格都放得下。
-   “--” 和真实价格都从同一位置起笔，四项的起点永远不变；等宽数字让 “1111” 和 “8888” 一样宽，数字跳动时不抖动。
-   只有 8 字符的 120000.0（碳酸锂）会比 52px 多出约 3px：不换行、不截断，向右溢出到项间空白里
-   （截断价格比越界几个像素更危险）。 */
-.q-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  flex: none;
-  width: 80px;
-  white-space: nowrap;
-  overflow: visible;
-  font-variant-numeric: tabular-nums;
-}
-
-.q-val {
-  text-align: left;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+.info-val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 最新价的涨跌色：红涨绿跌（与项目其它页面一致）；没有行情时是 “--”，用默认色 */
+.info-val.up { color: var(--up); }
+.info-val.down { color: var(--down); }
 
 .up-text { color: var(--up-text); }
 .down-text { color: var(--down); }
-
-
-.fill-last {
-  margin-left: 8px;
-  color: var(--primary);
-  cursor: pointer;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.fill-last:hover { text-decoration: underline; }
 
 .trading-btn:disabled {
   opacity: 0.45;
@@ -569,9 +554,17 @@
 
 .orders-empty {
   text-align: center !important;
+  vertical-align: middle;
   color: var(--text-muted);
   padding: 24px 0 !important;
 }
+
+/* 没有数据时：表格撑满表格区（.paged-body）高度，表头保持原高度，“暂无…”那一行占满表头以外的剩余高度，
+   文字在这块区域里水平、垂直都居中。有数据时不受影响。 */
+.paged-body { display: flex; flex-direction: column; }
+.paged-body .orders-table:has(.orders-empty) { flex: 1 1 auto; height: 100%; }
+.paged-body .orders-table:has(.orders-empty) thead { height: 1px; }
+.paged-body .orders-table:has(.orders-empty) tbody tr { height: 100%; }
 
 .order-status {
   display: inline-block;
@@ -748,55 +741,133 @@
 /* 左列标题行里有开关（24px 高），右列标题行只有文字（21px 高）：统一成相同高度，两个标题文字才真正对齐 */
 .trade-col .section-header { min-height: 24px; }
 
-/* <input> 自带的最小宽度会让输入框在半宽下收缩不动，把右侧的上下箭头挤出边框；允许它随容器收缩 */
-.trade-col .input-wrapper input { min-width: 0; width: 100%; }
-.trade-col .input-btn-group { flex: none; }
-
-/* 半宽下，合约行（下拉 + 行情）和价格 / 手数行允许换行，避免挤成一团 */
-.trade-col .trading-row { flex-wrap: wrap; }
-.trade-col .contract-group { flex: 1 1 100%; }
-/* 行情区只有一行：现价 / 买一 / 卖一。不论有没有行情都是同一套结构（没数据显示 “--”），高度固定，下单面板高度不随状态变化 */
-.trade-col .quote-box {
-  flex: 1 1 100%;
-  height: 20px;
-  min-height: 20px;
-  max-height: 20px;
-  justify-content: center;
-  overflow: hidden;
-}
-.trade-col .input-group { flex: 1 1 calc(50% - 6px); min-width: 160px; }
-
-/* 行情明细：固定盒子高度下不换行（3 项在半宽内放得下，不会撑高盒子） */
-.trade-col .quote-detail { flex-wrap: nowrap; gap: 4px 8px; white-space: nowrap; overflow: hidden; }
-
-/* 半宽下面板内边距和按钮字号略收紧。
-   下单面板和三个表格面板同高（--trade-panel-height），里面三行内容（合约+行情 / 限价+手数 / 按钮）
-   用紧凑尺寸排布：控件高度 48px → 36px，标签间距、行间距都收紧，高度固定后不随内容变化。 */
+/* 下单面板：下单面板和三个表格面板同高（--trade-panel-height）。
+   内容区 = 266 - 2（边框）- 24（内边距）= 240px：表单区（flex: 1，吃掉剩余高度）+ 16px 间隙 + 48px 按钮行。
+   表单区里左列 3 个控件均分高度，右侧信息框同高，整体填满卡片。 */
 .trade-col .trading-panel {
   padding: 12px 16px;
   height: var(--trade-panel-height);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 16px;
 }
-.trade-col .trading-panel .trading-row { margin-bottom: 0; gap: 10px; }
-.trade-col .trading-btn { font-size: 13px; padding: 0 4px; white-space: nowrap; height: 36px; }
+.trade-col .trading-panel .trading-row { margin-bottom: 0; gap: 10px; flex: none; }
+.trade-col .trading-btn {
+  font-size: 14px;
+  padding: 0 4px;
+  white-space: nowrap;
+  height: 48px;
+  flex-direction: column;   /* 文字在上，下面是小字 ≤n */
+  gap: 1px;
+  padding-top: 6px;         /* 两行文字整体下移 3px：flex 居中下，padding-top 6px 等于内容下移 3px */
+}
+.trading-btn .btn-text { font-size: 16px; line-height: 1.2; }
+/* 按钮里的小字：这个操作最多能做几手。固定用浅灰，不跟按钮的红 / 绿 / 蓝走，避免抢文字的注意力 */
+.trading-btn .btn-limit {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 
-/* 紧凑：标签更小、与控件的间距更小；输入框 / 下拉 / 按钮统一 36px 高 */
-.trade-col .input-label { margin-bottom: 3px; font-size: 11px; line-height: 14px; }
-.trade-col .input-wrapper { height: 36px; }
-.trade-col .input-wrapper input { font-size: 14px; padding: 0 10px; }
-.trade-col .input-btn { width: 26px; }
-.trade-col .input-btn svg { width: 12px; height: 12px; }
+.trade-col .order-form { flex: 1 1 0; min-height: 0; }
+
+/* 左列 3 个控件（合约下拉 / 限价 / 手数）平分表单区高度，控件间隙 16px */
+.trade-col .order-fields { gap: 16px; }
+.trade-col .order-fields .input-group { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }
+.trade-col .order-fields .input-group > * { flex: 1 1 auto; }
+/* 价格框：包一层容器，方便在输入区上盖“最新价 / 对手价 / 市价”文字 */
+.trade-col .price-field { position: relative; display: flex; flex: 1 1 auto; min-width: 0; }
+.trade-col .price-field .trade-number { flex: 1 1 auto; }
+/* 模式文字盖在中间输入区上（左右各让出 48px 的 −/+ 按钮），不挡按钮，点击穿透到输入框（用来弹出选项 / 直接输入）。
+   背景和输入区一致，把底下的数字盖住；颜色和数字一样醒目。 */
+.trade-col .price-mode-label {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 49px;
+  right: 49px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-page);
+  /* 多重背景第一个在最上层：由下到上是 页面底色 → 卡片 → 输入框，和旁边的数字框叠出同样的颜色 */
+  background-image: linear-gradient(var(--bg-input), var(--bg-input)), linear-gradient(var(--bg-card), var(--bg-card));
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+:deep(.trade-col .contract-select) { height: 100%; }
 :deep(.trade-col .contract-select .el-select__wrapper) {
-  height: 36px;
-  min-height: 36px;
+  height: 100%;
+  min-height: 0;
   font-size: 14px;
 }
-/* 合约下拉和行情区在同一行：行情区贴着下拉底部对齐，高度和下拉一致 */
-.trade-col .quote-box { height: 18px; min-height: 18px; max-height: 18px; }
 
+/* 限价 / 手数数字框：撑满一列，左 “−” 右 “+”，数值居中；配色与合约下拉保持一致。
+   整个数字框只有一个圆角外框（overflow: hidden 把内部三块裁成圆角），内部不再各画各的边框，
+   减号 / 输入区 / 加号之间只用一条竖线分隔。
+   数字框整体没有 hover / 聚焦高亮；只有左右两个加减按钮自己有 hover 效果。 */
+:deep(.trade-col .trade-number) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  line-height: normal;
+  display: flex;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+:deep(.trade-col .trade-number .el-input) {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+:deep(.trade-col .trade-number .el-input__wrapper),
+:deep(.trade-col .trade-number .el-input__wrapper:hover),
+:deep(.trade-col .trade-number .el-input__wrapper.is-focus),
+:deep(.trade-col .trade-number .el-input-number__increase:hover ~ .el-input:not(.is-disabled) .el-input__wrapper),
+:deep(.trade-col .trade-number .el-input-number__decrease:hover ~ .el-input:not(.is-disabled) .el-input__wrapper) {
+  box-sizing: border-box;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  padding: 0 8px;
+}
+:deep(.trade-col .trade-number .el-input__inner) {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+:deep(.trade-col .trade-number .el-input-number__decrease),
+:deep(.trade-col .trade-number .el-input-number__increase) {
+  position: static;
+  flex: none;
+  width: 48px;
+  height: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 0;
+}
+:deep(.trade-col .trade-number .el-input-number__decrease) { order: 0; border-right: 1px solid var(--border); }
+:deep(.trade-col .trade-number .el-input-number__increase) { order: 2; border-left: 1px solid var(--border); }
+:deep(.trade-col .trade-number .el-input) { order: 1; }
+:deep(.trade-col .trade-number .el-input-number__decrease:hover),
+:deep(.trade-col .trade-number .el-input-number__increase:hover) {
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+}
+/* 右侧信息框：和左侧三个控件同高（撑满表单区），5 行在框内均分高度 */
+.trade-col .order-info { height: auto; padding: 4px 14px; }
+.trade-col .info-row { font-size: 13px; }
 /* 委托表只有半宽：收紧单元格间距，放不下时由 .orders-panel 横向滚动 */
 .trade-col .orders-table th,
 .trade-col .orders-table td { padding: 8px 6px; }
