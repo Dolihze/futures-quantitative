@@ -284,9 +284,9 @@
                     <th>合约</th>
                     <th>方向</th>
                     <th class="num">持仓</th>
-                    <th class="num">可平</th>
+                    <th class="num">持仓市值</th>
                     <th class="num">开仓均价</th>
-                    <th class="num">最新价</th>
+                    <th class="num">盈利价差</th>
                     <th class="num">浮动盈亏</th>
                     <th>操作</th>
                   </tr>
@@ -300,9 +300,9 @@
                     <td :title="p.name && p.name !== p.symbol ? p.name : null">{{ p.symbol }}</td>
                     <td :class="p.direction === '多' ? 'up-text' : 'down-text'">{{ p.direction }}</td>
                     <td class="num">{{ p.volume }}</td>
-                    <td class="num">{{ p.available }}</td>
+                    <td class="num">{{ fmtPositionValue(p) }}</td>
                     <td class="num">{{ fmtPrice(p.price ? Number(p.price.toFixed(2)) : null) }}</td>
-                    <td class="num">{{ fmtPrice(p.last_price) }}</td>
+                    <td class="num" :class="priceDiffClass(p)">{{ fmtPriceDiff(p) }}</td>
                     <td class="num" :class="p.pnl > 0 ? 'up-text' : p.pnl < 0 ? 'down-text' : ''">{{ fmtMoney(p.pnl) }}</td>
                     <td>
                       <a class="cancel-link" @click="useForClose(p)">平仓</a>
@@ -824,6 +824,39 @@ const marginUsed = computed(() => {
   if (marginPerLot.value === null || !Number.isFinite(vol) || vol < 1) return null
   return marginPerLot.value * vol
 })
+
+// 持仓行的持仓市值 = 最新价 × 合约乘数 × 持仓手数：这笔仓位按现价值多少钱，不带方向（空头也是正数，方向看“方向”列）。
+// 最新价每秒跟着行情变，所以和浮动盈亏同步波动（持仓市值 − 开仓成本 = 浮动盈亏）。
+// 合约乘数来自合约列表；持仓的合约不在列表里（例如已下市）、或拿不到最新价（行情还没推送）时算不出来，返回 null，表格显示 --。
+// 不拿开仓均价顶替最新价：那样会显示一个看起来像实时、其实是过期的数字。
+const positionValue = (p) => {
+  const c = contracts.value.find((x) => x.vt_symbol === p.vt_symbol)
+  if (!c || !c.size || !p.last_price || !p.volume) return null
+  return p.last_price * c.size * p.volume
+}
+const fmtPositionValue = (p) => {
+  const v = positionValue(p)
+  return v === null ? '--' : fmtMoney(v)
+}
+// 持仓行的盈利价差 = 每手赚（亏）了多少个价格点：多头 = 最新价 − 开仓均价，空头 = 开仓均价 − 最新价。
+// 盈利为正、亏损为负，和浮动盈亏同号（浮动盈亏 = 盈利价差 × 合约乘数 × 持仓手数）。
+// 拿不到最新价或开仓均价时返回 null，表格显示 --。
+const priceDiff = (p) => {
+  if (!p.last_price || !p.price) return null
+  return p.direction === '多' ? p.last_price - p.price : p.price - p.last_price
+}
+// 带正负号显示：盈利前面加 +，亏损自带 −；fmtPrice 负责吞掉浮点误差（如 760.5600000000001）
+const fmtPriceDiff = (p) => {
+  const d = priceDiff(p)
+  if (d === null) return '--'
+  const s = fmtPrice(d)
+  return d > 0 ? '+' + s : s
+}
+// 颜色和浮动盈亏一致：盈利红、亏损绿、持平不变色
+const priceDiffClass = (p) => {
+  const d = priceDiff(p)
+  return d > 0 ? 'up-text' : d < 0 ? 'down-text' : ''
+}
 
 // 当前合约的多头 / 空头可平手数（持仓里的 available：已扣掉被挂单冻结的部分）
 const closableOf = (direction) => {
