@@ -215,25 +215,6 @@ export function startReverse(data) {
   })
 }
 
-// 取消等待中的反手任务（同时撤销未成交的平仓委托）
-export function cancelReverse(taskId) {
-  return request({
-    url: '/api/reverse/cancel',
-    method: 'post',
-    data: { taskId },
-    silent: true
-  })
-}
-
-// 反手任务列表（等待 / 已开仓 / 已取消 / 开仓失败）
-export function getReverseTasks() {
-  return request({
-    url: '/api/reverse/tasks',
-    method: 'get',
-    silent: true
-  })
-}
-
 // 撤单
 export function cancelOrder(orderId) {
   return request({

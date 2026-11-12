@@ -86,20 +86,42 @@
                   no-data-text="没有匹配的合约"
                   class="contract-select"
                   popper-class="contract-select-popper"
-                  @change="onContractChange"
+                  @change="onContractPicked"
                   @visible-change="onContractDropdown"
                 >
-                  <el-option
-                    v-for="item in filteredContracts"
-                    :key="item.vt_symbol"
-                    :label="contractLabel(item.name, item.symbol)"
-                    :value="item.vt_symbol"
-                  >
-                    <div class="contract-option">
-                      <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
-                      <span class="contract-option-code">{{ item.exchange }}</span>
-                    </div>
-                  </el-option>
+                  <!-- 分组：“常用”（最近选择过的 3 个合约，本地存储）固定在顶部，下面是“全部合约”。
+                       没有常用合约时只有一个不带标题的组，外观和以前一样。
+                       “全部合约”里不包含已在“常用”里的合约：同一个 value 出现两次会让选中高亮错乱。 -->
+                  <template v-for="group in contractGroups" :key="group.key">
+                    <!-- 带标题的分组（有常用合约时）：标题用 el-option-group 渲染 -->
+                    <el-option-group v-if="group.label" :label="group.label">
+                      <el-option
+                        v-for="item in group.items"
+                        :key="group.key + item.vt_symbol"
+                        :label="contractLabel(item.name, item.symbol)"
+                        :value="item.vt_symbol"
+                      >
+                        <div class="contract-option">
+                          <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
+                          <span class="contract-option-code">{{ item.exchange }}</span>
+                        </div>
+                      </el-option>
+                    </el-option-group>
+                    <!-- 没有标题（没有常用合约时）：直接平铺，不渲染分组标题行，外观和以前一样 -->
+                    <template v-else>
+                      <el-option
+                        v-for="item in group.items"
+                        :key="group.key + item.vt_symbol"
+                        :label="contractLabel(item.name, item.symbol)"
+                        :value="item.vt_symbol"
+                      >
+                        <div class="contract-option">
+                          <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
+                          <span class="contract-option-code">{{ item.exchange }}</span>
+                        </div>
+                      </el-option>
+                    </template>
+                  </template>
                 </el-select>
               </div>
 
@@ -263,7 +285,7 @@
                   <tr>
                     <th>合约</th>
                     <th>方向</th>
-                    <th class="num" title="括号里依次是：今仓 / 昨仓">持仓</th>
+                    <th class="num">持仓</th>
                     <th class="num">可平</th>
                     <th class="num">开仓均价</th>
                     <th class="num">最新价</th>
@@ -279,7 +301,7 @@
                     <!-- 合约列只显示代码（如 IF2612）：代码里已含品种和月份，足以区分合约；中文名放进悬停提示，不占列宽 -->
                     <td :title="p.name && p.name !== p.symbol ? p.name : null">{{ p.symbol }}</td>
                     <td :class="p.direction === '多' ? 'up-text' : 'down-text'">{{ p.direction }}</td>
-                    <td class="num">{{ p.volume }}（{{ p.td_volume }} / {{ p.yd_volume }}）</td>
+                    <td class="num">{{ p.volume }}</td>
                     <td class="num">{{ p.available }}</td>
                     <td class="num">{{ fmtPrice(p.price ? Number(p.price.toFixed(2)) : null) }}</td>
                     <td class="num">{{ fmtPrice(p.last_price) }}</td>
@@ -359,20 +381,6 @@
         </div>
       </div>
 
-      <!-- 反手任务：先平仓，平仓全部成交后才会自动反向开仓。放在持仓 / 成交两列的下面、整行宽度，有任务才出现，
-           不会影响上面两个面板的高度和位置 -->
-      <div v-if="reverseTasks.length" class="reverse-panel">
-        <div class="reverse-title">反手任务</div>
-        <div v-for="t in reverseTasks" :key="t.task_id" class="reverse-item" :class="t.state">
-          <div class="reverse-main">
-            <span class="reverse-tag" :class="t.state">{{ reverseStateText(t.state) }}</span>
-            <span>{{ contractLabel(t.name, t.symbol) }}　{{ t.from_side }} → {{ t.to_side }}　{{ t.volume }} 手</span>
-            <span class="muted">平仓价 {{ t.close_price }} · 开仓价 {{ t.open_price }} · {{ t.created }}</span>
-            <a v-if="t.state === 'waiting'" class="cancel-link" @click="cancelReverseTask(t)">取消反手</a>
-          </div>
-          <div class="reverse-msg">{{ t.message }}</div>
-        </div>
-      </div>
     </div>
 
     <!-- 自定义弹窗 -->
@@ -395,8 +403,9 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { logout } from '@/api'
+// 交易相关接口走入口层：真实账号请求后端 CTP；调试模式（跳过登录进入）用前端假数据，见 api/trading.js
 import {
-  logout,
   quantLogin,
   getAccount,
   getContracts,
@@ -406,10 +415,8 @@ import {
   cancelOrder,
   getPositions,
   getTrades,
-  startReverse,
-  cancelReverse,
-  getReverseTasks
-} from '@/api'
+  startReverse
+} from '@/api/trading'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -510,13 +517,72 @@ const contractLabel = (name, symbol) => {
   return `${n}（${s}）`
 }
 
+// ---- 常用合约：最近选择过的 N 个，存在 localStorage，下拉顶部的“常用”分组 ----
+// 存的是 vt_symbol（如 ag2612.SHFE），最近的在前、去重。
+// 各账号 / 调试模式共用一份：合约代码是公共的，换账号后不存在的合约会在显示时被过滤掉。
+const RECENT_KEY = 'trading.recentContracts'
+const RECENT_MAX = 3
+
+const loadRecent = () => {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    return Array.isArray(list) ? list.filter((s) => typeof s === 'string').slice(0, RECENT_MAX) : []
+  } catch (error) {
+    return [] // 存储被清理 / 内容损坏：当作没有
+  }
+}
+
+const recentSymbols = ref(loadRecent())
+
+// 记录一次选择：放到最前面，去重，最多保留 RECENT_MAX 个
+const recordRecent = (vtSymbol) => {
+  if (!vtSymbol) return
+  recentSymbols.value = [vtSymbol, ...recentSymbols.value.filter((s) => s !== vtSymbol)].slice(0, RECENT_MAX)
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recentSymbols.value))
+  } catch (error) {
+    // 存储不可用（隐私模式 / 配额满）：本次会话内仍然有效，只是不会持久化
+  }
+}
+
+// 下拉搜索关键字（空表示没有搜索）
+const searchKeyword = ref('')
+
+const matchKeyword = (c, kw) => !kw || c.symbol.toLowerCase().includes(kw) || c.name.toLowerCase().includes(kw)
+
+// “常用”分组：只显示当前合约列表里还存在的，并且符合搜索关键字
+const recentOptions = computed(() => {
+  const kw = searchKeyword.value
+  return recentSymbols.value
+    .map((vt) => contracts.value.find((c) => c.vt_symbol === vt))
+    .filter((c) => c && matchKeyword(c, kw))
+})
+
+// 下拉里实际渲染的分组。有常用时：常用 + 全部合约（去掉已在常用里的）；没有常用时只有一个不带标题的组
+const contractGroups = computed(() => {
+  const recentIds = new Set(recentOptions.value.map((c) => c.vt_symbol))
+  const others = filteredContracts.value.filter((c) => !recentIds.has(c.vt_symbol))
+  // 当前选中的合约必须在渲染列表里，否则输入框显示不出名称（会退化成 ag2612.SHFE 这样的原始值）：
+  // 它可能被只显示前 80 条截掉、或被搜索关键字过滤掉（默认选中持仓第一条 / 点“平仓”都会遇到）
+  // 搜索中不追加：用户搜 IF 就只该看到匹配项（追加会混进无关的合约，还会让“没有匹配的合约”提示出不来）；
+  // 此时输入框上的名称由 el-select 缓存的已选项提供，不受影响
+  const sel = selectedSymbol.value
+  if (!searchKeyword.value && sel && !recentIds.has(sel) && !others.some((c) => c.vt_symbol === sel)) {
+    const c = contracts.value.find((x) => x.vt_symbol === sel)
+    if (c) others.unshift(c)
+  }
+  const groups = []
+  if (recentOptions.value.length) groups.push({ key: 'recent-', label: '常用', items: recentOptions.value })
+  if (others.length) {
+    groups.push({ key: 'all-', label: recentOptions.value.length ? '全部合约' : '', items: others })
+  }
+  return groups
+})
+
 const filterContracts = (keyword = '') => {
   const kw = String(keyword).trim().toLowerCase()
-  const list = kw
-    ? contracts.value.filter(
-        (c) => c.symbol.toLowerCase().includes(kw) || c.name.toLowerCase().includes(kw)
-      )
-    : contracts.value
+  searchKeyword.value = kw
+  const list = kw ? contracts.value.filter((c) => matchKeyword(c, kw)) : contracts.value
   filteredContracts.value = list.slice(0, MAX_OPTIONS)
 }
 
@@ -593,6 +659,34 @@ const onContractChange = () => {
   if (!selectedSymbol.value) return
   refreshQuote()
   quoteTimer = setInterval(refreshQuote, 1000)
+}
+
+// 用户在下拉里主动选了合约：记入“常用”，再走统一的切换逻辑。
+// 点持仓“平仓”和默认选中也会切换合约，但不是用户在挑品种，所以不记入常用（它们直接调用 onContractChange）
+const onContractPicked = () => {
+  recordRecent(selectedSymbol.value)
+  onContractChange()
+}
+
+// 默认选中的合约：持仓列表第一条 → 没有持仓用最近选择的 → 都没有就留空。
+// 只在合约列表和持仓都加载完成后执行一次，并且用户已经自己选了就不动，
+// 否则每 3 秒一次的持仓刷新会把用户的选择覆盖掉。断开重连后（数据被清空）会重新走一遍。
+const defaultPicked = ref(false)
+const positionsLoaded = ref(false)
+
+const applyDefaultContract = () => {
+  if (defaultPicked.value || selectedSymbol.value) return
+  if (!contracts.value.length || !positionsLoaded.value) return // 数据还没齐，等下一次触发
+  defaultPicked.value = true
+
+  const exists = (vt) => contracts.value.some((c) => c.vt_symbol === vt)
+  // 持仓里的合约不一定在合约列表里（例如已下市），找第一个存在的
+  const fromPosition = positions.value.map((p) => p.vt_symbol).find(exists)
+  const pick = fromPosition || recentSymbols.value.find(exists)
+  if (!pick) return // 没有持仓也没有最近选择过：保持为空
+
+  selectedSymbol.value = pick
+  onContractChange()
 }
 
 // 限价 / 手数
@@ -672,7 +766,7 @@ const submitOrder = async (action) => {
 }
 
 // 前端分页（后端每 3 秒返回全量，一天的委托 / 持仓 / 成交量级不大，不需要改接口）。
-// 每页 5 条：面板高 326px，扣掉表头约 37px、分页条约 48px，剩下的高度刚好放得下 5 行（每行约 39px）。
+// 每页 5 条：面板高度由 Trading.css 的 --trade-panel-height 统一决定，刚好放得下表头 + 5 行 + 分页条。
 // 当前委托、当前持仓、成交明细三个列表共用这一套逻辑，保证行为一致。
 const PAGE_SIZE = 5
 
@@ -724,21 +818,26 @@ const cancelOne = async (o) => {
   refreshAll()
 }
 
-// 持仓 / 成交 / 反手任务
+// 持仓 / 成交
 const positions = ref([])
 const trades = ref([])
-const reverseTasks = ref([])
 const { page: positionPage, paged: pagedPositions } = usePaged(positions)
 const { page: tradePage, paged: pagedTrades } = usePaged(trades)
 
 const refreshPositions = async () => {
   try {
     const res = await getPositions()
-    if (res.success) positions.value = res.data
+    if (res.success) {
+      positions.value = res.data
+      positionsLoaded.value = true // 持仓第一次返回（哪怕是空列表）后，才能决定默认合约
+    }
   } catch (error) {
     // 下次轮询再试
   }
 }
+
+// 合约列表和持仓都到齐后，决定默认选中的合约（只执行一次，见 applyDefaultContract）
+watch([contracts, positionsLoaded], applyDefaultContract)
 
 const refreshTrades = async () => {
   try {
@@ -749,25 +848,12 @@ const refreshTrades = async () => {
   }
 }
 
-const refreshReverseTasks = async () => {
-  try {
-    const res = await getReverseTasks()
-    if (res.success) reverseTasks.value = res.data
-  } catch (error) {
-    // 下次轮询再试
-  }
-}
-
-// 一次刷新委托 / 持仓 / 成交 / 反手任务（下单、撤单、反手后立刻调用，不用等 3 秒）
+// 一次刷新委托 / 持仓 / 成交（下单、撤单、反手后立刻调用，不用等 3 秒）
 const refreshAll = () => {
   refreshOrders()
   refreshPositions()
   refreshTrades()
-  refreshReverseTasks()
 }
-
-const reverseStateText = (state) =>
-  ({ waiting: '等待平仓成交', opened: '已开仓', cancelled: '已取消', failed: '开仓失败' }[state] || state)
 
 // 持仓行上的“平仓”：选中该合约，填入可平手数和对手价，由用户确认价格后再点上方的“平多 / 平空”。
 // 对手价：平多是卖出，用买一价；平空是买入，用卖一价，更容易成交。
@@ -845,20 +931,6 @@ const submitReverse = async (p) => {
   }
 }
 
-const cancelReverseTask = async (t) => {
-  try {
-    const res = await cancelReverse(t.task_id)
-    if (res.success) {
-      ElMessage.success(res.message || '已取消反手')
-    } else {
-      ElMessage.error(res.message || '取消失败')
-    }
-  } catch (error) {
-    ElMessage.error('取消请求失败，请检查后端连接')
-  }
-  refreshAll()
-}
-
 const startTradingPolling = () => {
   refreshAll()
   if (!ordersTimer) ordersTimer = setInterval(refreshAll, 3000)
@@ -880,6 +952,8 @@ const stopTradingPolling = () => {
   filteredContracts.value = []
   contractsLoading.value = false
   selectedSymbol.value = ''
+  defaultPicked.value = false // 重新连接后重新决定默认合约
+  positionsLoaded.value = false
   quote.value = null
   orders.value = []
   orderPage.value = 1
@@ -887,7 +961,6 @@ const stopTradingPolling = () => {
   positionPage.value = 1
   trades.value = []
   tradePage.value = 1
-  reverseTasks.value = []
 }
 
 // 弹窗
@@ -964,7 +1037,8 @@ const closeModal = () => {
 }
 
 // 进入页面时，如果后端已有登录会话（登录页已经用期货账号登录成功），自动连接并显示资金，
-// 不需要再手动拨开关。没有会话（例如调试模式进入）时静默跳过，保持“未连接”，由用户自行处理。
+// 不需要再手动拨开关。调试模式进入时由前端假数据提供账户 / 合约 / 委托 / 持仓 / 成交，同样默认已连接。
+// 真实账号但后端没有会话时静默跳过，保持“未连接”，由用户自行处理。
 const autoConnectQuantAccount = async () => {
   try {
     const res = await getAccount()
