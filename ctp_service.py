@@ -31,6 +31,76 @@ _lock = threading.Lock()  # 保护 _session 的创建 / 销毁
 _session = None           # 当前 CTP 会话
 
 
+def _safe_print(text):
+    """print 在控制台编码不是 UTF-8（如被管道重定向成 GBK）时，遇到无法编码的字符会抛
+    UnicodeEncodeError。日志回调运行在 vnpy 事件线程里，异常会让该线程退出，之后所有事件
+    （登录结果、合约就绪、委托推送）都不再处理——打印失败绝不能影响业务。"""
+    try:
+        print(text)
+    except Exception:  # noqa: BLE001
+        try:
+            print(text.encode("ascii", "backslashreplace").decode("ascii"))
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ----------------------------------------------------------------------------
+# 合约查询方案（见 _build_gateway_class）
+# ----------------------------------------------------------------------------
+
+# 没有期权膨胀的交易所：直接按交易所查询（实测各 1~3 秒）
+_FULL_QUERY_EXCHANGES = ("CFFEX", "CZCE", "INE")
+# 期权很多的交易所：按品种查询（实测每个品种 <1 秒）
+_PRODUCT_QUERY_EXCHANGES = ("SHFE", "DCE", "GFEX")
+# 内置品种清单（SimNow 实测）；新上市品种在某次登录被发现后会写入本地缓存，下次自动带上
+_DEFAULT_PRODUCTS = {
+    "SHFE": ("ad", "ag", "al", "ao", "au", "br", "bu", "cu", "fu", "hc", "ni", "op", "pb", "rb",
+             "ru", "sn", "sp", "ss", "wr", "zn"),
+    "DCE": ("a", "b", "bb", "bz", "c", "cs", "eb", "eg", "fb", "i", "j", "jd", "jm", "l", "lg",
+            "lh", "m", "p", "pg", "pp", "rr", "v", "y"),
+    "GFEX": ("lc", "pd", "ps", "pt", "si"),
+}
+# 额外要查询的品种（新品种上市但内置清单还没收录时，可在 data/ctp_brokers.local.json 的
+# "_extra_products" 里补充：{"SHFE": ["xx"], "DCE": ["yy"]}；load_configs 会读入这里）
+_EXTRA_PRODUCTS = {}
+# 被流控（返回非 0）后的重试间隔（秒）。实测柜台约每秒接受 4 条查询
+_QUERY_RETRY_INTERVAL = 0.1
+# 单条合约查询因流控（返回非 0）反复重试的最长时间（秒）
+_QUERY_SEND_TIMEOUT = 30
+# 合约查询发出后等待全部应答的最长时间（秒）；超时就按已收到的合约放行，不能一直卡在「合约加载中」
+_QUERY_FINISH_TIMEOUT = 45
+
+
+def _product_cache_path():
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "futures-quantitative", "ctp_products.json")
+
+
+def _load_product_cache():
+    """上次登录发现的期货品种：{exchange: [product_id, ...]}。读取失败返回空字典。"""
+    try:
+        with open(_product_cache_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {ex: [str(p) for p in pids] for ex, pids in data.items()
+                if isinstance(pids, list)}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_product_cache(found):
+    """found: {exchange: set(product_id)}。只补充不删除，且只保存按品种查询的那几个交易所。"""
+    try:
+        merged = _load_product_cache()
+        for ex in _PRODUCT_QUERY_EXCHANGES:
+            merged[ex] = sorted(set(merged.get(ex, ())) | set(found.get(ex, ())))
+        path = _product_cache_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False)
+    except Exception as e:  # noqa: BLE001
+        _safe_print(f"[CTP] 保存品种缓存失败：{e}")
+
+
 # ----------------------------------------------------------------------------
 # 配置
 # ----------------------------------------------------------------------------
@@ -56,6 +126,10 @@ def load_configs(paths):
             print(f"[CTP] 读取配置失败 {path}: {e}")
             continue
         for key, cfg in data.items():
+            if key == "_extra_products" and isinstance(cfg, dict):
+                _EXTRA_PRODUCTS.update({str(ex): [str(p) for p in pids]
+                                        for ex, pids in cfg.items() if isinstance(pids, list)})
+                continue
             if key.startswith("_") or not isinstance(cfg, dict):
                 continue
             configs[key] = cfg
@@ -100,7 +174,7 @@ class _Session:
         msg = str(getattr(event.data, "msg", "") or "")
         self.logs.append(msg)
         del self.logs[:-30]
-        print(f"[CTP] {msg}")
+        _safe_print(f"[CTP] {msg}")
 
         if "交易服务器连接成功" in msg:
             self.td_connected = True
@@ -118,6 +192,174 @@ class _Session:
             self.last_error = (msg, time.time())
 
 
+_FuturesOnlyGateway = None
+
+
+def _build_gateway_class():
+    """构造「只加载期货合约」的 CTP 网关类（延迟到 vnpy 导入之后）。
+
+    为什么要改：vnpy_ctp 登录后会查询【全市场】合约，并且要等整个查询结束（last=True）才把
+    contract_inited 置位——在此之前，委托 / 成交推送只缓存不处理，持仓查询也不发（见 query_position）。
+    SimNow 现在会返回 1.7 万+ 合约（期货仅 852 个，其余全是期权 / 组合），期货 5 秒内就到齐，
+    剩下的期权要流式返回两分钟以上，导致登录后长时间「合约加载中」，持仓 / 委托 / 成交也都是空的。
+
+    更根本的问题（实测）：CTP 柜台对同一连接的查询是串行应答的——全市场合约查询还在流式返回时，
+    资金 / 持仓查询一律返回 -2（未处理请求超限）并一直排队，直到合约查询整个结束（60~120 秒）才应答。
+    所以光是提前放行合约还不够，必须【不再发全市场查询】。
+
+    本应用只交易期货，因此改为精确查询（实测：按 ProductID 查询每次 <1 秒，43 个品种共 11 秒）：
+      1. CFFEX / CZCE / INE 三个交易所没有期权膨胀，直接按交易所查（共约 5 秒），同时发现这些交易所的品种；
+      2. SHFE / DCE / GFEX 的期权很多，按品种查：品种清单 = 内置清单 ∪ 上次登录缓存的清单；
+      3. 所有查询应答完毕即视为合约加载完成（置位 contract_inited、回放缓存的委托 / 成交）；
+      4. 过程中只登记期货合约，期权 / 组合直接丢弃。
+    查询由独立线程顺序发出（遇到流控 -2 只重试，不阻塞 CTP 回调线程）。"""
+    global _FuturesOnlyGateway
+    if _FuturesOnlyGateway:
+        return _FuturesOnlyGateway
+
+    from vnpy_ctp import CtpGateway
+    from vnpy_ctp.gateway import ctp_gateway as g
+
+    class _FuturesOnlyTdApi(g.CtpTdApi):
+        def __init__(self, gateway):
+            super().__init__(gateway)
+            self._fut_finished = False
+            self._q_lock = threading.Lock()
+            self._q_pending = {}        # reqid -> 查询参数（尚未应答的合约查询）
+            self._q_sent_all = False    # 所有查询都已发出
+            self._q_products = {}       # exchange -> 本次发现的期货 ProductID 集合
+            self._q_gen = 0             # 查询批次（断线重连后旧线程自动作废）
+
+        # ---- 收尾 ----
+
+        def _finish_instruments(self):
+            """合约加载收尾（只执行一次）：置位 + 回放登录期间缓存的委托、成交。"""
+            with self._q_lock:
+                if self._fut_finished:
+                    return
+                self._fut_finished = True
+
+            self.contract_inited = True
+            _save_product_cache(self._q_products)
+            self.gateway.write_log("合约信息查询成功")
+
+            orders, self.order_data = self.order_data, []
+            for data in orders:
+                self._safe(self.onRtnOrder, data)
+            trades, self.trade_data = self.trade_data, []
+            for data in trades:
+                self._safe(self.onRtnTrade, data)
+
+        def _safe(self, func, data):
+            try:
+                func(data)
+            except Exception as e:  # noqa: BLE001  一条异常记录不能中断其余历史委托 / 成交的回放
+                _safe_print(f"[CTP] 回放委托 / 成交出错，已跳过：{type(e).__name__}: {e}")
+
+        def _maybe_finish(self):
+            with self._q_lock:
+                done = self._q_sent_all and not self._q_pending
+            if done:
+                self._finish_instruments()
+
+        def _finish_watchdog(self, gen):
+            """兜底：个别查询的应答丢失时，不能让界面永远停在「合约加载中」。
+            超时后按已收到的合约放行（合约列表可能不全，但持仓 / 委托 / 成交必须能出来）。"""
+            deadline = time.time() + _QUERY_FINISH_TIMEOUT
+            while time.time() < deadline:
+                if gen != self._q_gen or self._fut_finished:
+                    return
+                time.sleep(0.5)
+            if gen == self._q_gen and not self._fut_finished:
+                with self._q_lock:
+                    left = list(self._q_pending.values())
+                _safe_print(f"[CTP] 合约查询超时，仍有 {len(left)} 条未应答，按已收到的合约继续：{left[:5]}")
+                self._finish_instruments()
+
+        # ---- 合约查询 ----
+
+        def onRspSettlementInfoConfirm(self, data, error, reqid, last):
+            """结算单确认后：不发全市场查询，改为精确查询（见 _build_gateway_class 说明）。"""
+            self.gateway.write_log("结算信息确认成功")
+            with self._q_lock:
+                self._fut_finished = False
+                self._q_pending.clear()
+                self._q_sent_all = False
+                self._q_products = {}
+                self._q_gen += 1
+                gen = self._q_gen
+            threading.Thread(target=self._run_queries, args=(gen,), daemon=True).start()
+            threading.Thread(target=self._finish_watchdog, args=(gen,), daemon=True).start()
+
+        def _plan_queries(self):
+            """要发出的查询参数列表。"""
+            plan = [{"ExchangeID": ex} for ex in _FULL_QUERY_EXCHANGES]
+            cached = _load_product_cache()
+            for ex in _PRODUCT_QUERY_EXCHANGES:
+                pids = set(_DEFAULT_PRODUCTS.get(ex, ())) | set(cached.get(ex, ())) \
+                    | set(_EXTRA_PRODUCTS.get(ex, ()))
+                for pid in sorted(pids):
+                    plan.append({"ExchangeID": ex, "ProductID": pid})
+            return plan
+
+        def _send_query(self, gen, params):
+            """发一条合约查询，遇到流控（非 0）等待后重试。返回 False 表示批次已作废 / 超时。"""
+            deadline = time.time() + _QUERY_SEND_TIMEOUT
+            while time.time() < deadline:
+                if gen != self._q_gen:
+                    return False
+                with self._q_lock:
+                    self.reqid += 1
+                    rid = self.reqid
+                    self._q_pending[rid] = params
+                n = self.reqQryInstrument(params, rid)
+                if n == 0:
+                    return True
+                with self._q_lock:
+                    self._q_pending.pop(rid, None)
+                time.sleep(_QUERY_RETRY_INTERVAL)
+            return False
+
+        def _run_queries(self, gen):
+            try:
+                for params in self._plan_queries():
+                    if not self._send_query(gen, params):
+                        if gen != self._q_gen:
+                            return
+                        _safe_print(f"[CTP] 合约查询发送超时，已跳过：{params}")
+            except Exception as e:  # noqa: BLE001
+                _safe_print(f"[CTP] 合约查询线程异常：{type(e).__name__}: {e}")
+            if gen != self._q_gen:
+                return
+            with self._q_lock:
+                self._q_sent_all = True
+            self._maybe_finish()
+
+        def onRspQryInstrument(self, data, error, reqid, last):
+            if data and data.get("ProductClass") == g.THOST_FTDC_PC_Futures:
+                if not self._fut_finished or data["InstrumentID"] not in g.symbol_contract_map:
+                    super().onRspQryInstrument(data, error, reqid, False)  # 只登记合约，收尾由本类负责
+                    pid = data.get("ProductID")
+                    if pid:
+                        self._q_products.setdefault(data["ExchangeID"], set()).add(pid)
+            # 期权 / 组合：直接丢弃
+
+            if last:
+                with self._q_lock:
+                    self._q_pending.pop(reqid, None)
+                self._maybe_finish()
+
+    class _FuturesOnlyGateway_(CtpGateway):
+        default_name = "CTP"
+
+        def __init__(self, event_engine, gateway_name):
+            super().__init__(event_engine, gateway_name)
+            self.td_api = _FuturesOnlyTdApi(self)
+
+    _FuturesOnlyGateway = _FuturesOnlyGateway_
+    return _FuturesOnlyGateway
+
+
 def _import_vnpy():
     """延迟导入 vnpy，返回 (MainEngine, CtpGateway, EVENT_LOG)。"""
     from vnpy.trader.setting import SETTINGS
@@ -127,8 +369,7 @@ def _import_vnpy():
 
     from vnpy.trader.engine import MainEngine
     from vnpy.trader.event import EVENT_LOG
-    from vnpy_ctp import CtpGateway
-    return MainEngine, CtpGateway, EVENT_LOG
+    return MainEngine, _build_gateway_class(), EVENT_LOG
 
 
 def _close_session(session):

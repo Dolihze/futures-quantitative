@@ -124,12 +124,6 @@
 .stat-value.negative { color: var(--down); }  /* 亏损 - 绿色 */
 .stat-value.zero { color: var(--text-primary); }  /* 0 - 白色 */
 
-.stat-change {
-  font-size: 12px;
-  margin-top: 4px;
-  color: var(--text-muted);
-}
-
 /* 下单交易模块 */
 .section-header {
   display: flex;
@@ -644,24 +638,16 @@
   min-height: 48px;
 }
 
-.quote-main {
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--text-primary);
-}
-
-/* 红涨绿跌（与项目其它页面一致） */
-.quote-main.up { color: var(--up); }
-.quote-main.down { color: var(--down); }
-
 .quote-detail {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* 现价的涨跌色：红涨绿跌（与项目其它页面一致）；没有行情时是 “--”，用默认色 */
+.q-val.up { color: var(--up); }
+.q-val.down { color: var(--down); }
 
 .quote-detail b { font-weight: 600; }
 
@@ -686,9 +672,6 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-
-/* 涨停 / 跌停不加粗，沿用普通文字色 */
-.q-val.q-plain { font-weight: 400; }
 
 .up-text { color: var(--up-text); }
 .down-text { color: var(--down); }
@@ -980,23 +963,33 @@
 /* 半宽下，合约行（下拉 + 行情）和价格 / 手数行允许换行，避免挤成一团 */
 .trade-col .trading-row { flex-wrap: wrap; }
 .trade-col .contract-group { flex: 1 1 100%; }
-/* 行情区固定高度：未选合约 / 加载中 / 有行情（大字价格 + 明细）三种状态占位一致，下单面板高度不再随状态变化。
-   52px = 26px 大字（行高 1.1）+ 4px 间距 + 明细一行 + 余量；内容在盒子里垂直居中。 */
+/* 行情区只有一行：现价 / 买一 / 卖一。不论有没有行情都是同一套结构（没数据显示 “--”），高度固定，下单面板高度不随状态变化 */
 .trade-col .quote-box {
   flex: 1 1 100%;
-  height: 52px;
-  min-height: 52px;
-  max-height: 52px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
   justify-content: center;
   overflow: hidden;
 }
 .trade-col .input-group { flex: 1 1 calc(50% - 6px); min-width: 160px; }
 
-/* 行情明细：固定盒子高度下不换行（4 项在半宽内放得下；放不下时省略号，而不是撑高盒子） */
+/* 行情明细：固定盒子高度下不换行（3 项在半宽内放得下，不会撑高盒子） */
 .trade-col .quote-detail { flex-wrap: nowrap; gap: 4px 8px; white-space: nowrap; overflow: hidden; }
 
-/* 半宽下面板内边距和按钮字号略收紧 */
-.trade-col .trading-panel { padding: 20px; }
+/* 半宽下面板内边距和按钮字号略收紧。
+   行情区改成单行后，面板内容只有 ~254px 高；而下面一行（持仓 / 成交）和右边的委托表（5 行 + 分页条）都需要 326px。
+   所以把下单面板的高度固定为 326px，三行内容（合约+行情 / 限价+手数 / 按钮）在里面均匀分布，
+   上下两行面板等高，委托表也有余量，不会因为差 1px 就冒出滚动条。 */
+.trade-col .trading-panel {
+  padding: 20px;
+  min-height: 326px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.trade-col .trading-panel .trading-row { margin-bottom: 0; }
 .trade-col .trading-btn { font-size: 13px; padding: 0 4px; white-space: nowrap; }
 
 /* 委托表只有半宽：收紧单元格间距，放不下时由 .orders-panel 横向滚动 */

@@ -27,22 +27,18 @@
         <div class="stat-card">
           <div class="stat-label">账户权益</div>
           <div class="stat-value">¥ {{ accountInfo.balance }}</div>
-          <div class="stat-change">{{ accountInfo.balanceChange }}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">可用资金</div>
           <div class="stat-value">¥ {{ accountInfo.available }}</div>
-          <div class="stat-change">{{ accountInfo.availableChange }}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">使用率</div>
           <div class="stat-value">{{ accountInfo.usageRate }}%</div>
-          <div class="stat-change">{{ accountInfo.usageRateChange }}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">今日盈亏</div>
           <div class="stat-value" :class="accountInfo.profitClass">¥ {{ accountInfo.profit }}</div>
-          <div class="stat-change">{{ accountInfo.profitChange }}</div>
         </div>
       </div>
 
@@ -86,7 +82,7 @@
                   filterable
                   :filter-method="filterContracts"
                   :loading="contractsLoading"
-                  :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612 / 白银'"
+                  :placeholder="contractsLoading ? '合约加载中…' : '选择或搜索合约，如 ag2612'"
                   no-data-text="没有匹配的合约"
                   class="contract-select"
                   popper-class="contract-select-popper"
@@ -96,28 +92,24 @@
                   <el-option
                     v-for="item in filteredContracts"
                     :key="item.vt_symbol"
-                    :label="`${item.name}（${item.symbol}）`"
+                    :label="contractLabel(item.name, item.symbol)"
                     :value="item.vt_symbol"
                   >
                     <div class="contract-option">
-                      <span class="contract-option-name">{{ item.name }}</span>
-                      <span class="contract-option-code">{{ item.symbol }} · {{ item.exchange }}</span>
+                      <span class="contract-option-name">{{ contractLabel(item.name, item.symbol) }}</span>
+                      <span class="contract-option-code">{{ item.exchange }}</span>
                     </div>
                   </el-option>
                 </el-select>
               </div>
 
-              <!-- 行情区：不论有没有行情都是同一套结构，没有数据的字段显示 “--”，布局不跳动 -->
+              <!-- 行情区：现价 / 买一 / 卖一 三项同一行。不论有没有行情都是同一套结构，没有数据的字段显示 “--”，布局不跳动。
+                   每项的数字区是固定宽度的等宽数字，“--” 和真实价格占位一致，标签位置不会跳 -->
               <div class="quote-box">
-                <div class="quote-main" :class="quote ? quoteTrend : ''">
-                  {{ fmtPrice(quote?.last_price) }}
-                </div>
-                <!-- 每项的数字区是固定宽度的等宽数字，“--” 和真实价格占位一致，标签位置不会跳 -->
                 <div class="quote-detail">
+                  <span class="q-item">现价<b class="q-val" :class="quote ? quoteTrend : ''">{{ fmtPrice(quote?.last_price) }}</b></span>
                   <span class="q-item">买一<b class="q-val up-text">{{ fmtPrice(quote?.bid_price) }}</b></span>
                   <span class="q-item">卖一<b class="q-val down-text">{{ fmtPrice(quote?.ask_price) }}</b></span>
-                  <span class="q-item">涨停<b class="q-val q-plain">{{ fmtPrice(quote?.limit_up) }}</b></span>
-                  <span class="q-item">跌停<b class="q-val q-plain">{{ fmtPrice(quote?.limit_down) }}</b></span>
                 </div>
               </div>
             </div>
@@ -128,7 +120,7 @@
               <div class="input-group">
                 <div class="input-label">
                   限价
-                  <a v-if="quote?.last_price" class="fill-last" @click="fillLastPrice">填入最新价</a>
+                  <a v-if="quote?.last_price" class="fill-last" @click="fillLastPrice">最新价</a>
                 </div>
                 <div class="input-wrapper">
                   <input
@@ -181,10 +173,10 @@
             <!-- 第三行：交易操作（均为限价单） -->
             <div class="trading-row">
               <button class="trading-btn long" :disabled="ordering" @click="submitOrder('open_long')">
-                买多（开仓）
+                买多
               </button>
               <button class="trading-btn short" :disabled="ordering" @click="submitOrder('open_short')">
-                卖空（开仓）
+                卖空
               </button>
               <button class="trading-btn close" :disabled="ordering" @click="submitOrder('close_long')">
                 平多
@@ -285,7 +277,7 @@
                   </tr>
                   <tr v-for="p in pagedPositions" :key="p.vt_symbol + p.direction">
                     <!-- 合约列只显示代码（如 IF2612）：代码里已含品种和月份，足以区分合约；中文名放进悬停提示，不占列宽 -->
-                    <td :title="p.name">{{ p.symbol }}</td>
+                    <td :title="p.name && p.name !== p.symbol ? p.name : null">{{ p.symbol }}</td>
                     <td :class="p.direction === '多' ? 'up-text' : 'down-text'">{{ p.direction }}</td>
                     <td class="num">{{ p.volume }}（{{ p.td_volume }} / {{ p.yd_volume }}）</td>
                     <td class="num">{{ p.available }}</td>
@@ -374,7 +366,7 @@
         <div v-for="t in reverseTasks" :key="t.task_id" class="reverse-item" :class="t.state">
           <div class="reverse-main">
             <span class="reverse-tag" :class="t.state">{{ reverseStateText(t.state) }}</span>
-            <span>{{ t.name }}　{{ t.from_side }} → {{ t.to_side }}　{{ t.volume }} 手</span>
+            <span>{{ contractLabel(t.name, t.symbol) }}　{{ t.from_side }} → {{ t.to_side }}　{{ t.volume }} 手</span>
             <span class="muted">平仓价 {{ t.close_price }} · 开仓价 {{ t.open_price }} · {{ t.created }}</span>
             <a v-if="t.state === 'waiting'" class="cancel-link" @click="cancelReverseTask(t)">取消反手</a>
           </div>
@@ -430,17 +422,12 @@ const isConnecting = ref(false)
 // 账户信息
 const accountInfo = reactive({
   balance: '0.00',
-  balanceChange: '暂无数据',
   available: '0.00',
-  availableChange: '暂无数据',
   usageRate: '0.00',
-  usageRateChange: '暂无数据',
   profit: '0.00',
-  profitClass: 'zero',
-  profitChange: '暂无数据'
+  profitClass: 'zero'
 })
 
-const NO_DATA = '暂无数据'
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -448,14 +435,10 @@ const fmtMoney = (n) =>
 const resetAccountInfo = () => {
   Object.assign(accountInfo, {
     balance: '0.00',
-    balanceChange: NO_DATA,
     available: '0.00',
-    availableChange: NO_DATA,
     usageRate: '0.00',
-    usageRateChange: NO_DATA,
     profit: '0.00',
-    profitClass: 'zero',
-    profitChange: NO_DATA
+    profitClass: 'zero'
   })
 }
 
@@ -466,19 +449,14 @@ const applyAccountSnapshot = (snap) => {
 
   const balance = Number(acc.balance) || 0
   const available = Number(acc.available) || 0
-  const frozen = Number(acc.frozen) || 0
   const profit = Number(snap.position_profit) || 0
   const used = balance > 0 ? Math.max(balance - available, 0) : 0
 
   accountInfo.balance = fmtMoney(balance)
-  accountInfo.balanceChange = `账号 ${acc.account}`
   accountInfo.available = fmtMoney(available)
-  accountInfo.availableChange = `冻结 ¥ ${fmtMoney(frozen)}`
   accountInfo.usageRate = balance > 0 ? ((used / balance) * 100).toFixed(2) : '0.00'
-  accountInfo.usageRateChange = `占用 ¥ ${fmtMoney(used)}`
   accountInfo.profit = fmtMoney(profit)
   accountInfo.profitClass = profit > 0 ? 'positive' : profit < 0 ? 'negative' : 'zero'
-  accountInfo.profitChange = `持仓 ${snap.positions?.length || 0} 个合约`
 }
 
 // 连接期间每 3 秒刷新一次资金；连接断开（网络 / 前置掉线）时自动切回未连接
@@ -521,6 +499,16 @@ const selectedSymbol = ref('')
 let contractRetryTimer = null
 
 const MAX_OPTIONS = 80 // 下拉里最多渲染的合约数，全部期货合约有几百个，输入关键字再缩小范围
+
+// 合约的显示名：有独立中文名时显示“名称（代码）”，名称缺失或和代码相同时只显示代码。
+// SimNow 返回的合约名称就是代码本身（852 个合约全部如此），直接拼会得到 “fu2701（fu2701）”；
+// 换成会返回中文名的期货公司后，这里自动恢复成 “燃料油2701（fu2701）”。
+const contractLabel = (name, symbol) => {
+  const n = String(name ?? '').trim()
+  const s = String(symbol ?? '').trim()
+  if (!n || n.toLowerCase() === s.toLowerCase()) return s
+  return `${n}（${s}）`
+}
 
 const filterContracts = (keyword = '') => {
   const kw = String(keyword).trim().toLowerCase()
@@ -632,8 +620,8 @@ const adjustVolume = (direction) => {
 }
 
 const ACTION_TEXT = {
-  open_long: '买多（开仓）',
-  open_short: '卖空（开仓）',
+  open_long: '买多',
+  open_short: '卖空',
   close_long: '平多',
   close_short: '平空'
 }
@@ -658,7 +646,7 @@ const submitOrder = async (action) => {
 
   try {
     await ElMessageBox.confirm(
-      `${ACTION_TEXT[action]}　${contract.name}（${contract.symbol}）\n限价 ${price}　${volume} 手`,
+      `${ACTION_TEXT[action]}　${contractLabel(contract.name, contract.symbol)}\n限价 ${price}　${volume} 手`,
       '确认下单',
       { confirmButtonText: '确认下单', cancelButtonText: '取消', type: 'warning', customStyle: { whiteSpace: 'pre-line' } }
     )
@@ -793,7 +781,7 @@ const useForClose = async (p) => {
   const price = p.direction === '多' ? q?.bid_price : q?.ask_price
   priceInput.value = price || q?.last_price || ''
   ElMessage.info(
-    `已选中 ${p.name}，限价 ${priceInput.value || '待填'}、${volumeInput.value} 手；确认后点上方的「${p.direction === '多' ? '平多' : '平空'}」`
+    `已选中 ${contractLabel(p.name, p.symbol)}，限价 ${priceInput.value || '待填'}、${volumeInput.value} 手；确认后点上方的「${p.direction === '多' ? '平多' : '平空'}」`
   )
 }
 
@@ -801,7 +789,7 @@ const useForClose = async (p) => {
 // 平仓价取对手价（更容易成交），开仓价取反向的对手价；价格拿不到时不允许发起，避免盲目下单。
 const submitReverse = async (p) => {
   if (!p.available || p.available < p.volume) {
-    ElMessage.warning(`${p.name} 有 ${p.volume - p.available} 手被挂单占用，请先撤销相关委托再反手`)
+    ElMessage.warning(`${contractLabel(p.name, p.symbol)} 有 ${p.volume - p.available} 手被挂单占用，请先撤销相关委托再反手`)
     return
   }
   // 反手要用最新盘口，先确保订阅并取到这个合约的行情
@@ -822,7 +810,7 @@ const submitReverse = async (p) => {
 
   try {
     await ElMessageBox.confirm(
-      `反手　${p.name}（${p.symbol}）\n` +
+      `反手　${contractLabel(p.name, p.symbol)}\n` +
         `第 1 步：平 ${p.direction} ${p.volume} 手，限价 ${price}\n` +
         `第 2 步：开 ${toSide} ${p.volume} 手，限价 ${price}\n\n` +
         `注意：只有第 1 步【全部成交】后才会自动执行第 2 步。\n` +
