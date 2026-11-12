@@ -244,11 +244,6 @@ const snapshot = () => {
 // ---------------------------------------------------------------------------
 // 对外接口（和 @/api 同名同签名）
 // ---------------------------------------------------------------------------
-export async function quantLogin() {
-  await delay(300)
-  return ok(snapshot(), '连接成功')
-}
-
 export async function getAccount() {
   await delay()
   return ok(snapshot())

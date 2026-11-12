@@ -22,6 +22,7 @@
  * - Home.css / Login.css / LoginPopper.css / Trading.css / Backtest.css
  * - Review.css / ReviewKline.css（复盘页及其子组件）
  * - ThemeSwitcher.css（主题切换组件）
+ * - ConnectionSwitch.css（连接状态 + 连接开关组件）
  *
  * 注意：本文件不应被 import（页面样式不能全局引入，否则会破坏 scoped 隔离）。
  */

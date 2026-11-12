@@ -234,20 +234,28 @@
   color: var(--text-muted);
 }
 
-/* 调试模式按钮 */
-.debug-actions {
-  text-align: center;
-}
+/* 调试模式按钮：右上角、主题切换按钮右边的小方块，只有一个扳手图标，悬停提示“调试模式”。
+   高度跟随主题切换按钮（.theme-corner 是 stretch 对齐）；宽度取 --debug-btn-size，要等于主题切换按钮的高度才是正方形。
+   （aspect-ratio 对被 stretch 拉伸出来的高度不起作用，按钮会变成又窄又高的细条，所以宽度显式给出。）
+   圆角、图标大小和主题切换按钮一致，用橙色和它区分，提示这是调试用途 */
 .debug-btn {
-  margin-top: 20px;
-  padding: 10px 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--debug-btn-size);
+  padding: 0;
   background: rgba(var(--orange-rgb), 0.15);
   border: 1px solid rgba(var(--orange-rgb), 0.4);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--orange);
-  font-size: 13px;
-  text-decoration: none;
+  cursor: pointer;
+  outline: none;
   transition: all 0.2s;
+}
+
+.debug-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .debug-btn:hover {
@@ -413,21 +421,15 @@
   transform: translateY(-1px);
 }
 
-:deep(.el-button--warning.is-plain) {
-  background: rgba(var(--orange-rgb), 0.15);
-  border-color: rgba(var(--orange-rgb), 0.4);
-  color: var(--orange);
-}
-
-:deep(.el-button--warning.is-plain:hover) {
-  background: rgba(var(--orange-rgb), 0.25);
-  border-color: rgba(var(--orange-rgb), 0.6);
-}
-
 /* �����л��������Ͻǣ� */
 .theme-corner {
   position: absolute;
   top: 20px;
   right: 24px;
   z-index: 20;
+  display: flex;
+  align-items: stretch;   /* 调试按钮的高度跟随主题切换按钮 */
+  gap: 8px;
+  /* 调试按钮的边长 = 主题切换按钮的高度（6px 上下内边距 + 17px 行高 + 2px 边框 = 31px）；改了主题按钮的尺寸要同步改这里 */
+  --debug-btn-size: 31px;
 }

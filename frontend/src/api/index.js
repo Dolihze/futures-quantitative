@@ -224,12 +224,3 @@ export function cancelOrder(orderId) {
     silent: true
   })
 }
-
-// 量化账号登录
-export function quantLogin(data) {
-  return request({
-    url: '/api/quant-login',
-    method: 'post',
-    data
-  })
-}

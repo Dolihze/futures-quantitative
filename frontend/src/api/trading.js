@@ -14,7 +14,6 @@ export const isDebugMode = () => useUserStore().broker === DEBUG_BROKER
 
 // 交易页用到的接口。logout 不在其中：调试模式下退出登录也会请求后端清理会话，失败已被吞掉，行为无需区别
 const NAMES = [
-  'quantLogin',
   'getAccount',
   'getContracts',
   'getQuote',
@@ -29,7 +28,6 @@ const NAMES = [
 const pick = (name) => (...args) => (isDebugMode() ? mock : real)[name](...args)
 
 export const {
-  quantLogin,
   getAccount,
   getContracts,
   getQuote,

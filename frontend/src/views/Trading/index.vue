@@ -48,31 +48,10 @@
           <!-- 下单交易模块标题 -->
           <div class="section-header">
             <h2 class="section-title">下单交易</h2>
-            <div class="connection-status">
-              <div class="status-indicator" :class="{ connected: isQuantConnected }"></div>
-              <span class="status-text" :class="{ connected: isQuantConnected }">
-                {{ isQuantConnected ? '量化账号已连接' : '未连接量化账号' }}
-              </span>
-              <el-switch
-                v-model="isQuantConnected"
-                :loading="isConnecting"
-                @change="toggleQuantConnection"
-                :disabled="isConnecting"
-                size="small"
-                class="connection-switch"
-              >
-                <template #loading>
-                  <svg class="switch-loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
-                    <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
-                  </svg>
-                </template>
-              </el-switch>
-            </div>
           </div>
 
           <!-- 下单交易面板 -->
-          <div class="trading-panel" :class="{ disabled: !isQuantConnected }">
+          <div class="trading-panel">
             <!-- 第一行：合约选择 + 最新行情 -->
             <div class="trading-row">
               <div class="input-group contract-group">
@@ -406,7 +385,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { logout } from '@/api'
 // 交易相关接口走入口层：真实账号请求后端 CTP；调试模式（跳过登录进入）用前端假数据，见 api/trading.js
 import {
-  quantLogin,
   getAccount,
   getContracts,
   getQuote,
@@ -422,9 +400,9 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const userStore = useUserStore()
 
-// 量化账号连接状态
+// 量化账号会话是否可用（后端有登录会话）。页面不再展示这个状态，只用来驱动数据加载 / 掉线处理：
+// 会话可用时才加载合约、委托、持仓；掉线时清空数据并提示一次；之后自动重连
 const isQuantConnected = ref(false)
-const isConnecting = ref(false)
 
 // 账户信息
 const accountInfo = reactive({
@@ -466,32 +444,45 @@ const applyAccountSnapshot = (snap) => {
   accountInfo.profitClass = profit > 0 ? 'positive' : profit < 0 ? 'negative' : 'zero'
 }
 
-// 连接期间每 3 秒刷新一次资金；连接断开（网络 / 前置掉线）时自动切回未连接
+// 保持连接：进入页面立即请求一次，之后每 3 秒请求一次账户快照，直到离开页面。
+//   - 成功：刷新资金；如果之前没连上（刚进页面 / 掉线后恢复），顺便启动委托 / 持仓 / 成交轮询并加载合约
+//   - 失败且之前是连上的（网络 / 前置掉线）：清空数据并提示一次；之后静默重试，恢复后自动接上
+//   - 失败且之前就没连上（后端启动稍慢、没有登录会话）：静默，等下一次
+//   - 请求异常（后端暂时不可达）：不改变状态，下次再试
 let accountTimer = null
+let disposed = false // 页面已离开：在途请求回来后不再改状态 / 启动轮询
 const stopAccountPolling = () => {
   if (accountTimer) {
     clearInterval(accountTimer)
     accountTimer = null
   }
 }
+
+const syncAccount = async () => {
+  try {
+    const res = await getAccount()
+    if (disposed) return
+    if (res.success) {
+      applyAccountSnapshot(res.data)
+      if (!isQuantConnected.value) {
+        isQuantConnected.value = true
+        startTradingPolling() // 加载合约列表、委托、持仓、成交
+      }
+    } else if (isQuantConnected.value) {
+      isQuantConnected.value = false
+      stopTradingPolling()
+      resetAccountInfo()
+      ElMessage.warning('量化账号连接已断开')
+    }
+  } catch (error) {
+    // 后端暂时不可达，下次轮询再试
+  }
+}
+
 const startAccountPolling = () => {
   stopAccountPolling()
-  accountTimer = setInterval(async () => {
-    try {
-      const res = await getAccount()
-      if (res.success) {
-        applyAccountSnapshot(res.data)
-      } else if (isQuantConnected.value) {
-        isQuantConnected.value = false
-        stopAccountPolling()
-        stopTradingPolling()
-        resetAccountInfo()
-        ElMessage.warning('量化账号连接已断开')
-      }
-    } catch (error) {
-      // 后端暂时不可达，下次轮询再试
-    }
-  }, 3000)
+  syncAccount() // 立即请求一次，首屏不用等 3 秒
+  accountTimer = setInterval(syncAccount, 3000)
 }
 
 // ---------------------------------------------------------------------------
@@ -986,80 +977,20 @@ const handleLogout = async () => {
   }
 }
 
-// 连接/断开量化账号
-const toggleQuantConnection = async (val) => {
-  // 如果正在连接中，不执行任何操作
-  if (isConnecting.value) {
-    return
-  }
-
-  // 如果新状态是已连接，执行连接逻辑
-  if (val) {
-    isConnecting.value = true
-    try {
-      const result = await quantLogin()
-      
-      if (result.success) {
-        isQuantConnected.value = true
-        applyAccountSnapshot(result.data)
-        startAccountPolling()
-        startTradingPolling()
-        ElMessage.success('量化账号连接成功')
-      } else {
-        ElMessage.error(result.message || '连接失败')
-        isQuantConnected.value = false
-      }
-    } catch (error) {
-      console.error('连接错误:', error)
-      ElMessage.error('连接失败，请稍后重试')
-      isQuantConnected.value = false
-    } finally {
-      isConnecting.value = false
-    }
-  } else {
-    // 断开连接
-    disconnectQuantAccount()
-  }
-}
-
-// 断开量化账号连接
-const disconnectQuantAccount = () => {
-  isQuantConnected.value = false
-  stopAccountPolling()
-  stopTradingPolling()
-  resetAccountInfo()
-  ElMessage.info('已断开量化账号连接')
-}
-
 // 关闭弹窗
 const closeModal = () => {
   showModal.value = false
 }
 
-// 进入页面时，如果后端已有登录会话（登录页已经用期货账号登录成功），自动连接并显示资金，
-// 不需要再手动拨开关。调试模式进入时由前端假数据提供账户 / 合约 / 委托 / 持仓 / 成交，同样默认已连接。
-// 真实账号但后端没有会话时静默跳过，保持“未连接”，由用户自行处理。
-const autoConnectQuantAccount = async () => {
-  try {
-    const res = await getAccount()
-    if (!res.success) return
-
-    isQuantConnected.value = true
-    applyAccountSnapshot(res.data)
-    startAccountPolling() // 之后每 3 秒自动刷新；首次资金回报晚到也会在下一次轮询补上
-    startTradingPolling() // 加载合约列表、委托列表
-  } catch (error) {
-    // 后端未就绪 / 网络异常：保持未连接，用户仍可手动拨开关重试
-    console.warn('自动连接量化账号失败:', error)
-  }
-}
-
 // 生命周期
+// 进入页面就开始保持连接：后端已有登录会话（登录页已用期货账号登录成功 / 调试模式的假数据）时自动拉取资金、
+// 合约、委托、持仓；暂时没有会话（后端启动稍慢等）时静默重试，等会话就绪后自动接上
 onMounted(() => {
-  autoConnectQuantAccount()
+  startAccountPolling()
 })
 
 onUnmounted(() => {
+  disposed = true
   stopAccountPolling()
   stopTradingPolling()
 })

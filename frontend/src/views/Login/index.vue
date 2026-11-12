@@ -7,9 +7,16 @@
     <div class="glow-dot"></div>
     <div class="glow-dot"></div>
 
-    <!-- 主题切换 -->
+    <!-- 右上角：主题切换 + 调试模式（只有一个扳手图标，悬停提示“调试模式”） -->
     <div class="theme-corner">
       <ThemeSwitcher />
+      <el-tooltip content="调试模式" placement="bottom" :show-after="200">
+        <button type="button" class="debug-btn" aria-label="调试模式" @click="handleDebugLogin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </button>
+      </el-tooltip>
     </div>
 
     <div class="login-wrapper">
@@ -131,18 +138,6 @@
             </el-button>
           </el-form-item>
         </el-form>
-
-        <!-- 调试模式按钮 -->
-        <div class="debug-actions">
-          <el-button
-            type="warning"
-            plain
-            @click="handleDebugLogin"
-            class="debug-btn"
-          >
-            🔧 调试模式（跳过登录）
-          </el-button>
-        </div>
       </div>
 
       <div class="footer-info">
