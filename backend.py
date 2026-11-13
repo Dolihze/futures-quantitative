@@ -159,7 +159,8 @@ def get_account():
 # 新浪 K 线按 (合约, 周期) 缓存几分钟：首页一次要对所有策略回测，详情页又会再取一次，不必每次都请求网络。
 BACKTEST_KLINE_CACHE = {}
 BACKTEST_KLINE_TTL = 300  # 秒
-BACKTEST_DEFAULT_SYMBOL = 'FU2611'
+# 量化回测的对象是各常见品种的「主连」（新浪主连代码 = 品种代码 + 0，如 FU0），品种目录见 backtest_engine.py。
+# 前端用 product（品种代码，如 FU）选择，默认燃料油主连；主连是拼接的连续行情，没有交割月换月问题。
 BACKTEST_PERIODS = ('1', '5', '15', '30', '60')
 
 
@@ -189,25 +190,40 @@ def fetch_backtest_bars(symbol, period):
 
 
 def _backtest_params():
-    symbol = request.args.get('symbol', BACKTEST_DEFAULT_SYMBOL).strip() or BACKTEST_DEFAULT_SYMBOL
+    """product（品种代码，默认燃料油 FU）、days、lots。品种必须在目录里，返回 (product, days, lots)。"""
+    product = backtest_engine.product_code(request.args.get('product') or backtest_engine.DEFAULT_PRODUCT)
+    if product not in backtest_engine.INSTRUMENT_CONFIG:
+        raise ValueError(f'不支持的品种：{product}')
     days = int(request.args.get('days', 30))
     lots = int(request.args.get('lots', backtest_engine.DEFAULT_LOTS))
     if days <= 0 or lots <= 0:
         raise ValueError('days 和 lots 必须大于 0')
-    return symbol, days, lots
+    return product, days, lots
+
+
+@app.route('/api/backtest/products')
+def backtest_products():
+    """可回测的品种（主连）列表，默认燃料油主连"""
+    return jsonify({'success': True, 'default': backtest_engine.DEFAULT_PRODUCT,
+                    'data': backtest_engine.list_products()})
 
 
 @app.route('/api/backtest/kline')
 def get_kline_data():
-    """获取K线数据API"""
+    """获取某品种主连的 K 线数据。参数：product（默认 FU）、period、days"""
     try:
-        symbol = request.args.get('symbol', BACKTEST_DEFAULT_SYMBOL)
+        product, days, _ = _backtest_params()
         period = request.args.get('period', '1')
-        days = int(request.args.get('days', 30))
+        if period not in BACKTEST_PERIODS:
+            return jsonify({'success': False, 'message': f'不支持的周期：{period}'}), 400
+        symbol = backtest_engine.main_symbol(product)
         bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, period), days)
         if not bars:
             return jsonify({'success': False, 'message': '未获取到数据'}), 404
-        return jsonify({'success': True, 'data': bars, 'symbol': symbol, 'count': len(bars)})
+        return jsonify({'success': True, 'data': bars, 'product': product, 'symbol': symbol,
+                        'symbolName': backtest_engine.product_name(product), 'count': len(bars)})
+    except ValueError as e:
+        return jsonify({'success': False, 'message': f'参数错误：{e}'}), 400
     except Exception as e:
         print(f"[API] 获取K线数据失败: {e}")
         return jsonify({'success': False, 'message': f'获取数据失败: {e}'}), 500
@@ -223,51 +239,62 @@ def backtest_strategies():
 def backtest_overview():
     """首页：对所有策略在最近 days 天内回测，返回每个策略的胜率、盈亏比、总盈亏和缩略净值曲线。
 
-    参数：symbol（默认 FU2611）、days（默认 30）、lots（默认 5）。
+    回测对象是所选品种的主连。参数：product（品种代码，默认 FU 燃料油）、days（默认 30）、lots（默认 5）。
     每个策略使用它自己声明的 K 线周期；某个策略失败不影响其它策略，失败原因放在该策略的 error 字段里。
     """
     try:
-        symbol, days, lots = _backtest_params()
+        product, days, lots = _backtest_params()
     except ValueError as e:
         return jsonify({'success': False, 'message': f'参数错误：{e}'}), 400
+    symbol = backtest_engine.main_symbol(product)
 
     items = []
     for sdef in backtest_engine.STRATEGIES.values():
         info = {'id': sdef.id, 'name': sdef.name, 'description': sdef.description,
                 'category': sdef.category, 'period': sdef.period}
         try:
-            bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, sdef.period), days)
+            all_bars = fetch_backtest_bars(symbol, sdef.period)
+            bars = backtest_engine.slice_recent_days(all_bars, days)
             if not bars:
                 raise ValueError('未获取到K线数据')
             result = backtest_engine.run_backtest(bars, sdef.id, symbol, lots)
-            info.update(stats=result['stats'], equity=result['equity'], error=None)
+            info.update(stats=result['stats'], equity=result['equity'], error=None,
+                        coverage=backtest_engine.data_coverage(all_bars, days))
         except Exception as e:
             print(f"[Backtest] 策略 {sdef.id} 回测失败: {e}")
-            info.update(stats=None, equity=[], error=str(e))
+            info.update(stats=None, equity=[], error=str(e), coverage=None)
         items.append(info)
-    return jsonify({'success': True, 'symbol': symbol, 'days': days, 'lots': lots, 'data': items})
+    # 页面级可选范围：各策略可得天数的最大值决定上限（短周期策略数据少，用各自实际可得的全部数据）
+    avail = max((i['coverage']['availableDays'] for i in items if i.get('coverage')), default=0)
+    return jsonify({'success': True, 'product': product, 'symbol': symbol,
+                    'symbolName': backtest_engine.product_name(product),
+                    'days': days, 'lots': lots, 'availableDays': avail, 'data': items})
 
 
 @app.route('/api/backtest/run')
 def backtest_run():
     """详情页：回测单个策略，返回 K 线、成交明细（含买卖点）、净值曲线和完整统计。
 
-    参数：strategy（策略 id）、symbol、days、lots。
+    回测对象是所选品种的主连。参数：strategy（策略 id）、product（默认 FU）、days、lots。
     """
     strategy = request.args.get('strategy', '').strip()
     if strategy not in backtest_engine.STRATEGIES:
         return jsonify({'success': False, 'message': f'未知策略：{strategy}'}), 404
     try:
-        symbol, days, lots = _backtest_params()
+        product, days, lots = _backtest_params()
     except ValueError as e:
         return jsonify({'success': False, 'message': f'参数错误：{e}'}), 400
+    symbol = backtest_engine.main_symbol(product)
     sdef = backtest_engine.STRATEGIES[strategy]
     try:
-        bars = backtest_engine.slice_recent_days(fetch_backtest_bars(symbol, sdef.period), days)
+        all_bars = fetch_backtest_bars(symbol, sdef.period)
+        bars = backtest_engine.slice_recent_days(all_bars, days)
         if not bars:
             return jsonify({'success': False, 'message': '未获取到K线数据'}), 404
         result = backtest_engine.run_backtest(bars, strategy, symbol, lots)
-        result.update(success=True, days=days, period=sdef.period, kline=bars)
+        result.update(success=True, days=days, period=sdef.period, kline=bars, product=product,
+                      symbolName=backtest_engine.product_name(product),
+                      coverage=backtest_engine.data_coverage(all_bars, days))
         return jsonify(result)
     except Exception as e:
         print(f"[Backtest] 回测失败 {strategy}: {e}")

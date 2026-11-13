@@ -17,43 +17,91 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 # ---------------------------------------------------------------------------
-# 品种参数：最小变动价位 / 合约乘数
+# 品种目录：量化回测的对象是各常见品种的「主连」
 # ---------------------------------------------------------------------------
-INSTRUMENT_CONFIG: dict[str, dict] = {
-    "IF": {"tickSize": 0.2, "multiplier": 300},
-    "IC": {"tickSize": 0.2, "multiplier": 200},
-    "IH": {"tickSize": 0.2, "multiplier": 300},
-    "AU": {"tickSize": 0.02, "multiplier": 1000},
-    "AG": {"tickSize": 1, "multiplier": 15},
-    "CU": {"tickSize": 10, "multiplier": 5},
-    "RB": {"tickSize": 1, "multiplier": 10},
-    "I": {"tickSize": 0.5, "multiplier": 100},
-    "MA": {"tickSize": 1, "multiplier": 10},
-    "SA": {"tickSize": 1, "multiplier": 20},
-    "FG": {"tickSize": 1, "multiplier": 20},
-    "CF": {"tickSize": 5, "multiplier": 5},
-    "SR": {"tickSize": 1, "multiplier": 10},
-    "TA": {"tickSize": 2, "multiplier": 5},
-    "M": {"tickSize": 1, "multiplier": 10},
-    "Y": {"tickSize": 2, "multiplier": 10},
-    "P": {"tickSize": 2, "multiplier": 10},
-    "AP": {"tickSize": 1, "multiplier": 10},
-    "LH": {"tickSize": 5, "multiplier": 16},
-    "JD": {"tickSize": 1, "multiplier": 10},
-    "SC": {"tickSize": 0.1, "multiplier": 1000},
-    "FU": {"tickSize": 1, "multiplier": 10},
-    "RU": {"tickSize": 5, "multiplier": 10},
-    "SP": {"tickSize": 2, "multiplier": 10},
+# (品种代码, 名称, 交易所, 最小变动价位, 合约乘数)。
+# 新浪主连代码 = 品种代码 + "0"（如 FU0、RB0），已逐个核对过能取到分钟 K 线。
+# 最小变动价位 / 合约乘数以交易所合约规则为准，乘数 = 每手交易单位（吨/手、克/手、桶/手、元/点）。
+# 郑商所动力煤 ZC 已停止交易、新浪数据停在 2022 年，不收录。
+_CATALOG = [
+    # 上期所 SHFE
+    ("CU", "沪铜", "SHFE", 10, 5), ("AL", "沪铝", "SHFE", 5, 5), ("ZN", "沪锌", "SHFE", 5, 5),
+    ("PB", "沪铅", "SHFE", 5, 5), ("NI", "沪镍", "SHFE", 10, 1), ("SN", "沪锡", "SHFE", 10, 1),
+    ("AU", "沪金", "SHFE", 0.02, 1000), ("AG", "沪银", "SHFE", 1, 15),
+    ("RB", "螺纹钢", "SHFE", 1, 10), ("HC", "热卷", "SHFE", 1, 10), ("SS", "不锈钢", "SHFE", 5, 5),
+    ("FU", "燃料油", "SHFE", 1, 10), ("BU", "沥青", "SHFE", 1, 10), ("RU", "橡胶", "SHFE", 5, 10),
+    ("SP", "纸浆", "SHFE", 2, 10), ("AO", "氧化铝", "SHFE", 1, 20),
+    # 能源中心 INE
+    ("SC", "原油", "INE", 0.1, 1000), ("LU", "低硫燃料油", "INE", 1, 10),
+    ("NR", "20号胶", "INE", 5, 10), ("BC", "国际铜", "INE", 10, 5),
+    # 大商所 DCE
+    ("A", "豆一", "DCE", 1, 10), ("B", "豆二", "DCE", 1, 10), ("M", "豆粕", "DCE", 1, 10),
+    # 豆油 / 棕榈油：新浪主连价格里奇偶数都出现，按 1 元/吨处理（以价格数据实测为准）
+    ("Y", "豆油", "DCE", 1, 10), ("P", "棕榈油", "DCE", 1, 10), ("C", "玉米", "DCE", 1, 10),
+    ("CS", "玉米淀粉", "DCE", 1, 10), ("JD", "鸡蛋", "DCE", 1, 5), ("L", "塑料", "DCE", 1, 5),
+    ("V", "PVC", "DCE", 1, 5), ("PP", "聚丙烯", "DCE", 1, 5), ("EB", "苯乙烯", "DCE", 1, 5),
+    ("EG", "乙二醇", "DCE", 1, 10), ("PG", "液化石油气", "DCE", 1, 20),
+    ("I", "铁矿石", "DCE", 0.5, 100), ("J", "焦炭", "DCE", 0.5, 100), ("JM", "焦煤", "DCE", 0.5, 60),
+    ("LH", "生猪", "DCE", 5, 16), ("RR", "粳米", "DCE", 1, 10), ("FB", "纤维板", "DCE", 0.5, 10),
+    # 郑商所 CZCE
+    ("CF", "棉花", "CZCE", 5, 5), ("SR", "白糖", "CZCE", 1, 10), ("TA", "PTA", "CZCE", 2, 5),
+    ("MA", "甲醇", "CZCE", 1, 10), ("FG", "玻璃", "CZCE", 1, 20), ("RM", "菜粕", "CZCE", 1, 10),
+    ("OI", "菜油", "CZCE", 1, 10), ("SA", "纯碱", "CZCE", 1, 20), ("UR", "尿素", "CZCE", 1, 20),
+    ("PF", "短纤", "CZCE", 2, 5), ("AP", "苹果", "CZCE", 1, 10), ("CJ", "红枣", "CZCE", 5, 5),
+    ("PK", "花生", "CZCE", 2, 5), ("SF", "硅铁", "CZCE", 2, 5), ("SM", "锰硅", "CZCE", 2, 5),
+    ("PX", "对二甲苯", "CZCE", 2, 5), ("SH", "烧碱", "CZCE", 1, 30),
+    # 中金所 CFFEX（乘数为每点元数）
+    ("IF", "沪深300", "CFFEX", 0.2, 300), ("IH", "上证50", "CFFEX", 0.2, 300),
+    ("IC", "中证500", "CFFEX", 0.2, 200), ("IM", "中证1000", "CFFEX", 0.2, 200),
+    ("T", "10年国债", "CFFEX", 0.005, 10000), ("TF", "5年国债", "CFFEX", 0.005, 10000),
+    ("TS", "2年国债", "CFFEX", 0.002, 20000), ("TL", "30年国债", "CFFEX", 0.01, 10000),
+]
+EXCHANGE_NAMES = {
+    "SHFE": "上期所", "INE": "能源中心", "DCE": "大商所", "CZCE": "郑商所", "CFFEX": "中金所",
 }
+INSTRUMENT_CONFIG: dict[str, dict] = {
+    code: {"tickSize": tick, "multiplier": mult} for code, _n, _e, tick, mult in _CATALOG
+}
+DEFAULT_PRODUCT = "FU"  # 默认品种：燃料油主连
 DEFAULT_INSTRUMENT = {"tickSize": 1, "multiplier": 10}
 
 INITIAL_CAPITAL = 10000.0
 DEFAULT_LOTS = 5
 
 
+def product_code(symbol: str) -> str:
+    """FU0 / FU2611 / fu -> FU。"""
+    return re.sub(r"\d+", "", str(symbol)).upper()
+
+
 def get_instrument_config(symbol: str) -> dict:
-    code = re.sub(r"\d+", "", str(symbol)).upper()
-    return INSTRUMENT_CONFIG.get(code, DEFAULT_INSTRUMENT)
+    return INSTRUMENT_CONFIG.get(product_code(symbol), DEFAULT_INSTRUMENT)
+
+
+def main_symbol(product: str) -> str:
+    """品种代码 -> 新浪主连代码：FU -> FU0。"""
+    return product_code(product) + "0"
+
+
+def list_products() -> list[dict]:
+    """可回测的品种（主连）列表，按交易所分组的顺序；默认品种 default=True。"""
+    return [
+        {
+            "code": code,
+            "name": f"{name}主连",
+            "symbol": main_symbol(code),
+            "exchange": EXCHANGE_NAMES[ex],
+            "default": code == DEFAULT_PRODUCT,
+        }
+        for code, name, ex, _t, _m in _CATALOG
+    ]
+
+
+def product_name(code: str) -> str:
+    for c, name, *_ in _CATALOG:
+        if c == product_code(code):
+            return f"{name}主连"
+    return f"{product_code(code)}主连"
 
 
 # ---------------------------------------------------------------------------
@@ -518,3 +566,36 @@ def slice_recent_days(bars: list[dict], days: int) -> list[dict]:
     last = datetime.strptime(bars[-1]["time"], "%Y-%m-%d %H:%M:%S")
     start = (last - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     return [b for b in bars if b["time"] >= start]
+
+
+def span_days(bars: list[dict]) -> int:
+    """K 线数据覆盖的自然日数（首尾日期之差 + 1）。"""
+    if not bars:
+        return 0
+    from datetime import datetime
+
+    first = datetime.strptime(bars[0]["time"][:10], "%Y-%m-%d")
+    last = datetime.strptime(bars[-1]["time"][:10], "%Y-%m-%d")
+    return (last - first).days + 1
+
+
+def data_coverage(all_bars: list[dict], days: int) -> dict:
+    """所选 days 天相对于实际可得数据的覆盖情况。
+
+    新浪每个周期只给最近约 1023 根 K 线（5 分钟线约 3 周），数据不足 days 天时，
+    实际回测用的是全部可得数据，必须明确告诉用户，不能让「60 天」「90 天」悄悄变成同一份结果。
+      availableDays：数据覆盖的自然日数
+      requestedDays：用户选择的天数
+      usedDays：本次回测实际覆盖的天数 = min(requested, available)
+      truncated：所选范围超出可得数据（True 时前端提示「实际只有 N 天」）
+    """
+    available = span_days(all_bars)
+    used = min(days, available) if available else 0
+    return {
+        "availableDays": available,
+        "requestedDays": days,
+        "usedDays": used,
+        "truncated": bool(available) and days > available,
+        "dataFrom": all_bars[0]["time"] if all_bars else None,
+        "dataTo": all_bars[-1]["time"] if all_bars else None,
+    }

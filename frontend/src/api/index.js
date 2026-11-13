@@ -49,7 +49,16 @@ export function logout() {
   })
 }
 
-// 量化回测首页：所有策略在最近 days 天内的胜率、盈亏比、总盈亏、缩略净值曲线。
+// 量化回测：可选的品种（主连）列表，默认燃料油主连
+export function getBacktestProducts() {
+  return request({
+    url: '/api/backtest/products',
+    method: 'get',
+    silent: true
+  })
+}
+
+// 量化回测首页：所选品种主连上，所有策略在最近 days 天内的胜率、盈亏比、总盈亏、缩略净值曲线。
 // 后端要对每个策略取 K 线并回测，首次可能较慢，放宽超时；失败由页面自己展示，不弹全局提示。
 export function getBacktestOverview(params) {
   return request({

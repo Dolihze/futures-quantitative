@@ -128,6 +128,96 @@ def test_slice_recent_days_and_registry():
     assert "reversal" in ids
 
 
+def test_product_catalog():
+    prods = be.list_products()
+    codes = [p["code"] for p in prods]
+    assert len(codes) == len(set(codes)) and len(codes) > 50
+    # 默认品种是燃料油主连，且只有一个默认
+    assert [p["code"] for p in prods if p["default"]] == ["FU"]
+    fu = next(p for p in prods if p["code"] == "FU")
+    assert fu["name"] == "燃料油主连" and fu["symbol"] == "FU0" and fu["exchange"] == "上期所"
+    assert be.main_symbol("rb") == "RB0" and be.main_symbol("FU2611") == "FU0"
+    # 每个品种都有可用的合约参数，且新浪主连代码形如 XX0
+    for p in prods:
+        cfg = be.get_instrument_config(p["code"])
+        assert cfg["tickSize"] > 0 and cfg["multiplier"] > 0
+        assert p["symbol"] == p["code"] + "0"
+    assert be.get_instrument_config("AU0") == {"tickSize": 0.02, "multiplier": 1000}
+
+
+def test_backtest_api_selects_product_main_contract():
+    """product 参数选择品种主连：默认燃料油 FU0；未知品种返回 400；每个品种用自己的合约乘数结算。"""
+    import backend
+
+    asked = []
+    bars = [bar("2026-10-20 09:05:00", 100, 100, 100, 100), bar("2026-10-20 09:10:00", 100, 101, 99, 100)]
+    orig = backend.fetch_backtest_bars
+    backend.fetch_backtest_bars = lambda symbol, period: (asked.append(symbol), bars)[1]
+    try:
+        client = backend.app.test_client()
+        d = client.get("/api/backtest/overview?days=30").get_json()                       # 默认品种
+        o = client.get("/api/backtest/overview?product=rb&days=30").get_json()           # 小写也可
+        r = client.get("/api/backtest/run?strategy=reversal&product=AU&days=30").get_json()
+        k = client.get("/api/backtest/kline?product=CU&period=5&days=30").get_json()
+        bad = client.get("/api/backtest/overview?product=XX&days=30")
+        bad_k = client.get("/api/backtest/kline?product=XX&period=5")
+        prods = client.get("/api/backtest/products").get_json()
+    finally:
+        backend.fetch_backtest_bars = orig
+    assert d["product"] == "FU" and d["symbol"] == "FU0" and d["symbolName"] == "燃料油主连"
+    assert o["product"] == "RB" and o["symbol"] == "RB0" and o["symbolName"] == "螺纹钢主连"
+    assert r["success"] and r["symbol"] == "AU0" and r["symbolName"] == "沪金主连"
+    assert k["success"] and k["symbol"] == "CU0"
+    assert set(asked) == {"FU0", "RB0", "AU0", "CU0"}
+    assert bad.status_code == 400 and bad_k.status_code == 400
+    assert prods["success"] and prods["default"] == "FU" and len(prods["data"]) > 50
+
+
+def test_data_coverage_reports_truncation():
+    # 数据只覆盖 10-20 ~ 10-25，共 6 个自然日
+    bars = [bar("2026-10-20 09:05:00", 1, 1, 1, 1), bar("2026-10-25 09:05:00", 1, 1, 1, 1)]
+    assert be.span_days(bars) == 6 and be.span_days([]) == 0
+    c = be.data_coverage(bars, 90)
+    assert c["availableDays"] == 6 and c["usedDays"] == 6 and c["truncated"] is True and c["requestedDays"] == 90
+    assert c["dataFrom"].startswith("2026-10-20") and c["dataTo"].startswith("2026-10-25")
+    ok = be.data_coverage(bars, 3)
+    assert ok["usedDays"] == 3 and ok["truncated"] is False
+    assert be.data_coverage([], 30)["truncated"] is False
+
+
+def test_api_returns_coverage_so_60_and_90_are_not_silently_identical():
+    import backend
+
+    # 5 分钟线只有约 3 周：构造 21 天数据，每天 1 根
+    bars = [bar(f"2026-10-{d:02d} 09:05:00", 100, 100, 100, 100) for d in range(1, 22)]
+    orig = backend.fetch_backtest_bars
+    backend.fetch_backtest_bars = lambda symbol, period: bars
+    try:
+        client = backend.app.test_client()
+        o30 = client.get("/api/backtest/overview?days=30").get_json()
+        o90 = client.get("/api/backtest/overview?days=90").get_json()
+        r90 = client.get("/api/backtest/run?strategy=reversal&days=90").get_json()
+        r7 = client.get("/api/backtest/run?strategy=reversal&days=7").get_json()
+    finally:
+        backend.fetch_backtest_bars = orig
+    assert o30["availableDays"] == 21 and o90["availableDays"] == 21
+    cov = o90["data"][0]["coverage"]
+    assert cov["truncated"] and cov["requestedDays"] == 90 and cov["usedDays"] == 21
+    assert r90["coverage"]["truncated"] and len(r90["kline"]) == 21
+    assert not r7["coverage"]["truncated"] and len(r7["kline"]) == 8  # 末日往前 7 天（含端点）
+
+
+def test_pnl_uses_each_products_multiplier():
+    bars = [
+        bar("2026-10-20 09:05:00", 100, 100, 100, 100),
+        bar("2026-10-20 09:10:00", 100, 100, 100, 103),
+    ]
+    sig = [be.Signal("long", 100, 100), None]
+    # 数据结束强平：多 3 个价位；FU 乘数 10、AU 乘数 1000
+    assert run_with_signals(bars, sig, symbol="FU0", lots=1)["trades"][0]["profit"] == 30.0
+    assert run_with_signals(bars, sig, symbol="AU0", lots=1)["trades"][0]["profit"] == 3000.0
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
