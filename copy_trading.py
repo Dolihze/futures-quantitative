@@ -35,7 +35,6 @@ ST_PARTIAL = "部分成交"
 ST_CANCELLED = "已撤单"
 ST_REJECTED = "已拒绝"
 ST_SKIPPED = "已跳过"
-ST_SIMULATED = "模拟"
 ST_FAILED = "失败"
 
 MAX_RECORDS = 500
@@ -45,12 +44,22 @@ DEFAULT_CONFIG = {
     "size_mode": SIZE_MULTIPLE,
     "multiplier": 1.0,          # multiple 模式的倍数
     "fixed_volume": 1,          # fixed 模式的每笔手数
-    "price_mode": "counter",
-    "order_timeout": 5.0,       # 委托超过该秒数未全部成交则撤单（0 = 不撤）
-    "simulate": True,           # 模拟模式：只记录"本应下单"，不真正下单。默认开，防止误触真单
+    "price_mode": "counter",    # 开仓价格模式；平仓固定用市价，见 CLOSE_PRICE_MODE
+    "follow_timeout": 60.0,     # 开仓跟单时限（秒，从对方成交算起）：信号到达时已超时则不跟；
+                                # 下单后到该时刻仍未全部成交则撤单。范围 FOLLOW_TIMEOUT_MIN ~ MAX
     "symbol_whitelist": [],     # 品种白名单（合约代码前缀字母，如 ["rb", "ag"]），空 = 全部
-    "signal_max_delay": 3.0,    # 信号延迟超过该秒数则丢弃（0 = 不限）
 }
+
+# 平仓一律用市价（用涨跌停价模拟的限价单）：平仓信号不管多久才到，到达即平，
+# 不受跟单时限约束，也不存在“未成交撤单”
+CLOSE_PRICE_MODE = "market"
+
+# 开仓跟单时限的允许范围（秒）
+FOLLOW_TIMEOUT_MIN = 30.0
+FOLLOW_TIMEOUT_MAX = 300.0
+
+# 平仓单（市价、不撤单）下单后最多追踪多久（秒）；超过就按当前状态写回记录
+_CLOSE_TRACK_SECONDS = 30
 
 
 def _product_of(symbol):
@@ -96,9 +105,7 @@ def validate_config(raw):
             raise ValueError("价格模式不正确")
         cfg["price_mode"] = pm
 
-        cfg["order_timeout"] = num("order_timeout", 0.0, 3600.0)
-        cfg["simulate"] = bool(raw.get("simulate", cfg["simulate"]))
-        cfg["signal_max_delay"] = num("signal_max_delay", 0.0, 3600.0)
+        cfg["follow_timeout"] = num("follow_timeout", FOLLOW_TIMEOUT_MIN, FOLLOW_TIMEOUT_MAX)
 
         wl = raw.get("symbol_whitelist", cfg["symbol_whitelist"])
         if isinstance(wl, str):
@@ -184,8 +191,8 @@ class CopyEngine:
             return {"success": False, "message": f"配置不正确：{err}"}
         if not ctp_service.monitor_connected():
             return {"success": False, "message": "请先登录被监控账号"}
-        if not cfg["simulate"] and not ctp_service.is_connected():
-            return {"success": False, "message": "当前交易账号未连接，无法实盘跟单（可先开启模拟模式）"}
+        if not ctp_service.is_connected():
+            return {"success": False, "message": "当前交易账号未连接，无法跟单"}
         with self._lock:
             if self.running:
                 return {"success": False, "message": "跟单已在运行"}
@@ -208,9 +215,8 @@ class CopyEngine:
         self._worker.start()
         self._watch = threading.Thread(target=self._watchdog, args=(self._stop_evt,), daemon=True, name="copy-watch")
         self._watch.start()
-        mode = "【模拟】" if cfg["simulate"] else "【实盘】"
-        self.log(f"跟单已启动 {mode}，只跟随此刻之后的新成交", "warn")
-        return {"success": True, "message": "跟单已启动" + ("（模拟模式，不会真实下单）" if cfg["simulate"] else "")}
+        self.log("跟单已启动，只跟随此刻之后的新成交", "warn")
+        return {"success": True, "message": "跟单已启动"}
 
     def stop(self, reason="用户停止"):
         with self._lock:
@@ -227,9 +233,6 @@ class CopyEngine:
         if err:
             return {"success": False, "message": f"配置不正确：{err}"}
         with self._lock:
-            # 不允许在运行中悄悄把模拟切成实盘：必须停止后重新启动（让用户重新确认）
-            if self.running and self.config["simulate"] and not cfg["simulate"]:
-                return {"success": False, "message": "运行中不能从模拟切换为实盘，请先停止再启动"}
             self.config = cfg
         self.log("跟单配置已更新", "info")
         return {"success": True, "message": "配置已更新"}
@@ -323,12 +326,15 @@ class CopyEngine:
             self._skip(sig, action, f"跟单已暂停（{paused}），信号丢弃")
             return
 
-        # ---- 信号延迟 ----
-        if cfg["signal_max_delay"] > 0:
-            ref = sig["trade_ts"] or sig["recv"]
-            delay = time.time() - ref
-            if delay > cfg["signal_max_delay"]:
-                self._skip(sig, action, f"信号延迟 {delay:.1f}s 超过上限 {cfg['signal_max_delay']:g}s，已丢弃")
+        is_open = action.startswith("open")
+
+        # ---- 跟单时限（只对开仓）：从对方成交算起，信号到达时已超过时限就不跟，留痕 ----
+        # 平仓信号不管多久才到都立即按市价平，不受时限限制
+        ref_ts = sig["trade_ts"] or sig["recv"]       # 对方成交时刻（没有成交时间就用收到回报的时刻）
+        if is_open:
+            delay = time.time() - ref_ts
+            if delay > cfg["follow_timeout"]:
+                self._skip(sig, action, f"信号延迟 {delay:.1f}s 超过跟单时限 {cfg['follow_timeout']:g}s，已丢弃")
                 return
 
         # ---- 白名单 ----
@@ -336,11 +342,9 @@ class CopyEngine:
             self._skip(sig, action, "不在品种白名单内")
             return
 
-        is_open = action.startswith("open")
-
         # ---- 合约 ----
         contract = ctp_service.my_contract(sig["vt_symbol"])
-        if not cfg["simulate"] and not contract:
+        if not contract:
             self._skip(sig, action, "当前交易账号查不到该合约（未就绪或不可交易）")
             return
 
@@ -373,28 +377,16 @@ class CopyEngine:
             return
 
         # 合约的最小 / 最大手数
-        if contract:
-            if contract.max_volume and vol > contract.max_volume:
-                vol = int(contract.max_volume)
-            if vol < max(1, int(contract.min_volume or 1)):
-                self._skip(sig, action, f"低于合约最小手数（{note}）")
-                return
-
-        # ---- 价格 ----
-        price, perr = ctp_service.follow_price(vt, action, cfg["price_mode"])
-        if price is None:
-            self._skip(sig, action, f"取不到下单价格：{perr}", volume=vol)
+        if contract.max_volume and vol > contract.max_volume:
+            vol = int(contract.max_volume)
+        if vol < max(1, int(contract.min_volume or 1)):
+            self._skip(sig, action, f"低于合约最小手数（{note}）")
             return
 
-        # ---- 模拟模式 ----
-        if cfg["simulate"]:
-            with self._lock:
-                self.follow_count += 1
-            self._new_record(symbol=sig["symbol"], src_action=f"{sig['offset']}{sig['direction']}",
-                             src_volume=sig["volume"], src_price=sig["price"], action=action,
-                             volume=vol, price=price, status=ST_SIMULATED,
-                             message=f"模拟：本应{_ACTION_TEXT[action]} {vol} 手 @ {price:g}（{note}）")
-            self.log(f"[模拟] {sig['symbol']} {_ACTION_TEXT[action]} {vol} 手 @ {price:g}（{note}）", "info")
+        # ---- 价格：开仓按配置；平仓固定市价 ----
+        price, perr = ctp_service.follow_price(vt, action, cfg["price_mode"] if is_open else CLOSE_PRICE_MODE)
+        if price is None:
+            self._skip(sig, action, f"取不到下单价格：{perr}", volume=vol)
             return
 
         # ---- 真实下单（只走主会话）----
@@ -415,13 +407,19 @@ class CopyEngine:
                                volume=vol, price=price, status=ST_SUBMITTED,
                                message=f"{res.get('message', '')}（{note}）", vt_orderids=ids)
         self.log(f"{sig['symbol']} {_ACTION_TEXT[action]} {vol} 手 @ {price:g} 已委托", "info")
-        threading.Thread(target=self._track, args=(rec, ids, cfg["order_timeout"]), daemon=True).start()
+        # 开仓：撤单截止时刻 = 对方成交时刻 + 跟单时限（不是下单时刻 + 时限）。
+        # 平仓是市价，不撤单（deadline 为 None），追踪线程只负责把最终成交结果写回记录
+        deadline = (ref_ts + cfg["follow_timeout"]) if is_open else None
+        threading.Thread(target=self._track, args=(rec, ids, deadline, cfg["follow_timeout"]),
+                         daemon=True).start()
 
     # ------------------------------------------------------------------ 委托追踪
-    def _track(self, rec, ids, timeout):
-        """等委托结束；超时仍未全部成交就撤单。"""
-        deadline = time.time() + timeout if timeout > 0 else None
+    def _track(self, rec, ids, deadline, timeout):
+        """等委托结束；到 deadline（绝对时刻）仍未全部成交就撤单。deadline 为 None 表示不撤单。
+        timeout 只用于日志里说明跟单时限是多少秒。"""
         cancelled = False
+        # 平仓（deadline 为 None）是市价单，应当立刻成交；最多追踪这么久，之后按当前状态记录，不无限等
+        give_up_at = None if deadline else time.time() + _CLOSE_TRACK_SECONDS
         while True:
             orders = [ctp_service.my_order(i) for i in ids]
             orders = [o for o in orders if o]
@@ -431,10 +429,10 @@ class CopyEngine:
                 for i in ids:
                     ctp_service.my_cancel(i)
                 cancelled = True
-                self.log(f"{rec['symbol']} 委托超过 {timeout:g}s 未全部成交，已撤单", "warn")
-            if not self.running and not deadline:
-                return
-            if cancelled and time.time() > (deadline or 0) + 10:
+                self.log(f"{rec['symbol']} 已到跟单时限 {timeout:g}s（从对方成交算起）仍未全部成交，已撤单", "warn")
+            if give_up_at and time.time() >= give_up_at:
+                break
+            if cancelled and time.time() > deadline + 10:
                 break   # 撤单后 10 秒还没结束，不再死等，用当前状态记录
             time.sleep(0.3)
 
@@ -461,7 +459,7 @@ class CopyEngine:
                 return
             if not ctp_service.monitor_connected():
                 self._pause("被监控账号连接已断开")
-            elif not self.config["simulate"] and not ctp_service.is_connected():
+            elif not ctp_service.is_connected():
                 self._pause("当前交易账号连接已断开")
 
     # ------------------------------------------------------------------ 状态

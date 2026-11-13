@@ -121,7 +121,7 @@
   font-weight: 600;
 }
 
-/* 表单标签后面的说明图标（鼠标悬浮显示 tooltip），外观和「模拟模式」的问号一致 */
+/* 表单标签后面的说明图标（鼠标悬浮显示 tooltip） */
 .field-help {
   margin-left: 4px;
   font-size: 14px;
@@ -131,33 +131,6 @@
   color: var(--text-primary);
 }
 
-/* 模拟模式开关：左侧依次是说明图标、文字；文字与下方 .hint 提示语同字号同颜色 */
-.simulate-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-.simulate-help {
-  position: relative;
-  top: 0;
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-.simulate-help:hover {
-  color: var(--text-primary);
-}
-.simulate-label {
-  margin-right: 4px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
-/* 「启动」面板：模拟模式行 / 启动按钮 / 提示语之间的间距收紧 */
-.start-panel .simulate-row {
-  margin-bottom: 6px;
-}
 /* 提示语和表单标签（期货公司 / 账号 …）同字号、同行高、同颜色 */
 .start-panel .hint {
   margin-top: 4px;
@@ -166,19 +139,16 @@
   color: var(--text-secondary);
 }
 
-.danger-tip {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--up);
-  background: rgba(var(--up-rgb), 0.1);
-  border: 1px solid rgba(var(--up-rgb), 0.4);
-}
-
 /* Element Plus 表单标签在深色主题下的可读性 */
 .control-panel :deep(.el-form-item) {
   margin-bottom: 12px;
+}
+/* 跟单配置：行间距放大；最后一项（品种白名单）不留底部间距，面板底部只剩面板自身的 padding */
+.control-panel.copy-config-panel :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+.control-panel.copy-config-panel :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 .control-panel :deep(.el-form-item__label) {
   color: var(--text-secondary);
@@ -193,19 +163,32 @@
   margin-bottom: 0;
 }
 
-/* 手数模式：两个选项平分整行宽度 */
-.control-panel :deep(.size-mode-group) {
+/* 跟单配置里「标签在左、控件在右」的单行字段：标签（含问号图标）靠左，控件固定宽度靠右 */
+.control-panel :deep(.el-form-item.inline-field) {
   display: flex;
-  width: 100%;
+  align-items: center;
+  justify-content: space-between;
 }
-.control-panel :deep(.size-mode-group .el-radio-button) {
+.control-panel :deep(.el-form-item.inline-field .el-form-item__label) {
   flex: 1;
+  min-width: 0;
+  padding-bottom: 0;
+  white-space: nowrap;
 }
-.control-panel :deep(.size-mode-group .el-radio-button__inner) {
+.control-panel :deep(.el-form-item.inline-field .el-form-item__content) {
+  flex: none;
+  width: 140px;
+  justify-content: flex-end;
+}
+.control-panel :deep(.el-form-item.inline-field .el-input-number),
+.control-panel :deep(.el-form-item.inline-field .el-select) {
   width: 100%;
 }
 
-/* 标签与输入框同一行的表单（被监控账号） */
+/* 标签与输入框同一行的表单（监控账号）：行间距和跟单配置一致（18px） */
+.control-panel :deep(.inline-label-form .el-form-item) {
+  margin-bottom: 18px;
+}
 .control-panel :deep(.inline-label-form .el-form-item__label) {
   padding-bottom: 0;
   padding-right: 8px;
@@ -313,6 +296,5 @@
   font-weight: 600;
 }
 .run-text.off    { color: var(--text-secondary); }
-.run-text.sim    { color: var(--accent2); }
 .run-text.live   { color: var(--down); }
 .run-text.paused { color: var(--amber); }

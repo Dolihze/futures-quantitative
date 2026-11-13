@@ -836,7 +836,7 @@ def monitor_stop():
 
 @app.route('/api/monitor/config', methods=['POST'])
 def monitor_config():
-    """运行中更新跟单配置（模拟 -> 实盘不允许）"""
+    """运行中更新跟单配置（仅对之后的信号生效）"""
     data = request.get_json(silent=True) or {}
     return jsonify(copy_trading.engine.update_config(data.get('config')))
 

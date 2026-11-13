@@ -1,7 +1,7 @@
 """量化监控跟单引擎的单元测试：python -m pytest tests/test_copy_trading.py -q
 
 用 FakeCtp 替换 ctp_service，不依赖真实 CTP / 网络，覆盖：
-手数计算、开平分类、配置校验、品种白名单 / 信号延迟、平仓防多平、去重、基线过滤、模拟模式、实盘下单与撤单。"""
+手数计算、开平分类、配置校验、品种白名单 / 信号延迟、平仓防多平、去重、基线过滤、下单与撤单。"""
 import os
 import sys
 import time
@@ -81,12 +81,17 @@ def fake(monkeypatch):
 
 def make_engine(fake, **overrides):
     e = ct.CopyEngine()
-    cfg = {"simulate": False, "size_mode": "multiple", "multiplier": 1, "signal_max_delay": 0,
-           "order_timeout": 0}
+    cfg = {"size_mode": "multiple", "multiplier": 1}
     cfg.update(overrides)
     res = e.start(cfg)
     assert res["success"], res
     return e
+
+
+def set_follow_timeout(e, seconds):
+    """直接改运行中引擎的跟单时限：配置校验要求 30~300 秒，测试想用几秒的小值就得绕过校验。"""
+    with e._lock:
+        e.config = {**e.config, "follow_timeout": seconds}
 
 
 def trade(tid="T1", symbol="rb2610", offset="开", direction="多", volume=2, price=3500.0, ts=None):
@@ -152,12 +157,15 @@ def test_validate_config():
     assert ct.validate_config({"multiplier": "abc"})[1]
     assert ct.validate_config({"fixed_volume": 1.5})[1]
     assert ct.validate_config({"price_mode": "foo"})[1]
-    assert ct.validate_config({"signal_max_delay": -1})[1]
-    assert ct.validate_config({"simulate": 0})[0]["simulate"] is False
+    # 跟单时限：只允许 30~300 秒（不支持 0），默认 60
+    assert ct.validate_config({})[0]["follow_timeout"] == 60
+    for ok in (30, 60, 300, "45"):
+        assert ct.validate_config({"follow_timeout": ok})[1] == ""
+    for bad in (0, 29.9, 301, -1, "abc", float("nan")):
+        assert ct.validate_config({"follow_timeout": bad})[1], bad
     cfg, _ = ct.validate_config({"symbol_whitelist": "RB, ag，  cu"})
     assert cfg["symbol_whitelist"] == ["ag", "cu", "rb"]
-    # 默认是模拟模式，防止误触真单
-    assert ct.validate_config({})[0]["simulate"] is True
+    assert "simulate" not in ct.validate_config({"simulate": True})[0]   # 模拟模式已移除，旧字段被忽略
 
 
 # ----------------------------------------------------------------------------
@@ -166,20 +174,12 @@ def test_validate_config():
 
 def test_start_requires_monitor_login(fake):
     fake.monitor_ok = False
-    assert not ct.CopyEngine().start({"simulate": True})["success"]
+    assert not ct.CopyEngine().start({})["success"]
 
 
-def test_start_live_requires_trade_account(fake):
+def test_start_requires_trade_account(fake):
     fake.trade_ok = False
-    assert not ct.CopyEngine().start({"simulate": False})["success"]
-    assert ct.CopyEngine().start({"simulate": True})["success"]   # 模拟不要求
-
-
-def test_cannot_switch_sim_to_live_while_running(fake):
-    e = make_engine(fake, simulate=True)
-    assert not e.update_config({"simulate": False})["success"]
-    assert e.config["simulate"] is True
-    e.stop()
+    assert not ct.CopyEngine().start({})["success"]
 
 
 # ----------------------------------------------------------------------------
@@ -269,7 +269,7 @@ def test_missing_contract_skips_in_live(fake):
 
 
 # ----------------------------------------------------------------------------
-# 信号过滤：品种白名单 / 信号延迟
+# 信号过滤：品种白名单 / 跟单时限
 # ----------------------------------------------------------------------------
 
 def test_whitelist(fake):
@@ -281,12 +281,43 @@ def test_whitelist(fake):
     e.stop()
 
 
-def test_signal_delay_dropped(fake):
-    e = make_engine(fake, signal_max_delay=3)
-    old = datetime.datetime.now() - datetime.timedelta(seconds=30)
+def test_open_signal_later_than_follow_timeout_is_dropped(fake):
+    e = make_engine(fake, follow_timeout=60)
+    old = datetime.datetime.now() - datetime.timedelta(seconds=90)      # 对方 90 秒前成交，信号才到
     feed(e, tid="D1", ts=old)
     assert fake.sent == []
-    assert "延迟" in e.get_records()[0]["message"]
+    r = e.get_records()[0]                                              # 要留痕
+    assert r["status"] == ct.ST_SKIPPED and "跟单时限" in r["message"]
+    e.stop()
+
+
+def test_open_signal_within_follow_timeout_is_followed(fake):
+    e = make_engine(fake, follow_timeout=60)
+    feed(e, tid="D2", ts=datetime.datetime.now() - datetime.timedelta(seconds=40))
+    assert len(fake.sent) == 1
+    e.stop()
+
+
+def test_close_signal_ignores_follow_timeout_and_uses_market_price(fake):
+    prices = []
+    fake.follow_price = lambda vt, action, mode: (prices.append((action, mode)) or (3600.0, ""))
+    ct.ctp_service.follow_price = fake.follow_price
+    fake.positions[("rb2610.SHFE", "多")] = (3, 0)
+    e = make_engine(fake, follow_timeout=30)
+    old = datetime.datetime.now() - datetime.timedelta(seconds=600)     # 平仓信号晚到 10 分钟
+    feed(e, tid="C9", offset="平", direction="空", volume=2, ts=old)
+    assert len(fake.sent) == 1 and fake.sent[0][1] == "close_long"      # 照常平
+    assert prices == [("close_long", "market")]                         # 固定市价
+    e.stop()
+
+
+def test_open_uses_configured_price_mode(fake):
+    modes = []
+    fake.follow_price = lambda vt, action, mode: (modes.append(mode) or (3500.0, ""))
+    ct.ctp_service.follow_price = fake.follow_price
+    e = make_engine(fake, price_mode="last")
+    feed(e, tid="O1")
+    assert modes == ["last"]
     e.stop()
 
 
@@ -312,17 +343,8 @@ def test_watchdog_pauses_on_disconnect(fake):
 
 
 # ----------------------------------------------------------------------------
-# 模拟 & 下单结果
+# 下单结果
 # ----------------------------------------------------------------------------
-
-def test_simulate_never_sends(fake):
-    e = make_engine(fake, simulate=True)
-    feed(e, volume=2)
-    assert fake.sent == []
-    r = e.get_records()[0]
-    assert r["status"] == ct.ST_SIMULATED and r["volume"] == 2
-    e.stop()
-
 
 def test_rejected_order_recorded(fake):
     fake.send_result = {"success": False, "message": "资金不足", "vt_orderids": []}
@@ -340,7 +362,8 @@ def test_timeout_cancels_unfilled_order(fake):
         return {"success": True, "message": "委托已提交", "vt_orderids": ["CTP.S"]}
     fake.send_limit_order = slow_send
     ct.ctp_service.send_limit_order = slow_send
-    e = make_engine(fake, order_timeout=0.5)
+    e = make_engine(fake)
+    set_follow_timeout(e, 0.5)                    # 对方成交后 0.5 秒还没成交就撤
     feed(e)
     deadline = time.time() + 5
     while time.time() < deadline and e.get_records()[0]["status"] == ct.ST_SUBMITTED:
@@ -350,11 +373,53 @@ def test_timeout_cancels_unfilled_order(fake):
     e.stop()
 
 
+def test_cancel_deadline_counts_from_source_trade_not_from_order_time(fake):
+    """对方成交已过去一段时间，下单后只剩余下的时间可等：撤单截止 = 对方成交时刻 + 时限。"""
+    def slow_send(vt, action, price, volume):
+        fake.sent.append((vt, action, price, volume))
+        fake.orders["CTP.S"] = {"vt_orderid": "CTP.S", "active": True, "traded": 0, "status": "未成交"}
+        return {"success": True, "message": "委托已提交", "vt_orderids": ["CTP.S"]}
+    fake.send_limit_order = slow_send
+    ct.ctp_service.send_limit_order = slow_send
+    e = make_engine(fake)
+    set_follow_timeout(e, 2.0)
+    t0 = time.time()
+    # 对方 1.2 秒前成交：如果从下单时刻算要等 2 秒，从对方成交算只需再等约 0.8 秒
+    feed(e, ts=datetime.datetime.now() - datetime.timedelta(seconds=1.2))
+    deadline = time.time() + 5
+    while time.time() < deadline and e.get_records()[0]["status"] == ct.ST_SUBMITTED:
+        time.sleep(0.05)
+    elapsed = time.time() - t0
+    assert fake.cancelled == ["CTP.S"]
+    assert elapsed < 1.9, elapsed                 # 明显早于“下单时刻 + 2 秒”
+
+
+def test_close_order_is_never_cancelled(fake):
+    def slow_send(vt, action, price, volume):
+        fake.sent.append((vt, action, price, volume))
+        fake.orders["CTP.S"] = {"vt_orderid": "CTP.S", "active": True, "traded": 0, "status": "未成交"}
+        return {"success": True, "message": "委托已提交", "vt_orderids": ["CTP.S"]}
+    fake.send_limit_order = slow_send
+    ct.ctp_service.send_limit_order = slow_send
+    fake.positions[("rb2610.SHFE", "多")] = (3, 0)
+    e = make_engine(fake)
+    set_follow_timeout(e, 0.3)
+    feed(e, tid="C1", offset="平", direction="空", volume=1)
+    time.sleep(1.0)                               # 远超过时限
+    assert fake.cancelled == []                   # 平仓不撤单
+    fake.orders["CTP.S"].update(active=False, traded=1, status="全部成交")
+    deadline = time.time() + 3
+    while time.time() < deadline and e.get_records()[0]["status"] == ct.ST_SUBMITTED:
+        time.sleep(0.1)
+    assert e.get_records()[0]["status"] == ct.ST_FILLED
+    e.stop()
+
+
 def test_stop_then_restart_gets_fresh_state(fake):
     e = make_engine(fake)
     feed(e, tid="A")
     e.stop()
-    assert e.start({"simulate": False, "size_mode": "multiple", "signal_max_delay": 0})["success"]
+    assert e.start({"size_mode": "multiple"})["success"]
     assert e.follow_count == 0
     feed(e, tid="B")
     assert len(fake.sent) == 2

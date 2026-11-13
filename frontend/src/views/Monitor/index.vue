@@ -61,17 +61,17 @@
         </section>
 
         <!-- 步骤 2：跟单配置 -->
-        <section class="control-panel">
+        <section class="control-panel copy-config-panel">
           <h3>跟单配置</h3>
           <el-form label-position="top" size="small" @submit.prevent>
-            <el-form-item label="手数模式">
-              <el-radio-group v-model="cfg.size_mode" :disabled="running" class="size-mode-group">
-                <el-radio-button value="multiple">固定倍数</el-radio-button>
-                <el-radio-button value="fixed">固定手数</el-radio-button>
-              </el-radio-group>
+            <el-form-item label="手数模式" class="inline-field">
+              <el-select v-model="cfg.size_mode" :disabled="running">
+                <el-option label="固定倍数" value="multiple" />
+                <el-option label="固定手数" value="fixed" />
+              </el-select>
             </el-form-item>
 
-            <el-form-item v-if="cfg.size_mode !== 'fixed'">
+            <el-form-item v-if="cfg.size_mode !== 'fixed'" class="inline-field">
               <template #label>
                 <span>倍数</span>
                 <el-tooltip :content="preview" placement="top" :show-after="200">
@@ -79,9 +79,9 @@
                 </el-tooltip>
               </template>
               <el-input-number v-model="cfg.multiplier" :min="0.01" :max="100" :step="0.1" :precision="2"
-                               controls-position="right" style="width: 100%" />
+                               controls-position="right" />
             </el-form-item>
-            <el-form-item v-else>
+            <el-form-item v-else class="inline-field">
               <template #label>
                 <span>每笔固定手数</span>
                 <el-tooltip :content="preview" placement="top" :show-after="200">
@@ -89,56 +89,29 @@
                 </el-tooltip>
               </template>
               <el-input-number v-model="cfg.fixed_volume" :min="1" :max="10000" :step="1" :precision="0"
-                               controls-position="right" style="width: 100%" />
+                               controls-position="right" />
             </el-form-item>
 
-            <el-form-item>
-              <template #label>
-                <span>下单价格</span>
-                <el-tooltip content="对手价：买入用卖一价、卖出用买一价；涨跌停价：用涨跌停价模拟市价单"
-                            placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-              <el-select v-model="cfg.price_mode" style="width: 100%">
+            <el-form-item label="开仓价格" class="inline-field">
+              <el-select v-model="cfg.price_mode">
                 <el-option label="对手价" value="counter" />
                 <el-option label="最新价" value="last" />
                 <el-option label="涨跌停价" value="market" />
               </el-select>
             </el-form-item>
 
-            <el-form-item>
-              <template #label>
-                <span>未成交撤单（秒）</span>
-                <el-tooltip content="委托超过该秒数仍未全部成交就自动撤单；0 = 不撤单" placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-              <el-input-number v-model="cfg.order_timeout" :min="0" :max="3600" :step="1" :precision="0"
-                               controls-position="right" style="width: 100%" />
+            <el-form-item label="开仓时限（秒）" class="inline-field">
+              <el-input-number v-model="cfg.follow_timeout" :min="30" :max="300" :step="10" :precision="0"
+                               controls-position="right" />
             </el-form-item>
 
-            <el-form-item>
-              <template #label>
-                <span>信号延迟上限（秒）</span>
-                <el-tooltip content="对方成交到被处理的延迟超过该秒数，信号直接丢弃不跟单（开仓、平仓都生效）；0 = 不限制"
-                            placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-              <el-input-number v-model="cfg.signal_max_delay" :min="0" :max="3600" :step="1" :precision="0"
-                               controls-position="right" style="width: 100%" />
-            </el-form-item>
-
-            <el-form-item>
-              <template #label>
-                <span>品种白名单</span>
-                <el-tooltip content="只跟随这些品种，多个用逗号分隔，如 rb, ag, cu；留空 = 全部品种"
-                            placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-              <el-input v-model="whitelistText" placeholder="rb, ag, cu" />
+            <el-form-item label="品种白名单">
+              <el-select v-model="whitelist" multiple filterable allow-create default-first-option
+                         placeholder="不选 = 全部品种" style="width: 100%"
+                         popper-class="monitor-broker-popper">
+                <el-option v-for="p in FUTURES_PRODUCTS" :key="p.value" :value="p.value"
+                           :label="`${p.label}（${p.value}）`" />
+              </el-select>
             </el-form-item>
           </el-form>
         </section>
@@ -146,17 +119,6 @@
         <!-- 步骤 3：启动 -->
         <section class="control-panel start-panel">
           <h3>启动</h3>
-
-          <div class="simulate-row">
-            <el-tooltip content="模拟模式：只记录本应跟的单，不会真实下单" placement="top" :show-after="200">
-              <el-icon class="simulate-help"><QuestionFilled /></el-icon>
-            </el-tooltip>
-            <span class="simulate-label">模拟模式</span>
-            <el-switch v-model="cfg.simulate" :disabled="running" />
-          </div>
-          <div v-if="!cfg.simulate" class="danger-tip">
-            实盘模式：将使用当前交易账号 <b>{{ userStore.username }}</b> 真实下单
-          </div>
 
           <template v-if="!running">
             <el-button type="success" size="large" style="width: 100%"
@@ -187,8 +149,6 @@
         <el-alert v-if="status?.paused_reason" type="error" :closable="false" show-icon class="alert"
                   :title="`跟单已自动暂停：${status.paused_reason}`"
                   description="暂停期间的成交不会补跟。请核对两个账号的持仓后，点击左侧「恢复跟单」。" />
-        <el-alert v-else-if="running && status?.config?.simulate" type="info" :closable="false" show-icon class="alert"
-                  title="模拟模式运行中：只记录本应下的单，不会真实下单" />
 
         <!-- 概览 -->
         <div class="stats">
@@ -284,6 +244,7 @@ import {
   getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, resumeCopy
 } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
+import { FUTURES_PRODUCTS } from '@/constants/futuresProducts'
 
 const userStore = useUserStore()
 
@@ -304,14 +265,13 @@ const loggingIn = ref(false)
 const account = ref(null)
 const monitorOn = computed(() => !!status.value?.monitor_connected)
 
-// ---- 跟单配置（默认值与后端 DEFAULT_CONFIG 一致；默认模拟模式）----
+// ---- 跟单配置（默认值与后端 DEFAULT_CONFIG 一致）----
 const cfg = reactive({
-  size_mode: 'multiple', multiplier: 1, fixed_volume: 1, price_mode: 'counter', order_timeout: 5,
-  simulate: true, signal_max_delay: 3
+  size_mode: 'multiple', multiplier: 1, fixed_volume: 1, price_mode: 'counter', follow_timeout: 60
 })
-const whitelistText = ref('')
+const whitelist = ref([])   // 品种白名单（品种代码数组），空 = 全部品种
 
-const buildConfig = () => ({ ...cfg, symbol_whitelist: whitelistText.value })
+const buildConfig = () => ({ ...cfg, symbol_whitelist: whitelist.value })
 
 // ---- 运行状态 ----
 const status = ref(null)
@@ -323,12 +283,12 @@ const running = computed(() => !!status.value?.running)
 const runText = computed(() => {
   if (!running.value) return '未运行'
   if (status.value?.paused_reason) return '已暂停'
-  return status.value?.config?.simulate ? '模拟运行中' : '实盘运行中'
+  return '运行中'
 })
 const runClass = computed(() => {
   if (!running.value) return 'off'
   if (status.value?.paused_reason) return 'paused'
-  return status.value?.config?.simulate ? 'sim' : 'live'
+  return 'live'
 })
 
 // 手数预览：按当前配置举例（对方开 1 / 5 / 10 手）
@@ -343,7 +303,7 @@ const num = (v) => (v === null || v === undefined ? '-' : Number(v).toFixed(2))
 
 const statusType = (s) => ({
   已成交: 'success', 部分成交: 'warning', 已委托: 'primary', 已撤单: 'info',
-  已拒绝: 'danger', 失败: 'danger', 已跳过: 'info', 模拟: ''
+  已拒绝: 'danger', 失败: 'danger', 已跳过: 'info'
 }[s] || 'info')
 
 // ---- 轮询 ----
@@ -377,7 +337,7 @@ const syncConfigFromStatus = () => {
   const c = status.value?.config
   if (!c) return
   Object.keys(cfg).forEach(k => { if (k in c) cfg[k] = c[k] })
-  whitelistText.value = (c.symbol_whitelist || []).join(', ')
+  whitelist.value = [...(c.symbol_whitelist || [])]
 }
 
 // 用「记住账号密码」保存的被监控账号预填表单。保存的期货公司已不在监控支持的列表里时不预填该项
@@ -438,18 +398,12 @@ const handleMonitorLogout = async () => {
 }
 
 const handleStart = async () => {
-  const live = !cfg.simulate
   const summary = `手数：${{ multiple: '固定倍数', fixed: '固定手数' }[cfg.size_mode]}，`
-    + `价格：${{ counter: '对手价', last: '最新价', market: '涨跌停价' }[cfg.price_mode]}`
+    + `开仓价格：${{ counter: '对手价', last: '最新价', market: '涨跌停价' }[cfg.price_mode]}，平仓：市价`
   try {
-    if (live) {
-      await ElMessageBox.confirm(
-        `即将【实盘】跟单：对方账号 ${account.value?.username} 的新成交，会立即用你的交易账号 ${userStore.username} 真实下单。\n\n${summary}\n\n确认启动？`,
-        '实盘跟单确认', { type: 'warning', confirmButtonText: '确认实盘跟单', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
-    } else {
-      await ElMessageBox.confirm(`以【模拟模式】启动：只记录本应下的单，不会真实下单。\n\n${summary}`,
-        '启动跟单', { type: 'info', confirmButtonText: '启动', cancelButtonText: '取消' })
-    }
+    await ElMessageBox.confirm(
+      `即将跟单：对方账号 ${account.value?.username} 的新成交，会立即用你的交易账号 ${userStore.username} 真实下单。\n\n${summary}\n\n确认启动？`,
+      '跟单确认', { type: 'warning', confirmButtonText: '确认跟单', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
   } catch { return }
 
   busy.value = true

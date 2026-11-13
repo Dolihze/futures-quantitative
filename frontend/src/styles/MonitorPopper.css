@@ -18,6 +18,11 @@
   color: var(--text-option);
 }
 
+/* 多选下拉（品种白名单）：选中项右侧有对勾，右内边距要留出位置，避免压到文字 */
+.monitor-broker-popper.el-select__popper .el-select-dropdown.is-multiple .el-select-dropdown__item {
+  padding-right: 28px;
+}
+
 .monitor-broker-popper .el-select-dropdown__item:last-child {
   margin-bottom: 0;
 }
