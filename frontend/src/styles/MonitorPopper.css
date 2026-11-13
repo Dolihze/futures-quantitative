@@ -1,0 +1,34 @@
+/* Monitor 页「期货公司」下拉面板样式
+ *
+ * 下拉面板通过 teleport 挂载到 <body> 下，scoped / :deep 命中不了，所以必须以「非 scoped」方式引入。
+ * 所有选择器都以 .monitor-broker-popper 开头（对应 el-select 的 popper-class），避免污染其它页面。
+ * 目标：面板和输入框（small 尺寸）保持同一套尺寸，不比输入框大一圈。 */
+
+.monitor-broker-popper .el-select-dropdown__list {
+  padding: 4px;
+}
+
+.monitor-broker-popper .el-select-dropdown__item {
+  height: 28px;
+  line-height: 28px;
+  padding: 0 8px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-option);
+}
+
+.monitor-broker-popper .el-select-dropdown__item:last-child {
+  margin-bottom: 0;
+}
+
+.monitor-broker-popper .el-select-dropdown__item.is-hovering,
+.monitor-broker-popper .el-select-dropdown__item:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+.monitor-broker-popper .el-select-dropdown__item.is-selected {
+  background: rgba(var(--primary-rgb), 0.18);
+  color: var(--primary-light);
+}

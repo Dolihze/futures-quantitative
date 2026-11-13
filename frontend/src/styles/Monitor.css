@@ -138,6 +138,37 @@
   border: 1px dashed rgba(var(--primary-rgb), 0.35);
 }
 
+/* 模拟模式开关：左侧依次是说明图标、文字；文字与下方 .hint 提示语同字号同颜色 */
+.simulate-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.simulate-help {
+  position: relative;
+  top: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.simulate-help:hover {
+  color: var(--text-primary);
+}
+.simulate-label {
+  margin-right: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* 「启动」面板：模拟模式行 / 启动按钮 / 提示语之间的间距收紧 */
+.start-panel .simulate-row {
+  margin-bottom: 6px;
+}
+.start-panel .hint {
+  margin-top: 4px;
+}
+
 .danger-tip {
   margin-top: 8px;
   padding: 8px 10px;
@@ -156,6 +187,25 @@
   color: var(--text-secondary);
   font-size: 12px;
   padding-bottom: 2px;
+}
+
+/* 标签与输入框同一行的表单（被监控账号） */
+.control-panel :deep(.inline-label-form .el-form-item__label) {
+  padding-bottom: 0;
+  padding-right: 8px;
+  white-space: nowrap;
+  align-items: center;
+}
+.control-panel :deep(.inline-label-form .el-form-item__content) {
+  min-width: 0;
+}
+/* 「记住账号密码」行：靠表单最左边（不跳过标签宽度），复选框的高度不撑大这一行 */
+.control-panel :deep(.inline-label-form .remember-row) {
+  margin-bottom: 8px;
+}
+.control-panel :deep(.inline-label-form .remember-row .el-form-item__content) {
+  margin-left: 0 !important;
+  justify-content: flex-start;
 }
 
 .alert {

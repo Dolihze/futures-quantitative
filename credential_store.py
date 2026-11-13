@@ -28,9 +28,12 @@ _ENTROPY = b"futures-quantitative/login-credentials/v1"
 _IS_WINDOWS = sys.platform == "win32"
 
 
-def store_path():
+def store_path(slot=""):
+    """凭据文件路径。slot 为空 = 登录页的交易账号（credentials.dat）；
+    其它槽位（如 "monitor" = 量化监控的被监控账号）单独存一个文件，互不覆盖。"""
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    return os.path.join(base, APP_DIRNAME, FILENAME)
+    name = f"credentials.{slot}.dat" if slot else FILENAME
+    return os.path.join(base, APP_DIRNAME, name)
 
 
 # ----------------------------------------------------------------------------
@@ -87,7 +90,7 @@ def _unprotect(cipher):
 # 对外接口
 # ----------------------------------------------------------------------------
 
-def save(broker, username, password):
+def save(broker, username, password, slot=""):
     """保存凭据。返回 True=已保存（含密码）；False=没能保存密码（仅保存了账号 / 公司，或完全失败）。"""
     record = {"broker": broker, "username": username, "password": ""}
     password_saved = False
@@ -98,7 +101,7 @@ def save(broker, username, password):
             record["password"] = base64.b64encode(cipher).decode("ascii")
             password_saved = True
 
-    path = store_path()
+    path = store_path(slot)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
@@ -111,10 +114,10 @@ def save(broker, username, password):
     return password_saved
 
 
-def load():
+def load(slot=""):
     """读取凭据。返回 {"broker", "username", "password"}；没有记录或文件损坏返回 None。
     密码无法解密（换了电脑 / 换了 Windows 用户 / 文件损坏）时 password 为空串，账号仍可预填。"""
-    path = store_path()
+    path = store_path(slot)
     if not os.path.exists(path):
         return None
     try:
@@ -140,10 +143,10 @@ def load():
     return {"broker": broker, "username": username, "password": password}
 
 
-def clear():
+def clear(slot=""):
     """清除已保存的凭据（不存在也安全）。"""
     try:
-        os.remove(store_path())
+        os.remove(store_path(slot))
     except FileNotFoundError:
         pass
     except OSError as e:

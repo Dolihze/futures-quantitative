@@ -20,12 +20,14 @@
       <aside class="sidebar">
         <!-- 步骤 1：被监控账号 -->
         <section class="control-panel">
-          <h3>被监控账号（只读）</h3>
+          <h3>监控账号</h3>
 
           <template v-if="!monitorOn">
-            <el-form label-position="top" size="small" @submit.prevent>
+            <el-form class="inline-label-form" label-position="left" label-width="72px" size="small"
+                     @submit.prevent>
               <el-form-item label="期货公司">
-                <el-select v-model="form.broker" placeholder="请选择期货公司" filterable style="width: 100%">
+                <el-select v-model="form.broker" placeholder="请选择期货公司" filterable style="width: 100%"
+                           popper-class="monitor-broker-popper" :fit-input-width="true" :offset="7">
                   <el-option v-for="b in brokerOptions" :key="b.value" :label="b.name" :value="b.value" />
                 </el-select>
               </el-form-item>
@@ -36,11 +38,13 @@
                 <el-input v-model="form.password" type="password" show-password placeholder="交易密码"
                           autocomplete="new-password" @keyup.enter="handleMonitorLogin" />
               </el-form-item>
+              <el-form-item class="remember-row">
+                <el-checkbox v-model="rememberAccount">记住账号密码</el-checkbox>
+              </el-form-item>
               <el-button type="primary" :loading="loggingIn" style="width: 100%" @click="handleMonitorLogin">
                 登录并开始监控
               </el-button>
             </el-form>
-            <p class="hint">仅订阅该账号的成交回报，本程序<b>不会</b>用它下单。密码不会被保存。</p>
           </template>
 
           <template v-else>
@@ -128,17 +132,22 @@
         </section>
 
         <!-- 步骤 4：启动 -->
-        <section class="control-panel">
+        <section class="control-panel start-panel">
           <h3>启动</h3>
 
-          <el-switch v-model="cfg.simulate" :disabled="running" active-text="模拟模式（只记录，不下单）"
-                     inline-prompt style="margin-bottom: 4px" />
+          <div class="simulate-row">
+            <el-tooltip content="模拟模式：只记录本应跟的单，不会真实下单" placement="top" :show-after="200">
+              <el-icon class="simulate-help"><QuestionFilled /></el-icon>
+            </el-tooltip>
+            <span class="simulate-label">模拟模式</span>
+            <el-switch v-model="cfg.simulate" :disabled="running" />
+          </div>
           <div v-if="!cfg.simulate" class="danger-tip">
             实盘模式：将使用当前交易账号 <b>{{ userStore.username }}</b> 真实下单
           </div>
 
           <template v-if="!running">
-            <el-button type="success" size="large" style="width: 100%; margin-top: 10px"
+            <el-button type="success" size="large" style="width: 100%"
                        :disabled="!monitorOn" :loading="busy" @click="handleStart">
               启动跟单
             </el-button>
@@ -264,7 +273,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBrokers } from '@/api'
 import {
   monitorLogin, monitorLogout, getMonitorAccount, getMonitorStatus, getMonitorRecords,
-  startCopy, stopCopy, updateCopyConfig, resumeCopy
+  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, resumeCopy
 } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
 
@@ -276,8 +285,13 @@ const actionText = {
 
 // ---- 被监控账号 ----
 const brokerGroups = ref([])
-const brokerOptions = computed(() => brokerGroups.value.flatMap(g => g.items))
+// 监控目前只支持中信建投期货和 SimNow 账号（value 与 data/brokers.json 一致），其余期货公司暂不开放
+const MONITOR_BROKERS = ['citic', 'simnow', 'simnow_724']
+const brokerOptions = computed(() =>
+  brokerGroups.value.flatMap(g => g.items).filter(b => MONITOR_BROKERS.includes(b.value))
+)
 const form = reactive({ broker: '', username: '', password: '' })
+const rememberAccount = ref(true)   // 记住账号密码：登录成功后由后端保存（勾选）或清除（未勾选）
 const loggingIn = ref(false)
 const account = ref(null)
 const monitorOn = computed(() => !!status.value?.monitor_connected)
@@ -370,6 +384,23 @@ const syncConfigFromStatus = () => {
   whitelistText.value = (c.symbol_whitelist || []).join(', ')
 }
 
+// 用「记住账号密码」保存的被监控账号预填表单。保存的期货公司已不在监控支持的列表里时不预填该项
+const prefillSavedAccount = async () => {
+  try {
+    const saved = await getMonitorCredentials()
+    if (!saved?.saved) {
+      rememberAccount.value = false   // 没有保存过：默认不勾选，避免用户没留意就记住
+      return
+    }
+    rememberAccount.value = true
+    if (brokerOptions.value.some(b => b.value === saved.broker)) form.broker = saved.broker
+    form.username = saved.username
+    form.password = saved.password || ''
+  } catch (e) {
+    // 读取失败不影响手动登录
+  }
+}
+
 onMounted(async () => {
   try {
     const data = await getBrokers()
@@ -377,6 +408,7 @@ onMounted(async () => {
   } catch (e) {
     ElMessage.error('期货公司列表加载失败')
   }
+  await prefillSavedAccount()
   await refresh()
   if (running.value) syncConfigFromStatus()
   timer = setInterval(refresh, 2000)
@@ -389,9 +421,12 @@ const handleMonitorLogin = async () => {
   if (!form.username || !form.password) return ElMessage.warning('请输入被监控账号和密码')
   loggingIn.value = true
   try {
-    const res = await monitorLogin({ ...form })
+    const res = await monitorLogin({ ...form, remember: rememberAccount.value })
     if (res.success) {
       ElMessage.success('被监控账号登录成功')
+      if (rememberAccount.value && !res.password_saved) {
+        ElMessage.warning('已记住账号，但当前系统不支持安全保存密码，下次需重新输入密码')
+      }
       form.password = ''
       await refresh()
     } else {
@@ -478,4 +513,9 @@ const handleUpdate = async () => {
 
 <style scoped>
 @import '@/styles/Monitor.css';
+</style>
+
+<!-- 下拉面板通过 teleport 挂到 body 下，scoped / :deep 命中不了，需以非 scoped 方式引入 -->
+<style>
+@import '@/styles/MonitorPopper.css';
 </style>

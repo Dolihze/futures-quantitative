@@ -751,6 +751,9 @@ def quant_login():
 # 量化监控：登录被监控账号（只读会话）+ 跟单引擎
 # ---------------------------------------------------------------------------
 
+MONITOR_CRED_SLOT = "monitor"   # 被监控账号的凭据槽位（见 credential_store）
+
+
 @app.route('/api/monitor/login', methods=['POST'])
 def monitor_login():
     """登录被监控账号（只读，不会用它下单）：{broker, username, password}"""
@@ -764,8 +767,27 @@ def monitor_login():
         return jsonify({"success": False, "message": "请输入被监控账号和密码"}), 400
     if copy_trading.engine.running:
         return jsonify({"success": False, "message": "跟单运行中，请先停止跟单再更换被监控账号"})
-    return jsonify(ctp_service.monitor_login(broker, username, password,
-                                             copy_trading.engine.on_source_trade))
+    result = ctp_service.monitor_login(broker, username, password,
+                                       copy_trading.engine.on_source_trade)
+    if result.get("success"):
+        # 「记住账号密码」：只在登录成功后才保存（避免存下输错的密码）；取消勾选则清除旧记录。
+        # 存在独立槽位，不影响登录页记住的交易账号
+        password_saved = False
+        if data.get('remember'):
+            password_saved = credential_store.save(broker, username, password, slot=MONITOR_CRED_SLOT)
+        else:
+            credential_store.clear(slot=MONITOR_CRED_SLOT)
+        result = {**result, "password_saved": password_saved}
+    return jsonify(result)
+
+
+@app.route('/api/monitor/credentials', methods=['GET'])
+def monitor_credentials():
+    """读取量化监控「记住账号密码」保存的被监控账号，用于表单预填；没有记录返回 saved=false"""
+    cred = credential_store.load(slot=MONITOR_CRED_SLOT)
+    if not cred:
+        return jsonify({"saved": False})
+    return jsonify({"saved": True, **cred})
 
 
 @app.route('/api/monitor/logout', methods=['POST'])

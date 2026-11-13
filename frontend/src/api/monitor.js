@@ -9,6 +9,11 @@ export function monitorLogin(data) {
   return request({ url: '/api/monitor/login', method: 'post', data, timeout: 45000, silent: true })
 }
 
+// 读取「记住账号密码」保存的被监控账号，用于表单预填：{ saved, broker, username, password }
+export function getMonitorCredentials() {
+  return request({ url: '/api/monitor/credentials', method: 'get', silent: true })
+}
+
 export function monitorLogout() {
   return request({ url: '/api/monitor/logout', method: 'post', silent: true })
 }
