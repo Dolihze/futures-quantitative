@@ -47,17 +47,17 @@
             </el-form>
           </template>
 
-          <template v-else>
+          <!-- 登录后：行高、行距与登录前的表单一致，面板高度不随登录状态变化 -->
+          <div v-else class="account-info">
             <div class="kv"><span>账号</span><b>{{ account?.username }}</b></div>
             <div class="kv"><span>权益</span><b>{{ money(account?.account?.balance) }}</b></div>
             <div class="kv"><span>可用</span><b>{{ money(account?.account?.available) }}</b></div>
             <div class="kv"><span>持仓</span><b>{{ account?.positions?.length || 0 }} 个</b></div>
-            <el-button size="small" style="width: 100%; margin-top: 8px" :disabled="running"
+            <el-button size="small" style="width: 100%" :disabled="running"
                        @click="handleMonitorLogout">
               断开监控账号
             </el-button>
-            <p v-if="running" class="hint">跟单运行中，需先停止跟单才能断开。</p>
-          </template>
+          </div>
         </section>
 
         <!-- 步骤 2：跟单配置 -->
@@ -79,7 +79,7 @@
                 </el-tooltip>
               </template>
               <el-input-number v-model="cfg.multiplier" :min="0.01" :max="100" :step="0.1" :precision="2"
-                               controls-position="right" />
+                               controls-position="right" align="left" />
             </el-form-item>
             <el-form-item v-else class="inline-field">
               <template #label>
@@ -89,7 +89,7 @@
                 </el-tooltip>
               </template>
               <el-input-number v-model="cfg.fixed_volume" :min="1" :max="10000" :step="1" :precision="0"
-                               controls-position="right" />
+                               controls-position="right" align="left" />
             </el-form-item>
 
             <el-form-item label="开仓价格" class="inline-field">
@@ -102,7 +102,7 @@
 
             <el-form-item label="开仓时限（秒）" class="inline-field">
               <el-input-number v-model="cfg.follow_timeout" :min="30" :max="300" :step="10" :precision="0"
-                               controls-position="right" />
+                               controls-position="right" align="left" />
             </el-form-item>
 
             <el-form-item label="品种白名单">
@@ -379,7 +379,9 @@ const handleMonitorLogin = async () => {
       if (rememberAccount.value && !res.password_saved) {
         ElMessage.warning('已记住账号，但当前系统不支持安全保存密码，下次需重新输入密码')
       }
-      form.password = ''
+      // 勾选了「记住」且密码确实保存成功：保留表单里的密码，退出监控账号后不用重新输入；
+      // 没勾选（或密码没能保存）：不把密码留在页面内存里
+      if (!rememberAccount.value || !res.password_saved) form.password = ''
       await refresh()
     } else {
       ElMessage.error(res.message || '登录失败')

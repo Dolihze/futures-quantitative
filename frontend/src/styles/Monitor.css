@@ -121,6 +121,25 @@
   font-weight: 600;
 }
 
+/* 监控账号登录后的信息区：高度固定为与登录前表单一致，面板不随登录状态变高 / 变矮。
+   登录前 = 3 个表单行（24px + 18px 间距）+ 记住账号行（24px + 8px）+ 登录按钮（24px）= 182px；
+   四个信息行平分按钮之上的空间，按钮贴底（对应登录按钮的位置） */
+.control-panel .account-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 182px;
+}
+.control-panel .account-info .kv {
+  flex: 1;
+  align-items: center;
+  padding: 0;
+}
+.control-panel .account-info .el-button {
+  flex: none;
+  margin-top: 8px;
+}
+
 /* 表单标签后面的说明图标（鼠标悬浮显示 tooltip） */
 .field-help {
   margin-left: 4px;
