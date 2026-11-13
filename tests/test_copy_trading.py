@@ -19,9 +19,10 @@ import copy_trading as ct  # noqa: E402
 # ----------------------------------------------------------------------------
 
 class FakeContract:
-    def __init__(self, min_volume=1, max_volume=500):
+    def __init__(self, min_volume=1, max_volume=500, pricetick=1.0):
         self.min_volume = min_volume
         self.max_volume = max_volume
+        self.pricetick = pricetick
 
 
 class FakeCtp:
@@ -128,6 +129,29 @@ def test_classify():
     assert ct.classify("未知", "多") is None
 
 
+def test_reverse_action_mapping():
+    assert ct.REVERSE_ACTION == {
+        "open_long": "open_short", "open_short": "open_long",
+        "close_long": "close_short", "close_short": "close_long",
+    }
+
+
+def test_reverse_open_price():
+    # 对方开多@4000 -> 我开空，上方 2 跳
+    assert ct.reverse_open_price("open_long", 4000, 1, 2) == (4002, "")
+    # 对方开空@4000 -> 我开多，下方 2 跳
+    assert ct.reverse_open_price("open_short", 4000, 1, 2) == (3998, "")
+    # 小数最小变动价位，且无浮点尾巴
+    assert ct.reverse_open_price("open_long", 7187.4, 0.2, 2) == (7187.8, "")
+    assert ct.reverse_open_price("open_short", 7187.4, 0.2, 2) == (7187.0, "")
+    # 0 跳 = 就在对方成交价
+    assert ct.reverse_open_price("open_long", 4000, 1, 0) == (4000, "")
+    # 非法输入
+    assert ct.reverse_open_price("open_long", 4000, 0, 2)[0] is None
+    assert ct.reverse_open_price("open_long", 0, 1, 2)[0] is None
+    assert ct.reverse_open_price("open_short", 1, 1, 5)[0] is None      # 价格被减到 <= 0
+
+
 def test_compute_volume_modes():
     cfg = dict(ct.DEFAULT_CONFIG)
     cfg.update(size_mode="fixed", fixed_volume=3)
@@ -156,7 +180,13 @@ def test_validate_config():
     assert ct.validate_config({"multiplier": float("nan")})[1]
     assert ct.validate_config({"multiplier": "abc"})[1]
     assert ct.validate_config({"fixed_volume": 1.5})[1]
-    assert ct.validate_config({"price_mode": "foo"})[1]
+    # 开仓偏移跳数：0~100 的整数，默认 2
+    assert ct.validate_config({})[0]["price_offset_ticks"] == 2
+    for ok in (0, 1, 2, 100, "3"):
+        assert ct.validate_config({"price_offset_ticks": ok})[1] == ""
+    for bad in (-1, 101, 1.5, "abc", float("nan")):
+        assert ct.validate_config({"price_offset_ticks": bad})[1], bad
+    assert "price_mode" not in ct.validate_config({"price_mode": "last"})[0]    # 旧字段被忽略
     # 跟单时限：只允许 30~300 秒（不支持 0），默认 60
     assert ct.validate_config({})[0]["follow_timeout"] == 60
     for ok in (30, 60, 300, "45"):
@@ -186,11 +216,26 @@ def test_start_requires_trade_account(fake):
 # 信号流
 # ----------------------------------------------------------------------------
 
-def test_open_is_followed_live(fake):
+def test_source_open_long_is_reversed_to_open_short_above(fake):
     e = make_engine(fake)
-    feed(e, offset="开", direction="多", volume=2)
-    assert fake.sent == [("rb2610.SHFE", "open_long", 3500.0, 2)]
+    feed(e, offset="开", direction="多", volume=2, price=4000.0)
+    assert fake.sent == [("rb2610.SHFE", "open_short", 4002.0, 2)]      # 对方成交价上方 2 跳
     assert e.get_records()[0]["status"] == ct.ST_FILLED
+    e.stop()
+
+
+def test_source_open_short_is_reversed_to_open_long_below(fake):
+    e = make_engine(fake)
+    feed(e, offset="开", direction="空", volume=2, price=4000.0)
+    assert fake.sent == [("rb2610.SHFE", "open_long", 3998.0, 2)]       # 对方成交价下方 2 跳
+    e.stop()
+
+
+def test_open_offset_ticks_configurable_and_uses_pricetick(fake):
+    fake.contract = FakeContract(pricetick=0.2)
+    e = make_engine(fake, price_offset_ticks=3)
+    feed(e, offset="开", direction="多", volume=1, price=7187.4)
+    assert fake.sent == [("rb2610.SHFE", "open_short", 7188.0, 1)]
     e.stop()
 
 
@@ -223,21 +268,29 @@ def test_baseline_ignores_trades_received_before_start(fake):
 
 def test_close_never_exceeds_my_position(fake):
     e = make_engine(fake)
-    # 我方没有持仓：平仓信号必须跳过，不能变成反向开仓
-    feed(e, tid="C1", offset="平", direction="空", volume=3)       # 卖出平多
+    # 对方卖出平多 -> 我买入平空。我方没有空单：必须跳过，不能变成反向开仓
+    feed(e, tid="C1", offset="平", direction="空", volume=3)
     assert fake.sent == []
     assert e.get_records()[0]["status"] == ct.ST_SKIPPED
 
-    # 我方只持有 1 手多：源平 3 手，只能平 1 手
-    fake.positions[("rb2610.SHFE", "多")] = (1, 0)
+    # 我方只持有 1 手空：源平 3 手，只能平 1 手
+    fake.positions[("rb2610.SHFE", "空")] = (1, 0)
     feed(e, tid="C2", offset="平", direction="空", volume=3)
-    assert fake.sent == [("rb2610.SHFE", "close_long", 3500.0, 1)]
+    assert fake.sent == [("rb2610.SHFE", "close_short", 3500.0, 1)]
+    e.stop()
+
+
+def test_source_close_short_is_reversed_to_close_long(fake):
+    fake.positions[("rb2610.SHFE", "多")] = (2, 0)
+    e = make_engine(fake)
+    feed(e, tid="C3", offset="平", direction="多", volume=2)       # 对方买入平空 -> 我卖出平多
+    assert fake.sent == [("rb2610.SHFE", "close_long", 3500.0, 2)]
     e.stop()
 
 
 def test_close_respects_frozen_positions(fake):
     e = make_engine(fake)
-    fake.positions[("rb2610.SHFE", "多")] = (2, 2)                  # 全被挂单冻结
+    fake.positions[("rb2610.SHFE", "空")] = (2, 2)                  # 全被挂单冻结
     feed(e, tid="C1", offset="平", direction="空", volume=2)
     assert fake.sent == []
     e.stop()
@@ -252,9 +305,19 @@ def test_zero_volume_skipped(fake):
 
 
 def test_missing_price_skips_and_never_guesses(fake):
-    fake.price = (None, "行情尚未到达")
+    fake.contract = FakeContract(pricetick=0)                        # 最小变动价位无效 -> 算不出限价
     e = make_engine(fake)
     feed(e)
+    assert fake.sent == []
+    assert "价格" in e.get_records()[0]["message"]
+    e.stop()
+
+
+def test_close_missing_market_price_skips(fake):
+    fake.price = (None, "行情尚未到达")
+    fake.positions[("rb2610.SHFE", "空")] = (1, 0)
+    e = make_engine(fake)
+    feed(e, offset="平", direction="空")
     assert fake.sent == []
     assert "价格" in e.get_records()[0]["message"]
     e.stop()
@@ -302,22 +365,24 @@ def test_close_signal_ignores_follow_timeout_and_uses_market_price(fake):
     prices = []
     fake.follow_price = lambda vt, action, mode: (prices.append((action, mode)) or (3600.0, ""))
     ct.ctp_service.follow_price = fake.follow_price
-    fake.positions[("rb2610.SHFE", "多")] = (3, 0)
+    fake.positions[("rb2610.SHFE", "空")] = (3, 0)
     e = make_engine(fake, follow_timeout=30)
     old = datetime.datetime.now() - datetime.timedelta(seconds=600)     # 平仓信号晚到 10 分钟
-    feed(e, tid="C9", offset="平", direction="空", volume=2, ts=old)
-    assert len(fake.sent) == 1 and fake.sent[0][1] == "close_long"      # 照常平
-    assert prices == [("close_long", "market")]                         # 固定市价
+    feed(e, tid="C9", offset="平", direction="空", volume=2, ts=old)     # 对方卖出平多 -> 我买入平空
+    assert len(fake.sent) == 1 and fake.sent[0][1] == "close_short"     # 照常平
+    assert prices == [("close_short", "market")]                        # 固定市价
     e.stop()
 
 
-def test_open_uses_configured_price_mode(fake):
-    modes = []
-    fake.follow_price = lambda vt, action, mode: (modes.append(mode) or (3500.0, ""))
+def test_open_does_not_query_market_price(fake):
+    """反向开仓价格只由对方成交价和跳数决定，不再取行情价。"""
+    called = []
+    fake.follow_price = lambda vt, action, mode: (called.append(mode) or (1.0, ""))
     ct.ctp_service.follow_price = fake.follow_price
-    e = make_engine(fake, price_mode="last")
-    feed(e, tid="O1")
-    assert modes == ["last"]
+    e = make_engine(fake)
+    feed(e, tid="O1", price=4000.0)
+    assert called == []
+    assert fake.sent[0][2] == 4002.0
     e.stop()
 
 
@@ -401,7 +466,7 @@ def test_close_order_is_never_cancelled(fake):
         return {"success": True, "message": "委托已提交", "vt_orderids": ["CTP.S"]}
     fake.send_limit_order = slow_send
     ct.ctp_service.send_limit_order = slow_send
-    fake.positions[("rb2610.SHFE", "多")] = (3, 0)
+    fake.positions[("rb2610.SHFE", "空")] = (3, 0)
     e = make_engine(fake)
     set_follow_timeout(e, 0.3)
     feed(e, tid="C1", offset="平", direction="空", volume=1)

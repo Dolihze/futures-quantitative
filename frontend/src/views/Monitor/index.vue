@@ -71,33 +71,18 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item v-if="cfg.size_mode !== 'fixed'" class="inline-field">
-              <template #label>
-                <span>倍数</span>
-                <el-tooltip :content="preview" placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
+            <el-form-item v-if="cfg.size_mode !== 'fixed'" label="倍数" class="inline-field">
               <el-input-number v-model="cfg.multiplier" :min="0.01" :max="100" :step="0.1" :precision="2"
                                controls-position="right" align="left" />
             </el-form-item>
-            <el-form-item v-else class="inline-field">
-              <template #label>
-                <span>每笔固定手数</span>
-                <el-tooltip :content="preview" placement="top" :show-after="200">
-                  <el-icon class="field-help"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
+            <el-form-item v-else label="每笔固定手数" class="inline-field">
               <el-input-number v-model="cfg.fixed_volume" :min="1" :max="10000" :step="1" :precision="0"
                                controls-position="right" align="left" />
             </el-form-item>
 
-            <el-form-item label="开仓价格" class="inline-field">
-              <el-select v-model="cfg.price_mode">
-                <el-option label="对手价" value="counter" />
-                <el-option label="最新价" value="last" />
-                <el-option label="涨跌停价" value="market" />
-              </el-select>
+            <el-form-item label="开仓偏移（跳）" class="inline-field">
+              <el-input-number v-model="cfg.price_offset_ticks" :min="0" :max="100" :step="1" :precision="0"
+                               controls-position="right" align="left" />
             </el-form-item>
 
             <el-form-item label="开仓时限（秒）" class="inline-field">
@@ -267,7 +252,7 @@ const monitorOn = computed(() => !!status.value?.monitor_connected)
 
 // ---- 跟单配置（默认值与后端 DEFAULT_CONFIG 一致）----
 const cfg = reactive({
-  size_mode: 'multiple', multiplier: 1, fixed_volume: 1, price_mode: 'counter', follow_timeout: 60
+  size_mode: 'multiple', multiplier: 1, fixed_volume: 1, price_offset_ticks: 2, follow_timeout: 60
 })
 const whitelist = ref([])   // 品种白名单（品种代码数组），空 = 全部品种
 
@@ -289,13 +274,6 @@ const runClass = computed(() => {
   if (!running.value) return 'off'
   if (status.value?.paused_reason) return 'paused'
   return 'live'
-})
-
-// 手数预览：按当前配置举例（对方开 1 / 5 / 10 手）
-const preview = computed(() => {
-  if (cfg.size_mode === 'fixed') return `对方每成交一笔，你固定跟 ${cfg.fixed_volume} 手`
-  const f = (n) => Math.floor(n * cfg.multiplier + 1e-9)
-  return `预览：对方 1 手 → 你 ${f(1)} 手；5 手 → ${f(5)} 手；10 手 → ${f(10)} 手（向下取整，余量累计到下一笔）`
 })
 
 const money = (v) => (v === null || v === undefined ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
@@ -401,10 +379,10 @@ const handleMonitorLogout = async () => {
 
 const handleStart = async () => {
   const summary = `手数：${{ multiple: '固定倍数', fixed: '固定手数' }[cfg.size_mode]}，`
-    + `开仓价格：${{ counter: '对手价', last: '最新价', market: '涨跌停价' }[cfg.price_mode]}，平仓：市价`
+    + `开仓：反向限价（对方成交价${cfg.price_offset_ticks}跳外），平仓：反向市价`
   try {
     await ElMessageBox.confirm(
-      `即将跟单：对方账号 ${account.value?.username} 的新成交，会立即用你的交易账号 ${userStore.username} 真实下单。\n\n${summary}\n\n确认启动？`,
+      `即将【反向】跟单：对方账号 ${account.value?.username} 的新成交，会立即用你的交易账号 ${userStore.username} 做相反方向的真实下单（对方做多你做空，对方做空你做多）。\n\n${summary}\n\n确认启动？`,
       '跟单确认', { type: 'warning', confirmButtonText: '确认跟单', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
   } catch { return }
 

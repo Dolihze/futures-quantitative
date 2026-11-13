@@ -1,8 +1,13 @@
-"""量化监控：跟单引擎。
+"""量化监控：跟单引擎（反向跟单）。
 
 数据流：被监控账号（ctp_service 的只读监控会话）产生成交回报 -> on_source_trade()
         -> 入队 -> 工作线程按配置过滤信号并计算手数 / 价格 -> 通过【主会话】发出限价委托
         -> 追踪委托，超时未成交则撤单（并记录），全部过程写入跟单记录。
+
+反向规则：与被监控账号做相反的操作。
+  * 对方开多（成交价 P）-> 我开空，限价 = P + 偏移跳数 × 最小变动价位（对方成交价上方）
+  * 对方开空（成交价 P）-> 我开多，限价 = P - 偏移跳数 × 最小变动价位（对方成交价下方）
+  * 对方平多 -> 我平空（买入平仓）；对方平空 -> 我平多（卖出平仓）；平仓固定市价
 
 安全原则（涉及真实资金）：
   * 默认关闭；必须显式 start()，且 start() 之后才产生的成交才会被跟随（启动时记录基线）。
@@ -25,9 +30,6 @@ SIZE_MULTIPLE = "multiple"  # 固定倍数：源手数 × multiplier
 SIZE_FIXED = "fixed"     # 固定手数：每笔成交固定跟 fixed_volume 手
 SIZE_MODES = (SIZE_MULTIPLE, SIZE_FIXED)
 
-# 价格模式（后端只有限价单）
-PRICE_MODES = ("counter", "last", "market")
-
 # 跟单记录状态
 ST_SUBMITTED = "已委托"
 ST_FILLED = "已成交"
@@ -44,7 +46,8 @@ DEFAULT_CONFIG = {
     "size_mode": SIZE_MULTIPLE,
     "multiplier": 1.0,          # multiple 模式的倍数
     "fixed_volume": 1,          # fixed 模式的每笔手数
-    "price_mode": "counter",    # 开仓价格模式；平仓固定用市价，见 CLOSE_PRICE_MODE
+    "price_offset_ticks": 2,    # 开仓限价相对对方成交价的偏移跳数（反向跟单：我开空 +N 跳，我开多 -N 跳）；
+                                # 平仓固定用市价，见 CLOSE_PRICE_MODE
     "follow_timeout": 60.0,     # 开仓跟单时限（秒，从对方成交算起）：信号到达时已超时则不跟；
                                 # 下单后到该时刻仍未全部成交则撤单。范围 FOLLOW_TIMEOUT_MIN ~ MAX
     "symbol_whitelist": [],     # 品种白名单（合约代码前缀字母，如 ["rb", "ag"]），空 = 全部
@@ -53,6 +56,10 @@ DEFAULT_CONFIG = {
 # 平仓一律用市价（用涨跌停价模拟的限价单）：平仓信号不管多久才到，到达即平，
 # 不受跟单时限约束，也不存在“未成交撤单”
 CLOSE_PRICE_MODE = "market"
+
+# 开仓偏移跳数的允许范围
+PRICE_OFFSET_TICKS_MIN = 0
+PRICE_OFFSET_TICKS_MAX = 100
 
 # 开仓跟单时限的允许范围（秒）
 FOLLOW_TIMEOUT_MIN = 30.0
@@ -100,10 +107,10 @@ def validate_config(raw):
             raise ValueError("固定手数必须是整数")
         cfg["fixed_volume"] = int(fv)
 
-        pm = str(raw.get("price_mode", cfg["price_mode"]))
-        if pm not in PRICE_MODES:
-            raise ValueError("价格模式不正确")
-        cfg["price_mode"] = pm
+        ticks = num("price_offset_ticks", PRICE_OFFSET_TICKS_MIN, PRICE_OFFSET_TICKS_MAX)
+        if ticks != int(ticks):
+            raise ValueError("偏移跳数必须是整数")
+        cfg["price_offset_ticks"] = int(ticks)
 
         cfg["follow_timeout"] = num("follow_timeout", FOLLOW_TIMEOUT_MIN, FOLLOW_TIMEOUT_MAX)
 
@@ -145,6 +152,35 @@ def classify(trade_offset, trade_direction):
         return "open_long" if trade_direction == "多" else "open_short"
     # 买入平仓 = 平空；卖出平仓 = 平多
     return "close_short" if trade_direction == "多" else "close_long"
+
+
+# 反向跟单：对方的动作 -> 我方的动作
+REVERSE_ACTION = {
+    "open_long": "open_short",
+    "open_short": "open_long",
+    "close_long": "close_short",     # 对方卖出平多 -> 我买入平空
+    "close_short": "close_long",     # 对方买入平空 -> 我卖出平多
+}
+
+
+def reverse_open_price(src_action, src_price, pricetick, offset_ticks):
+    """反向开仓限价：对方开多 -> 我开空，价格 = 成交价 + N 跳；对方开空 -> 我开多，价格 = 成交价 - N 跳。
+    结果规整到最小变动价位。返回 (price, error)。"""
+    try:
+        src_price = float(src_price)
+        tick = float(pricetick)
+    except (TypeError, ValueError):
+        return None, "对方成交价或合约最小变动价位无效"
+    if not math.isfinite(src_price) or src_price <= 0 or not math.isfinite(tick) or tick <= 0:
+        return None, "对方成交价或合约最小变动价位无效"
+    sign = 1 if src_action == "open_long" else -1
+    n = round(src_price / tick) + sign * int(offset_ticks)
+    s = f"{tick:.10f}".rstrip("0").rstrip(".")
+    decimals = len(s.split(".")[1]) if "." in s else 0
+    price = round(n * tick, decimals)
+    if price <= 0:
+        return None, f"计算出的限价 {price:g} 无效"
+    return price, ""
 
 
 class CopyEngine:
@@ -317,16 +353,17 @@ class CopyEngine:
             cfg = dict(self.config)
             paused = self.paused_reason
 
-        action = classify(sig["offset"], sig["direction"])
-        if not action:
+        src_action = classify(sig["offset"], sig["direction"])
+        if not src_action:
             self._skip(sig, None, f"无法识别的开平标志「{sig['offset']}」")
             return
+        action = REVERSE_ACTION[src_action]      # 反向跟单：我方动作与对方相反
 
         if paused:
             self._skip(sig, action, f"跟单已暂停（{paused}），信号丢弃")
             return
 
-        is_open = action.startswith("open")
+        is_open = action.startswith("open")      # 反向后开平属性不变：对方开仓 -> 我开仓
 
         # ---- 跟单时限（只对开仓）：从对方成交算起，信号到达时已超过时限就不跟，留痕 ----
         # 平仓信号不管多久才到都立即按市价平，不受时限限制
@@ -383,8 +420,14 @@ class CopyEngine:
             self._skip(sig, action, f"低于合约最小手数（{note}）")
             return
 
-        # ---- 价格：开仓按配置；平仓固定市价 ----
-        price, perr = ctp_service.follow_price(vt, action, cfg["price_mode"] if is_open else CLOSE_PRICE_MODE)
+        # ---- 价格：开仓 = 对方成交价 ± N 跳（限价）；平仓固定市价 ----
+        if is_open:
+            price, perr = reverse_open_price(src_action, sig["price"], contract.pricetick,
+                                             cfg["price_offset_ticks"])
+            if price is not None:
+                note += f"；对方成交 {sig['price']:g}，{'上' if src_action == 'open_long' else '下'}方 {cfg['price_offset_ticks']} 跳 → {price:g}"
+        else:
+            price, perr = ctp_service.follow_price(vt, action, CLOSE_PRICE_MODE)
         if price is None:
             self._skip(sig, action, f"取不到下单价格：{perr}", volume=vol)
             return

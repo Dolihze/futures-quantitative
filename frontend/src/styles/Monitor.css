@@ -140,16 +140,6 @@
   margin-top: 8px;
 }
 
-/* 表单标签后面的说明图标（鼠标悬浮显示 tooltip） */
-.field-help {
-  margin-left: 4px;
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-.field-help:hover {
-  color: var(--text-primary);
-}
-
 /* 提示语和表单标签（期货公司 / 账号 …）同字号、同行高、同颜色 */
 .start-panel .hint {
   margin-top: 4px;
