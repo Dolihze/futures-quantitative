@@ -343,12 +343,13 @@
                     <th>开平</th>
                     <th class="num">成交价</th>
                     <th class="num">成交手数</th>
-                    <th>成交编号</th>
+                    <th class="num">手续费</th>
+                    <th class="num">平仓盈亏</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!trades.length">
-                    <td colspan="7" class="orders-empty">暂无成交</td>
+                    <td colspan="8" class="orders-empty">暂无成交</td>
                   </tr>
                   <tr v-for="t in pagedTrades" :key="t.vt_tradeid">
                     <td>{{ t.time }}</td>
@@ -357,7 +358,11 @@
                     <td>{{ t.offset }}</td>
                     <td class="num">{{ fmtPrice(t.price) }}</td>
                     <td class="num">{{ t.volume }}</td>
-                    <td class="muted">{{ t.vt_tradeid.split('.').pop() }}</td>
+                    <td class="num muted">{{ fmtFee(t.fee) }}</td>
+                    <td
+                      class="num"
+                      :class="t.close_pnl > 0 ? 'up-text' : t.close_pnl < 0 ? 'down-text' : 'muted'"
+                    >{{ fmtClosePnl(t.close_pnl) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -428,6 +433,12 @@ const accountInfo = reactive({
 
 const fmtMoney = (n) =>
   Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// 成交明细的平仓盈亏：开仓成交 / 算不出来的没有值，显示 --
+const fmtClosePnl = (n) => (n === null || n === undefined ? '--' : fmtMoney(n))
+
+// 成交明细的手续费：接口没有就显示 --
+const fmtFee = (n) => (n === null || n === undefined ? '--' : fmtMoney(n))
 
 // 清空账户展示
 const resetAccountInfo = () => {

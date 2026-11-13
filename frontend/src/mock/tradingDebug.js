@@ -128,11 +128,13 @@ let orders = [
 ]
 
 // ---------------------------------------------------------------------------
-// 成交明细（最新的在前），编号形如 CTP.<成交号>，页面取最后一段显示
+// 成交明细（最新的在前）。close_pnl 为平仓成交的平仓盈亏，开仓成交为 null（和后端 list_trades 一致）
 // ---------------------------------------------------------------------------
-const mkTrade = (symbol, direction, offset, price, volume, minsAgo, orderIdx) => {
+const mkTrade = (symbol, direction, offset, price, volume, minsAgo, orderIdx, closePnl = null) => {
   const spec = SPECS.find((s) => s.symbol === symbol)
   return {
+    fee: null,
+    close_pnl: closePnl,
     vt_tradeid: `CTP.${10000000 + nextId()}`,
     vt_orderid: orders[orderIdx]?.vt_orderid || `CTP.1_900_${nextId()}`,
     vt_symbol: spec.vt_symbol,
@@ -152,8 +154,8 @@ let trades = [
   mkTrade('au2612', '多', '开', 761.0, 1, 14, 4),
   mkTrade('m2701', '多', '开', 2975, 3, 31, 7),
   mkTrade('m2701', '多', '开', 2974, 3, 31, 7),
-  mkTrade('TA2701', '空', '平', 5490, 2, 47, 8),
-  mkTrade('TA2701', '空', '平', 5490, 1, 47, 8),
+  mkTrade('TA2701', '空', '平', 5490, 2, 47, 8, -300),
+  mkTrade('TA2701', '空', '平', 5490, 1, 47, 8, 150),
   mkTrade('ag2701', '多', '开', 8085, 1, 58, 9),
   mkTrade('ag2701', '多', '开', 8085, 1, 58, 9),
   mkTrade('ag2612', '多', '开', 8031, 5, 95, -1) // 更早的成交，对应的委托不在当前列表里
@@ -307,6 +309,16 @@ export async function placeOrder({ symbol, action, price, volume }) {
   return ok({ vt_orderids: [order.vt_orderid] }, crosses ? '委托已成交' : '委托已提交')
 }
 
+// 平仓成交的平仓盈亏（按持仓均价算，必须在 applyFill 更新持仓之前调用）；开仓成交返回 null
+function closePnlOf(spec, action, price, volume) {
+  if (action.startsWith('open')) return null
+  const side = action === 'close_long' ? '多' : '空'
+  const pos = positionBook.find((p) => p.symbol === spec.symbol && p.direction === side)
+  if (!pos) return null
+  const diff = side === '多' ? price - pos.price : pos.price - price
+  return Number((diff * volume * spec.size).toFixed(2))
+}
+
 // 新增一条委托；filled 为真时同时生成成交明细并更新持仓。限价下单和反手共用，保证三张表数据自洽
 function recordOrder(spec, action, price, volume, filled) {
   const order = {
@@ -336,6 +348,8 @@ function recordOrder(spec, action, price, volume, filled) {
         offset: order.offset,
         price,
         volume,
+        fee: null,
+        close_pnl: closePnlOf(spec, action, price, volume),
         time: order.time
       },
       ...trades
@@ -413,6 +427,8 @@ export async function startReverse({ symbol, fromSide, closePrice, openPrice, vo
         offset: closeOrder.offset,
         price: closeOrder.price,
         volume,
+        fee: null,
+        close_pnl: closePnlOf(spec, closeAction, closeOrder.price, volume),
         time: hms(new Date())
       },
       ...trades

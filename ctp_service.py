@@ -1185,14 +1185,62 @@ def _trade_dict(t):
     }
 
 
+def _close_pnls(s, trades):
+    """按时间顺序重放成交，先进先出配对开平仓，返回 {vt_tradeid: 平仓盈亏}（只含平仓成交）。
+
+    CTP 的成交回报不带平仓盈亏，这里用当日成交自行估算：
+    平多 = (平仓价 - 开仓价) × 手数 × 合约乘数；平空 = (开仓价 - 平仓价) × 手数 × 合约乘数。
+    当日成交里没有对应开仓的部分（平的是昨仓）没有开仓价可用，用持仓均价无从还原，
+    这部分取不到盈亏，该笔返回 None，由前端显示 --。"""
+    from vnpy.trader.constant import Direction, Offset
+    result = {}
+    books = {}   # (vt_symbol, 持仓方向) -> [[开仓价, 剩余手数], ...]
+    for t in sorted(trades, key=lambda x: (x.datetime.timestamp() if x.datetime else 0)):
+        if t.offset == Offset.OPEN:
+            books.setdefault((t.vt_symbol, t.direction), []).append([t.price, t.volume])
+            continue
+        if t.offset == Offset.NONE:
+            continue
+        # 买入平空 -> 被平的是空头持仓；卖出平多 -> 被平的是多头持仓
+        held = Direction.SHORT if t.direction == Direction.LONG else Direction.LONG
+        contract = s.engine.get_contract(t.vt_symbol)
+        size = contract.size if contract else 0
+        queue = books.get((t.vt_symbol, held), [])
+        left, pnl, matched = t.volume, 0.0, 0.0
+        while left > 0 and queue:
+            open_price, open_vol = queue[0]
+            take = min(left, open_vol)
+            diff = (t.price - open_price) if held == Direction.LONG else (open_price - t.price)
+            pnl += diff * take * size
+            matched += take
+            left -= take
+            if take >= open_vol:
+                queue.pop(0)
+            else:
+                queue[0][1] = open_vol - take
+        # 没配满（含昨仓）或拿不到合约乘数：算不出完整盈亏
+        result[t.vt_tradeid] = round(pnl, 2) if (size and not left) else None
+    return result
+
+
 def list_trades():
-    """当前会话的成交明细，最新的在前。(trades, error)"""
+    """当前会话的成交明细，最新的在前。(trades, error)
+
+    每笔成交带 close_pnl：平仓成交为估算的平仓盈亏，开仓成交 / 算不出来的为 None。
+    每笔成交带 fee：CTP 成交回报不含手续费（要按柜台费率另行查询估算，暂未接入），目前恒为 None。"""
     s = _session
     if not s or not is_connected():
         return None, "未连接期货账户或连接已断开"
     trades = s.engine.get_all_trades()
+    pnls = _close_pnls(s, trades)
     trades.sort(key=lambda t: (t.datetime.timestamp() if t.datetime else 0), reverse=True)
-    return [_trade_dict(t) for t in trades], ""
+    items = []
+    for t in trades:
+        d = _trade_dict(t)
+        d["close_pnl"] = pnls.get(t.vt_tradeid)
+        d["fee"] = None
+        items.append(d)
+    return items, ""
 
 
 def list_orders():
