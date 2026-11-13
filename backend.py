@@ -841,10 +841,20 @@ def monitor_config():
     return jsonify(copy_trading.engine.update_config(data.get('config')))
 
 
+@app.route('/api/monitor/config/save', methods=['POST'])
+def monitor_config_save():
+    """只保存跟单配置到本地（不启动跟单），下次打开软件时恢复"""
+    data = request.get_json(silent=True) or {}
+    return jsonify(copy_trading.engine.save_draft_config(data.get('config')))
+
+
 @app.route('/api/monitor/resume', methods=['POST'])
 def monitor_resume():
     """人工解除断连造成的自动暂停"""
     return jsonify(copy_trading.engine.resume())
+
+
+copy_trading.engine.load_saved_config()   # 恢复上次保存的跟单配置
 
 
 if __name__ == '__main__':

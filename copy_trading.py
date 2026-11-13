@@ -17,7 +17,9 @@
   * 平仓类信号只平主账号【实际持有】的手数，绝不会因为多平而反向开仓。
   * 同一笔源成交（vt_tradeid）只处理一次。
 """
+import json
 import math
+import os
 import threading
 import time
 import queue
@@ -123,6 +125,55 @@ def validate_config(raw):
     return cfg, ""
 
 
+# ----------------------------------------------------------------------------
+# 配置本地存储：下次打开软件时恢复上次的跟单配置
+# ----------------------------------------------------------------------------
+# 与 credential_store 同目录：%LOCALAPPDATA%\futures-quantitative\copy_config.json（不在项目目录里，不会被提交）。
+# 配置里没有账号密码等敏感信息，明文 JSON 即可。
+CONFIG_FILENAME = "copy_config.json"
+
+
+def config_path():
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "futures-quantitative", CONFIG_FILENAME)
+
+
+def save_config(cfg):
+    """保存（已校验的）配置。失败只打印，不影响跟单本身。返回是否保存成功。"""
+    path = config_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False)
+        os.replace(tmp, path)       # 原子替换，避免写到一半崩溃留下坏文件
+        return True
+    except OSError as e:
+        print(f"[Copy] 配置保存失败: {e}")
+        return False
+
+
+def load_config():
+    """读取上次保存的配置并重新校验；没有记录、文件损坏或校验不通过都返回默认配置（不抛异常）。
+    校验会补齐新版本新增的字段、丢弃已移除的旧字段（如 price_mode）。"""
+    path = config_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return dict(DEFAULT_CONFIG)
+    except (OSError, ValueError) as e:
+        print(f"[Copy] 配置读取失败，使用默认配置: {e}")
+        return dict(DEFAULT_CONFIG)
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_CONFIG)
+    cfg, err = validate_config(raw)
+    if err:
+        print(f"[Copy] 已保存的配置不合法（{err}），使用默认配置")
+        return dict(DEFAULT_CONFIG)
+    return cfg
+
+
 def compute_volume(cfg, src_volume, remainder=0.0):
     """计算跟单手数。返回 (手数 int, 新的取整余量 float, 说明)。
 
@@ -194,6 +245,9 @@ class CopyEngine:
         self.follow_count = 0            # 本次运行已发起的跟单次数
         self.seen = set()                # 已处理过的源 vt_tradeid
         self.remainders = collections.defaultdict(float)   # (vt_symbol, action) -> 取整余量
+        # 已委托、尚未结束的开仓跟单：(vt_symbol, 我方 action) -> [rec, ...]。
+        # 对方随后平仓时据此撤掉还没成交的部分
+        self.pending_opens = collections.defaultdict(list)
         self.records = collections.deque(maxlen=MAX_RECORDS)   # 最新在左
         self.logs = collections.deque(maxlen=MAX_LOGS)
         self._seq = 0
@@ -233,12 +287,14 @@ class CopyEngine:
             if self.running:
                 return {"success": False, "message": "跟单已在运行"}
             self.config = cfg
+            save_config(cfg)
             self.running = True
             self.paused_reason = ""
             self.started_at = time.time()
             self.baseline_ts = self.started_at     # 基线：此刻之前的成交一律不跟
             self.follow_count = 0
             self.remainders.clear()
+            self.pending_opens.clear()
             # 每次运行用全新的停止事件：旧线程只认旧事件，绝不会被新一轮 start() 复活
             self._stop_evt = threading.Event()
             # 清空启动前可能残留在队列里的信号
@@ -264,14 +320,34 @@ class CopyEngine:
         return {"success": True, "message": "跟单已停止"}
 
     def update_config(self, config):
-        """运行中改配置（仅对之后的信号生效）。"""
+        """运行中改配置（仅对之后的信号生效），并保存到本地。"""
         cfg, err = validate_config(config)
         if err:
             return {"success": False, "message": f"配置不正确：{err}"}
         with self._lock:
             self.config = cfg
+            save_config(cfg)
         self.log("跟单配置已更新", "info")
         return {"success": True, "message": "配置已更新"}
+
+    def load_saved_config(self):
+        """启动软件时加载上次保存的配置（只在未运行时生效）。"""
+        cfg = load_config()
+        with self._lock:
+            if not self.running:
+                self.config = cfg
+        return cfg
+
+    def save_draft_config(self, config):
+        """未启动时也保存表单里的配置（不启动跟单），下次打开软件时恢复。"""
+        cfg, err = validate_config(config)
+        if err:
+            return {"success": False, "message": f"配置不正确：{err}"}
+        with self._lock:
+            if not self.running:
+                self.config = cfg
+            save_config(cfg)
+        return {"success": True, "message": "配置已保存"}
 
     def resume(self):
         """人工确认后，解除断连造成的自动暂停。"""
@@ -365,6 +441,15 @@ class CopyEngine:
 
         is_open = action.startswith("open")      # 反向后开平属性不变：对方开仓 -> 我开仓
 
+        # ---- 对方平仓：先撤掉我方为这个仓位挂着、还没成交的开仓单 ----
+        # 对方平多 -> 我之前挂的是 open_short；对方平空 -> open_long。
+        # 放在白名单 / 合约等检查之前：撤单只会减少风险，不该被这些过滤条件挡住
+        if not is_open:
+            open_action = "open_short" if src_action == "close_long" else "open_long"
+            cancelled_recs = self._cancel_pending_opens(sig, open_action)
+            if cancelled_recs:
+                self._wait_orders_done(cancelled_recs)   # 撤单异步，等结果出来再算持仓，避免按旧持仓平仓
+
         # ---- 跟单时限（只对开仓）：从对方成交算起，信号到达时已超过时限就不跟，留痕 ----
         # 平仓信号不管多久才到都立即按市价平，不受时限限制
         ref_ts = sig["trade_ts"] or sig["recv"]       # 对方成交时刻（没有成交时间就用收到回报的时刻）
@@ -453,8 +538,42 @@ class CopyEngine:
         # 开仓：撤单截止时刻 = 对方成交时刻 + 跟单时限（不是下单时刻 + 时限）。
         # 平仓是市价，不撤单（deadline 为 None），追踪线程只负责把最终成交结果写回记录
         deadline = (ref_ts + cfg["follow_timeout"]) if is_open else None
+        if is_open:
+            with self._lock:
+                self.pending_opens[(vt, action)].append(rec)
         threading.Thread(target=self._track, args=(rec, ids, deadline, cfg["follow_timeout"]),
                          daemon=True).start()
+
+    # ------------------------------------------------------------------ 对方平仓 -> 撤我方未成交的开仓单
+    def _cancel_pending_opens(self, sig, open_action):
+        """对方平仓了：此前为同一仓位发出、还没成交完的开仓委托，撤掉未成交的部分，不再跟。
+
+        open_action 是我方那笔开仓单的 action（对方平多 -> 我挂的是 open_short；对方平空 -> open_long）。
+        已经成交的部分保留，由后面的平仓流程按我方实际持仓平掉。
+        返回确实发出了撤单请求的记录列表。"""
+        key = (sig["vt_symbol"], open_action)
+        with self._lock:
+            recs = [r for r in self.pending_opens.get(key, []) if not r.get("cancel_by_close")]
+            for r in recs:
+                r["cancel_by_close"] = True       # 让 _track 结束时写入正确的状态说明
+        sent_recs = []
+        for r in recs:
+            sent = False
+            for oid in r["vt_orderids"]:
+                sent = ctp_service.my_cancel(oid) or sent
+            if sent:
+                sent_recs.append(r)
+                self.log(f"{sig['symbol']} 对方已平仓，撤销尚未成交的{_ACTION_TEXT[open_action]}委托（记录 #{r['id']}）", "warn")
+        return sent_recs
+
+    def _wait_orders_done(self, recs, timeout=3.0):
+        """撤单是异步的：等这些记录的委托都不再活跃（或超时），再去算我方持仓 / 可平手数。"""
+        end = time.time() + timeout
+        while time.time() < end:
+            orders = [ctp_service.my_order(i) for r in recs for i in r["vt_orderids"]]
+            if all(o is None or not o["active"] for o in orders):
+                return
+            time.sleep(0.1)
 
     # ------------------------------------------------------------------ 委托追踪
     def _track(self, rec, ids, deadline, timeout):
@@ -483,16 +602,26 @@ class CopyEngine:
         orders = [o for o in orders if o]
         traded = sum(o["traded"] for o in orders)
         with self._lock:
+            # 委托已结束，不再是“待撤”的开仓单
+            for lst in self.pending_opens.values():
+                if rec in lst:
+                    lst.remove(rec)
+            by_close = rec.get("cancel_by_close", False)
             rec["traded"] = traded
             if traded >= rec["volume"]:
                 rec["status"] = ST_FILLED
             elif traded > 0:
-                rec["status"] = ST_PARTIAL if not cancelled else ST_CANCELLED
-                rec["message"] += f"；成交 {traded:g}/{rec['volume']} 手后撤单" if cancelled else ""
+                rec["status"] = ST_PARTIAL if not (cancelled or by_close) else ST_CANCELLED
+                if by_close:
+                    rec["message"] += f"；对方已平仓，成交 {traded:g}/{rec['volume']} 手后撤销剩余"
+                elif cancelled:
+                    rec["message"] += f"；成交 {traded:g}/{rec['volume']} 手后撤单"
             elif any(o["status"] == "已拒绝" for o in orders):
                 rec["status"] = ST_REJECTED
             else:
                 rec["status"] = ST_CANCELLED
+                if by_close:
+                    rec["message"] += "；对方已平仓，撤单且不再跟单"
 
     # ------------------------------------------------------------------ 看门狗
     def _watchdog(self, stop_evt):

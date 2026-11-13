@@ -221,12 +221,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBrokers } from '@/api'
 import {
   monitorLogin, monitorLogout, getMonitorAccount, getMonitorStatus, getMonitorRecords,
-  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, resumeCopy
+  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, saveCopyConfig, resumeCopy
 } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
 import { FUTURES_PRODUCTS } from '@/constants/futuresProducts'
@@ -292,7 +292,14 @@ const refresh = async () => {
   polling = true
   try {
     const [st, rc] = await Promise.all([getMonitorStatus(), getMonitorRecords()])
-    if (st?.success) status.value = st.data
+    if (st?.success) {
+      status.value = st.data
+      if (!configSynced) {      // 首次打开时后端还没起来：拿到状态后再补做配置同步
+        syncConfigFromStatus()
+        await nextTick()
+        configSynced = true
+      }
+    }
     if (rc?.success) {
       records.value = rc.data.records
       logs.value = rc.data.logs
@@ -310,13 +317,27 @@ const refresh = async () => {
   }
 }
 
-// 页面（重新）打开时，把后端已有的配置同步回表单，避免显示与实际运行不一致
+// 页面（重新）打开时，把后端已有的配置同步回表单：运行中 = 实际生效的配置；
+// 未运行 = 上次保存在本地的配置（后端启动时已读入），保持和上次关闭软件时一样
+let configSynced = false     // 同步完成前不触发自动保存，避免用默认值覆盖已保存的配置
 const syncConfigFromStatus = () => {
   const c = status.value?.config
-  if (!c) return
+  if (!c) return false
   Object.keys(cfg).forEach(k => { if (k in c) cfg[k] = c[k] })
   whitelist.value = [...(c.symbol_whitelist || [])]
+  return true
 }
+
+// 表单一改就自动保存到本地（防抖）。运行中的修改仍需点「应用修改后的配置」才对信号生效，
+// 但保存的是表单当前值，下次打开软件时与关闭时一致
+let saveTimer = null
+const persistConfig = () => {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    try { await saveCopyConfig(buildConfig()) } catch (e) { /* 保存失败不打扰操作，下次修改会重试 */ }
+  }, 500)
+}
+watch([cfg, whitelist], () => { if (configSynced) persistConfig() }, { deep: true })
 
 // 用「记住账号密码」保存的被监控账号预填表单。保存的期货公司已不在监控支持的列表里时不预填该项
 const prefillSavedAccount = async () => {
@@ -339,11 +360,17 @@ onMounted(async () => {
     ElMessage.error('期货公司列表加载失败')
   }
   await prefillSavedAccount()
-  await refresh()
-  if (running.value) syncConfigFromStatus()
+  await refresh()           // 首次拿到状态时会同步配置并打开自动保存（见 refresh）
   timer = setInterval(refresh, 2000)
 })
-onBeforeUnmount(() => timer && clearInterval(timer))
+onBeforeUnmount(() => {
+  timer && clearInterval(timer)
+  // 离开页面时立即保存尚未落盘的修改
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveCopyConfig(buildConfig()).catch(() => {})
+  }
+})
 
 // ---- 操作 ----
 const handleMonitorLogin = async () => {

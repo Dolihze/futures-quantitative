@@ -70,6 +70,12 @@ class FakeCtp:
         return True
 
 
+@pytest.fixture(autouse=True)
+def _isolate_config_dir(monkeypatch, tmp_path):
+    """start() / update_config() 会把配置写到本地：一律指向临时目录，绝不碰真实的 %LOCALAPPDATA%。"""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+
 @pytest.fixture
 def fake(monkeypatch):
     f = FakeCtp()
@@ -478,6 +484,155 @@ def test_close_order_is_never_cancelled(fake):
         time.sleep(0.1)
     assert e.get_records()[0]["status"] == ct.ST_FILLED
     e.stop()
+
+
+def install_pending_send(fake, tag="S"):
+    """下单后委托一直挂着（未成交），返回其 vt_orderid。"""
+    seq = []
+
+    def slow_send(vt, action, price, volume):
+        fake.sent.append((vt, action, price, volume))
+        oid = f"CTP.{tag}{len(fake.sent)}"
+        seq.append(oid)
+        fake.orders[oid] = {"vt_orderid": oid, "active": True, "traded": 0, "status": "未成交"}
+        return {"success": True, "message": "委托已提交", "vt_orderids": [oid]}
+    fake.send_limit_order = slow_send
+    ct.ctp_service.send_limit_order = slow_send
+    return seq
+
+
+def wait_status(e, idx, not_status, timeout=5):
+    deadline = time.time() + timeout
+    while time.time() < deadline and e.get_records()[idx]["status"] == not_status:
+        time.sleep(0.05)
+
+
+def test_source_close_cancels_my_unfilled_open_order(fake):
+    """对方开多 -> 我挂开空还没成交；对方随后平多 -> 撤我那笔开空，不再跟，也没有仓位可平。"""
+    ids = install_pending_send(fake)
+    e = make_engine(fake)
+    feed(e, tid="O1", offset="开", direction="多", volume=2, price=4000.0)
+    assert fake.sent == [("rb2610.SHFE", "open_short", 4002.0, 2)]
+
+    feed(e, tid="C1", offset="平", direction="空", volume=2, price=4005.0)     # 对方卖出平多
+    assert fake.cancelled == ids                                              # 开仓单被撤
+    assert len(fake.sent) == 1                                                # 没有再下任何单（我方无仓可平）
+    recs = e.get_records()                                                    # 最新在左
+    assert recs[0]["status"] == ct.ST_SKIPPED                                 # 平仓信号：无仓可平，跳过
+    wait_status(e, 1, ct.ST_SUBMITTED)
+    assert recs[1]["action"] == "open_short"
+    r = e.get_records()[1]
+    assert r["status"] == ct.ST_CANCELLED and "对方已平仓" in r["message"]
+    e.stop()
+
+
+def test_source_close_short_cancels_my_unfilled_open_long(fake):
+    ids = install_pending_send(fake)
+    e = make_engine(fake)
+    feed(e, tid="O1", offset="开", direction="空", volume=1, price=4000.0)
+    assert fake.sent[0][1] == "open_long"
+    feed(e, tid="C1", offset="平", direction="多", volume=1, price=3995.0)     # 对方买入平空
+    assert fake.cancelled == ids
+    e.stop()
+
+
+def test_source_close_does_not_cancel_other_symbol_or_side(fake):
+    install_pending_send(fake)
+    e = make_engine(fake)
+    feed(e, tid="O1", symbol="rb2610", offset="开", direction="多", volume=1, price=4000.0)   # 我挂 open_short
+    feed(e, tid="C1", symbol="ag2612", offset="平", direction="空", volume=1)                # 别的合约
+    feed(e, tid="C2", symbol="rb2610", offset="平", direction="多", volume=1)                # 平空，对应 open_long
+    assert fake.cancelled == []
+    e.stop()
+
+
+def test_source_close_keeps_filled_part_and_closes_it(fake):
+    """开仓单部分成交：撤掉未成交部分，已成交的部分照常反向平掉。"""
+    ids = install_pending_send(fake)
+    e = make_engine(fake)
+    feed(e, tid="O1", offset="开", direction="多", volume=3, price=4000.0)
+    open_oid = ids[0]
+    fake.orders[open_oid]["traded"] = 1                                        # 已成交 1 手，还有 2 手挂着
+    fake.positions[("rb2610.SHFE", "空")] = (1, 0)
+    n = len(fake.sent)
+    feed(e, tid="C1", offset="平", direction="空", volume=3, price=4005.0)
+    assert fake.cancelled == [open_oid]                                        # 只撤开仓单，平仓单不撤
+    assert len(fake.sent) == n + 1 and fake.sent[-1] == ("rb2610.SHFE", "close_short", 3500.0, 1)
+    wait_status(e, 1, ct.ST_SUBMITTED)                                         # records[0] 是平仓单，[1] 是开仓单
+    open_rec = e.get_records()[1]
+    assert open_rec["action"] == "open_short"
+    assert open_rec["status"] == ct.ST_CANCELLED and open_rec["traded"] == 1   # 部分成交后被撤
+    assert "对方已平仓" in open_rec["message"]
+    e.stop()
+
+
+def test_source_close_ignores_already_finished_open_order(fake):
+    """开仓单早已全部成交：对方平仓时没有可撤的，只走正常平仓。"""
+    e = make_engine(fake)
+    feed(e, tid="O1", offset="开", direction="多", volume=1, price=4000.0)     # 默认立刻全部成交
+    time.sleep(0.8)                                                            # 等 _track 收尾
+    fake.positions[("rb2610.SHFE", "空")] = (1, 0)
+    feed(e, tid="C1", offset="平", direction="空", volume=1)
+    assert fake.cancelled == []
+    assert fake.sent[-1][1] == "close_short"
+    e.stop()
+
+
+@pytest.fixture
+def cfg_dir(tmp_path):
+    return tmp_path       # 隔离已由 autouse 的 _isolate_config_dir 完成
+
+
+def test_config_persists_across_restart(fake, cfg_dir):
+    e = make_engine(fake, size_mode="fixed", fixed_volume=3, price_offset_ticks=5,
+                    follow_timeout=120, symbol_whitelist="rb,ag")
+    e.stop()
+    assert os.path.exists(ct.config_path())
+
+    e2 = ct.CopyEngine()                     # 模拟重启软件
+    e2.load_saved_config()
+    assert e2.config["size_mode"] == "fixed" and e2.config["fixed_volume"] == 3
+    assert e2.config["price_offset_ticks"] == 5 and e2.config["follow_timeout"] == 120
+    assert e2.config["symbol_whitelist"] == ["ag", "rb"]
+
+
+def test_config_saved_without_starting(fake, cfg_dir):
+    e = ct.CopyEngine()
+    assert e.save_draft_config({"multiplier": 2.5, "price_offset_ticks": 4})["success"]
+    assert not e.running
+    e2 = ct.CopyEngine()
+    e2.load_saved_config()
+    assert e2.config["multiplier"] == 2.5 and e2.config["price_offset_ticks"] == 4
+
+
+def test_update_config_while_running_is_saved(fake, cfg_dir):
+    e = make_engine(fake)
+    assert e.update_config({"multiplier": 3, "price_offset_ticks": 7})["success"]
+    e.stop()
+    e2 = ct.CopyEngine()
+    e2.load_saved_config()
+    assert e2.config["multiplier"] == 3 and e2.config["price_offset_ticks"] == 7
+
+
+def test_invalid_config_not_saved(fake, cfg_dir):
+    e = ct.CopyEngine()
+    assert not e.save_draft_config({"multiplier": -1})["success"]
+    assert not os.path.exists(ct.config_path())
+
+
+def test_load_config_falls_back_to_default(cfg_dir):
+    assert ct.load_config() == ct.DEFAULT_CONFIG                      # 没有文件
+    os.makedirs(os.path.dirname(ct.config_path()), exist_ok=True)
+    with open(ct.config_path(), "w", encoding="utf-8") as f:
+        f.write("{坏文件")
+    assert ct.load_config() == ct.DEFAULT_CONFIG                      # 文件损坏
+    with open(ct.config_path(), "w", encoding="utf-8") as f:
+        f.write('{"multiplier": -5}')
+    assert ct.load_config() == ct.DEFAULT_CONFIG                      # 内容不合法
+    with open(ct.config_path(), "w", encoding="utf-8") as f:
+        f.write('{"multiplier": 2, "price_mode": "last"}')
+    cfg = ct.load_config()                                            # 旧版本字段：忽略旧的，补齐新的
+    assert cfg["multiplier"] == 2 and cfg["price_offset_ticks"] == 2 and "price_mode" not in cfg
 
 
 def test_stop_then_restart_gets_fresh_state(fake):
