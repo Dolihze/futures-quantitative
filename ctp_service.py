@@ -69,6 +69,11 @@ _QUERY_RETRY_INTERVAL = 0.1
 _QUERY_SEND_TIMEOUT = 30
 # 合约查询发出后等待全部应答的最长时间（秒）；超时就按已收到的合约放行，不能一直卡在「合约加载中」
 _QUERY_FINISH_TIMEOUT = 45
+# 登录后补查当日委托 / 成交：单次最多尝试次数、每次等应答的最长秒数、两次尝试的间隔秒数
+# （实测柜台刚登录时对查询返回 -2 流控或不应答，要隔几秒重试）
+_HISTORY_QUERY_TRIES = 20
+_HISTORY_QUERY_WAIT = 6
+_HISTORY_QUERY_INTERVAL = 1.5
 
 
 def _product_cache_path():
@@ -229,6 +234,10 @@ def _build_gateway_class():
             self._q_sent_all = False    # 所有查询都已发出
             self._q_products = {}       # exchange -> 本次发现的期货 ProductID 集合
             self._q_gen = 0             # 查询批次（断线重连后旧线程自动作废）
+            self._hist_orders = []      # 当日历史委托查询的应答（原始 dict）
+            self._hist_trades = []      # 当日历史成交查询的应答（原始 dict）
+            self._hist_done = {}        # "order" / "trade" -> 应答已收完（last）
+            self._hist_rid = {}         # "order" / "trade" -> 当前这次查询的 reqid（丢弃过期应答）
 
         # ---- 收尾 ----
 
@@ -249,6 +258,68 @@ def _build_gateway_class():
             trades, self.trade_data = self.trade_data, []
             for data in trades:
                 self._safe(self.onRtnTrade, data)
+
+            # 重新登录后柜台不会重推当日已有的委托 / 成交（私有流只推登录之后的新回报，vnpy_ctp 也不查历史），
+            # 不补查的话重进页面「当前委托 / 成交明细」就是空的
+            threading.Thread(target=self._load_history, args=(self._q_gen,), daemon=True).start()
+
+        # ---- 当日历史委托 / 成交 ----
+
+        def _query_history(self, gen, name, req, store):
+            """发一条历史查询（委托或成交），等柜台应答完（last）；流控（非 0）时间隔重试。
+            应答数据按到达顺序放进 store。返回 False 表示批次已作废 / 一直没发出去。"""
+            for _ in range(_HISTORY_QUERY_TRIES):
+                if gen != self._q_gen:
+                    return False
+                with self._q_lock:
+                    self.reqid += 1
+                    rid = self.reqid
+                    self._hist_done[name] = False
+                    self._hist_rid[name] = rid
+                    store.clear()
+                n = req({"BrokerID": self.brokerid, "InvestorID": self.userid}, rid)
+                if n == 0:
+                    deadline = time.time() + _HISTORY_QUERY_WAIT
+                    while time.time() < deadline and not self._hist_done[name]:
+                        if gen != self._q_gen:
+                            return False
+                        time.sleep(0.1)
+                    if self._hist_done[name]:
+                        return True
+                time.sleep(_HISTORY_QUERY_INTERVAL)
+            return False
+
+        def _load_history(self, gen):
+            """合约就绪后补查当日委托、成交，交给原有的 onRtnOrder / onRtnTrade 处理（字段与推送一致）。
+
+            先放委托再放成交：成交要靠委托回报登记的 OrderSysID -> 委托号 映射才能还原委托号。"""
+            try:
+                ok_o = self._query_history(gen, "order", self.reqQryOrder, self._hist_orders)
+                ok_t = self._query_history(gen, "trade", self.reqQryTrade, self._hist_trades)
+                if gen != self._q_gen:
+                    return
+                orders, trades = list(self._hist_orders), list(self._hist_trades)
+                for data in orders:
+                    self._safe(self.onRtnOrder, data)
+                for data in trades:
+                    self._safe(self.onRtnTrade, data)
+                self.gateway.write_log(
+                    f"当日委托 / 成交加载完成：委托 {len(orders)} 条{'' if ok_o else '（查询未完成）'}，"
+                    f"成交 {len(trades)} 笔{'' if ok_t else '（查询未完成）'}")
+            except Exception as e:  # noqa: BLE001
+                _safe_print(f"[CTP] 加载当日委托 / 成交出错：{type(e).__name__}: {e}")
+
+        def onRspQryOrder(self, data, error, reqid, last):
+            if data and reqid == self._hist_rid.get("order"):
+                self._hist_orders.append(data)
+            if last and reqid == self._hist_rid.get("order"):
+                self._hist_done["order"] = True
+
+        def onRspQryTrade(self, data, error, reqid, last):
+            if data and reqid == self._hist_rid.get("trade"):
+                self._hist_trades.append(data)
+            if last and reqid == self._hist_rid.get("trade"):
+                self._hist_done["trade"] = True
 
         def _safe(self, func, data):
             try:
@@ -349,11 +420,28 @@ def _build_gateway_class():
                     self._q_pending.pop(reqid, None)
                 self._maybe_finish()
 
+        def onRspQryTradingAccount(self, data, error, reqid, last):
+            """资金回报：vnpy 的 AccountData 只保留权益 / 冻结 / 可用，把算「今日盈亏」要用的字段另存一份。
+
+            今日盈亏 = 平仓盈亏 + 持仓盈亏 - 手续费。只看持仓盈亏的话，今天已平仓的盈亏、
+            以及全部平仓后的盈亏都会丢掉（表现为一直 0 / 重进后变 0）。"""
+            if data and "AccountID" in data:
+                self.gateway.today_stats = {
+                    "pre_balance": data.get("PreBalance", 0) or 0,          # 昨日权益
+                    "close_profit": data.get("CloseProfit", 0) or 0,        # 平仓盈亏
+                    "position_profit": data.get("PositionProfit", 0) or 0,  # 持仓盈亏
+                    "commission": data.get("Commission", 0) or 0,           # 手续费
+                    "deposit": data.get("Deposit", 0) or 0,                 # 入金
+                    "withdraw": data.get("Withdraw", 0) or 0,               # 出金
+                }
+            super().onRspQryTradingAccount(data, error, reqid, last)
+
     class _FuturesOnlyGateway_(CtpGateway):
         default_name = "CTP"
 
         def __init__(self, event_engine, gateway_name):
             super().__init__(event_engine, gateway_name)
+            self.today_stats = None     # 最近一次资金回报里算今日盈亏要用的字段，首次回报前为 None
             self.td_api = _FuturesOnlyTdApi(self)
 
     _FuturesOnlyGateway = _FuturesOnlyGateway_
@@ -650,7 +738,23 @@ def snapshot():
         "account": account,          # 首次资金回报到达前为 None
         "positions": positions,
         "position_profit": profit,   # 持仓盈亏合计
+        "today_profit": _today_profit(s, profit),   # 今日盈亏（含已平仓部分、扣手续费）
     }
+
+
+def _today_profit(s, fallback_position_profit):
+    """今日盈亏 = 平仓盈亏 + 持仓盈亏 - 手续费，来自柜台资金回报（见 _FuturesOnlyTdApi.onRspQryTradingAccount）。
+
+    以前只累加各持仓的 pnl：今天已经平掉的盈亏、全部平仓后的盈亏都算不进来，
+    重新登录后（持仓的浮动盈亏被柜台按昨结算重算、已平仓部分丢失）就显示成 0。
+    柜台还没回资金时退回到持仓盈亏合计。"""
+    try:
+        stats = s.engine.get_gateway(GATEWAY_NAME).today_stats
+    except Exception:  # noqa: BLE001
+        stats = None
+    if not stats:
+        return fallback_position_profit
+    return round(stats["close_profit"] + stats["position_profit"] - stats["commission"], 2)
 
 
 # ----------------------------------------------------------------------------

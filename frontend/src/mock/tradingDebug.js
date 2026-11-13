@@ -239,7 +239,8 @@ const snapshot = () => {
       frozen: 0
     },
     positions: view,
-    position_profit: profit
+    position_profit: profit,
+    today_profit: profit
   }
 }
 

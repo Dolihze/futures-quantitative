@@ -458,7 +458,8 @@ const applyAccountSnapshot = (snap) => {
 
   const balance = Number(acc.balance) || 0
   const available = Number(acc.available) || 0
-  const profit = Number(snap.position_profit) || 0
+  // 今日盈亏 = 平仓盈亏 + 持仓盈亏 - 手续费（后端 today_profit）；旧后端没有这个字段时退回持仓盈亏合计
+  const profit = Number(snap.today_profit ?? snap.position_profit) || 0
   const used = balance > 0 ? Math.max(balance - available, 0) : 0
 
   accountInfo.balance = fmtMoney(balance)
