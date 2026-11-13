@@ -65,73 +65,85 @@
           <h3>跟单配置</h3>
           <el-form label-position="top" size="small" @submit.prevent>
             <el-form-item label="手数模式">
-              <el-radio-group v-model="cfg.size_mode" :disabled="running">
-                <el-radio-button value="ratio">资金比例</el-radio-button>
+              <el-radio-group v-model="cfg.size_mode" :disabled="running" class="size-mode-group">
                 <el-radio-button value="multiple">固定倍数</el-radio-button>
                 <el-radio-button value="fixed">固定手数</el-radio-button>
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item v-if="cfg.size_mode !== 'fixed'" :label="cfg.size_mode === 'ratio' ? '倍率（在权益比基础上再乘）' : '倍数'">
+            <el-form-item v-if="cfg.size_mode !== 'fixed'">
+              <template #label>
+                <span>倍数</span>
+                <el-tooltip :content="preview" placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <el-input-number v-model="cfg.multiplier" :min="0.01" :max="100" :step="0.1" :precision="2"
                                controls-position="right" style="width: 100%" />
             </el-form-item>
-            <el-form-item v-else label="每笔固定手数">
+            <el-form-item v-else>
+              <template #label>
+                <span>每笔固定手数</span>
+                <el-tooltip :content="preview" placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <el-input-number v-model="cfg.fixed_volume" :min="1" :max="10000" :step="1" :precision="0"
                                controls-position="right" style="width: 100%" />
             </el-form-item>
 
-            <div v-if="preview" class="preview">{{ preview }}</div>
-
-            <el-form-item label="下单价格">
+            <el-form-item>
+              <template #label>
+                <span>下单价格</span>
+                <el-tooltip content="对手价：买入用卖一价、卖出用买一价；涨跌停价：用涨跌停价模拟市价单"
+                            placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <el-select v-model="cfg.price_mode" style="width: 100%">
-                <el-option label="对手价（买用卖一、卖用买一）" value="counter" />
+                <el-option label="对手价" value="counter" />
                 <el-option label="最新价" value="last" />
-                <el-option label="涨跌停价（模拟市价）" value="market" />
+                <el-option label="涨跌停价" value="market" />
               </el-select>
             </el-form-item>
 
-            <el-form-item label="未成交撤单（秒，0 = 不撤）">
+            <el-form-item>
+              <template #label>
+                <span>未成交撤单（秒）</span>
+                <el-tooltip content="委托超过该秒数仍未全部成交就自动撤单；0 = 不撤单" placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <el-input-number v-model="cfg.order_timeout" :min="0" :max="3600" :step="1" :precision="0"
                                controls-position="right" style="width: 100%" />
             </el-form-item>
-          </el-form>
-        </section>
 
-        <!-- 步骤 3：风控 -->
-        <section class="control-panel">
-          <h3>风控</h3>
-          <el-form label-position="top" size="small" @submit.prevent>
-            <div class="grid2">
-              <el-form-item label="单笔最大手数">
-                <el-input-number v-model="cfg.max_order_volume" :min="0" :max="100000" :precision="0"
-                                 controls-position="right" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="单合约最大持仓">
-                <el-input-number v-model="cfg.max_position" :min="0" :max="100000" :precision="0"
-                                 controls-position="right" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="当日最大亏损（元）">
-                <el-input-number v-model="cfg.daily_loss_limit" :min="0" :step="1000" :precision="0"
-                                 controls-position="right" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="当日最多跟单次数">
-                <el-input-number v-model="cfg.max_follow_count" :min="0" :max="100000" :precision="0"
-                                 controls-position="right" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="信号延迟上限（秒）">
-                <el-input-number v-model="cfg.signal_max_delay" :min="0" :max="3600" :precision="0"
-                                 controls-position="right" style="width: 100%" />
-              </el-form-item>
-            </div>
-            <el-form-item label="品种白名单（如 rb, ag，留空 = 全部）">
+            <el-form-item>
+              <template #label>
+                <span>信号延迟上限（秒）</span>
+                <el-tooltip content="对方成交到被处理的延迟超过该秒数，信号直接丢弃不跟单（开仓、平仓都生效）；0 = 不限制"
+                            placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <el-input-number v-model="cfg.signal_max_delay" :min="0" :max="3600" :step="1" :precision="0"
+                               controls-position="right" style="width: 100%" />
+            </el-form-item>
+
+            <el-form-item>
+              <template #label>
+                <span>品种白名单</span>
+                <el-tooltip content="只跟随这些品种，多个用逗号分隔，如 rb, ag, cu；留空 = 全部品种"
+                            placement="top" :show-after="200">
+                  <el-icon class="field-help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <el-input v-model="whitelistText" placeholder="rb, ag, cu" />
             </el-form-item>
-            <p class="hint">以上 0 表示不限制。平仓信号不受「最大持仓 / 最大次数 / 熔断」限制，且只会平掉本账号实际持有的手数。</p>
           </el-form>
         </section>
 
-        <!-- 步骤 4：启动 -->
+        <!-- 步骤 3：启动 -->
         <section class="control-panel start-panel">
           <h3>启动</h3>
 
@@ -187,10 +199,6 @@
           <div class="stat">
             <div class="stat-label">我的权益</div>
             <div class="stat-value">{{ money(status?.my_balance) }}</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">权益比（我 / 对方）</div>
-            <div class="stat-value">{{ ratioText }}</div>
           </div>
           <div class="stat">
             <div class="stat-label">本次跟单次数</div>
@@ -298,9 +306,8 @@ const monitorOn = computed(() => !!status.value?.monitor_connected)
 
 // ---- 跟单配置（默认值与后端 DEFAULT_CONFIG 一致；默认模拟模式）----
 const cfg = reactive({
-  size_mode: 'ratio', multiplier: 1, fixed_volume: 1, price_mode: 'counter', order_timeout: 5,
-  simulate: true, max_order_volume: 5, max_position: 10, daily_loss_limit: 0,
-  max_follow_count: 0, signal_max_delay: 3
+  size_mode: 'multiple', multiplier: 1, fixed_volume: 1, price_mode: 'counter', order_timeout: 5,
+  simulate: true, signal_max_delay: 3
 })
 const whitelistText = ref('')
 
@@ -324,21 +331,10 @@ const runClass = computed(() => {
   return status.value?.config?.simulate ? 'sim' : 'live'
 })
 
-const ratioText = computed(() => {
-  const a = status.value?.my_balance
-  const b = status.value?.src_balance
-  return a && b ? (a / b).toFixed(4) : '-'
-})
-
-// 手数预览：用当前权益比举例（对方开 1 / 5 手）
+// 手数预览：按当前配置举例（对方开 1 / 5 / 10 手）
 const preview = computed(() => {
-  const mode = cfg.size_mode
-  if (mode === 'fixed') return `对方每成交一笔，你固定跟 ${cfg.fixed_volume} 手`
-  const k = mode === 'multiple' ? cfg.multiplier
-    : (status.value?.my_balance && status.value?.src_balance
-      ? (status.value.my_balance / status.value.src_balance) * cfg.multiplier : null)
-  if (k === null) return '登录监控账号后可预览跟单手数'
-  const f = (n) => Math.floor(n * k + 1e-9)
+  if (cfg.size_mode === 'fixed') return `对方每成交一笔，你固定跟 ${cfg.fixed_volume} 手`
+  const f = (n) => Math.floor(n * cfg.multiplier + 1e-9)
   return `预览：对方 1 手 → 你 ${f(1)} 手；5 手 → ${f(5)} 手；10 手 → ${f(10)} 手（向下取整，余量累计到下一笔）`
 })
 
@@ -388,11 +384,7 @@ const syncConfigFromStatus = () => {
 const prefillSavedAccount = async () => {
   try {
     const saved = await getMonitorCredentials()
-    if (!saved?.saved) {
-      rememberAccount.value = false   // 没有保存过：默认不勾选，避免用户没留意就记住
-      return
-    }
-    rememberAccount.value = true
+    if (!saved?.saved) return   // 没有保存过：保持默认勾选
     if (brokerOptions.value.some(b => b.value === saved.broker)) form.broker = saved.broker
     form.username = saved.username
     form.password = saved.password || ''
@@ -447,9 +439,8 @@ const handleMonitorLogout = async () => {
 
 const handleStart = async () => {
   const live = !cfg.simulate
-  const summary = `手数：${{ ratio: '资金比例', multiple: '固定倍数', fixed: '固定手数' }[cfg.size_mode]}，`
-    + `价格：${{ counter: '对手价', last: '最新价', market: '涨跌停价' }[cfg.price_mode]}，`
-    + `单笔上限 ${cfg.max_order_volume || '不限'}，最大持仓 ${cfg.max_position || '不限'}`
+  const summary = `手数：${{ multiple: '固定倍数', fixed: '固定手数' }[cfg.size_mode]}，`
+    + `价格：${{ counter: '对手价', last: '最新价', market: '涨跌停价' }[cfg.price_mode]}`
   try {
     if (live) {
       await ElMessageBox.confirm(

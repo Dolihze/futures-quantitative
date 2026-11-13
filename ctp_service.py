@@ -1427,14 +1427,6 @@ def my_available_close(vt_symbol, side):
                if p.vt_symbol == vt_symbol and p.direction == want)
 
 
-def my_symbol_volume(vt_symbol):
-    """主账号某合约多空合计持仓（用于最大持仓风控）。"""
-    s = _session
-    if not s or not is_connected():
-        return 0
-    return sum(p.volume for p in s.engine.get_all_positions() if p.vt_symbol == vt_symbol)
-
-
 def my_order(vt_orderid):
     """主会话委托的当前快照 dict；不存在返回 None。"""
     s = _session

@@ -1,13 +1,13 @@
 """量化监控：跟单引擎。
 
 数据流：被监控账号（ctp_service 的只读监控会话）产生成交回报 -> on_source_trade()
-        -> 入队 -> 工作线程按配置计算手数 / 价格 / 风控 -> 通过【主会话】发出限价委托
+        -> 入队 -> 工作线程按配置过滤信号并计算手数 / 价格 -> 通过【主会话】发出限价委托
         -> 追踪委托，超时未成交则撤单（并记录），全部过程写入跟单记录。
 
 安全原则（涉及真实资金）：
   * 默认关闭；必须显式 start()，且 start() 之后才产生的成交才会被跟随（启动时记录基线）。
   * 监控账号只读，本模块永远只通过主会话下单。
-  * 任何拿不准的情况（行情缺失、合约未就绪、手数算出 0、风控命中、信号过期）一律放弃并留痕，
+  * 任何拿不准的情况（行情缺失、合约未就绪、手数算出 0、信号过期）一律放弃并留痕，
     绝不"猜"一个价格或手数去下单。
   * 平仓类信号只平主账号【实际持有】的手数，绝不会因为多平而反向开仓。
   * 同一笔源成交（vt_tradeid）只处理一次。
@@ -21,10 +21,9 @@ import collections
 import ctp_service
 
 # 手数模式
-SIZE_RATIO = "ratio"     # 按资金比例：源手数 × (我的权益 / 源权益) × multiplier
 SIZE_MULTIPLE = "multiple"  # 固定倍数：源手数 × multiplier
 SIZE_FIXED = "fixed"     # 固定手数：每笔成交固定跟 fixed_volume 手
-SIZE_MODES = (SIZE_RATIO, SIZE_MULTIPLE, SIZE_FIXED)
+SIZE_MODES = (SIZE_MULTIPLE, SIZE_FIXED)
 
 # 价格模式（后端只有限价单）
 PRICE_MODES = ("counter", "last", "market")
@@ -43,17 +42,13 @@ MAX_RECORDS = 500
 MAX_LOGS = 300
 
 DEFAULT_CONFIG = {
-    "size_mode": SIZE_RATIO,
-    "multiplier": 1.0,          # ratio / multiple 模式的倍率
+    "size_mode": SIZE_MULTIPLE,
+    "multiplier": 1.0,          # multiple 模式的倍数
     "fixed_volume": 1,          # fixed 模式的每笔手数
     "price_mode": "counter",
     "order_timeout": 5.0,       # 委托超过该秒数未全部成交则撤单（0 = 不撤）
     "simulate": True,           # 模拟模式：只记录"本应下单"，不真正下单。默认开，防止误触真单
-    "max_order_volume": 5,      # 单笔跟单最大手数（0 = 不限）
-    "max_position": 10,         # 单合约（多空合计）最大持仓手数（0 = 不限）
     "symbol_whitelist": [],     # 品种白名单（合约代码前缀字母，如 ["rb", "ag"]），空 = 全部
-    "daily_loss_limit": 0.0,    # 当日最大亏损（元，正数），权益较启动时回撤超过即熔断；0 = 不启用
-    "max_follow_count": 0,      # 当日最多跟单次数（0 = 不限）
     "signal_max_delay": 3.0,    # 信号延迟超过该秒数则丢弃（0 = 不限）
 }
 
@@ -103,14 +98,6 @@ def validate_config(raw):
 
         cfg["order_timeout"] = num("order_timeout", 0.0, 3600.0)
         cfg["simulate"] = bool(raw.get("simulate", cfg["simulate"]))
-
-        for k in ("max_order_volume", "max_position", "max_follow_count"):
-            v = num(k, 0.0, 100000.0)
-            if v != int(v):
-                raise ValueError(f"{k} 必须是整数")
-            cfg[k] = int(v)
-
-        cfg["daily_loss_limit"] = num("daily_loss_limit", 0.0, 1e12)
         cfg["signal_max_delay"] = num("signal_max_delay", 0.0, 3600.0)
 
         wl = raw.get("symbol_whitelist", cfg["symbol_whitelist"])
@@ -122,7 +109,7 @@ def validate_config(raw):
     return cfg, ""
 
 
-def compute_volume(cfg, src_volume, my_balance, src_balance, remainder=0.0):
+def compute_volume(cfg, src_volume, remainder=0.0):
     """计算跟单手数。返回 (手数 int, 新的取整余量 float, 说明)。
 
     取整规则：向下取整，但把被舍掉的小数累积进 remainder，下一笔一并计入——
@@ -130,15 +117,8 @@ def compute_volume(cfg, src_volume, my_balance, src_balance, remainder=0.0):
     if cfg["size_mode"] == SIZE_FIXED:
         return int(cfg["fixed_volume"]), 0.0, f"固定 {cfg['fixed_volume']} 手"
 
-    if cfg["size_mode"] == SIZE_MULTIPLE:
-        raw = src_volume * cfg["multiplier"]
-        note = f"{src_volume:g} × 倍数 {cfg['multiplier']:g}"
-    else:
-        if not my_balance or not src_balance or my_balance <= 0 or src_balance <= 0:
-            return 0, remainder, "权益数据不可用，无法按资金比例计算"
-        ratio = my_balance / src_balance
-        raw = src_volume * ratio * cfg["multiplier"]
-        note = f"{src_volume:g} × 权益比 {ratio:.4f} × 倍率 {cfg['multiplier']:g}"
+    raw = src_volume * cfg["multiplier"]
+    note = f"{src_volume:g} × 倍数 {cfg['multiplier']:g}"
 
     total = raw + remainder
     vol = int(math.floor(total + 1e-9))
@@ -165,10 +145,9 @@ class CopyEngine:
         self._lock = threading.RLock()
         self.config = dict(DEFAULT_CONFIG)
         self.running = False
-        self.paused_reason = ""          # 非空 = 因风控 / 断连被自动暂停
+        self.paused_reason = ""          # 非空 = 因账号断连被自动暂停
         self.started_at = 0.0
         self.baseline_ts = 0.0           # 只跟 baseline_ts 之后到达的成交
-        self.start_my_balance = None     # 启动时我的权益（每日亏损熔断基准）
         self.follow_count = 0            # 本次运行已发起的跟单次数
         self.seen = set()                # 已处理过的源 vt_tradeid
         self.remainders = collections.defaultdict(float)   # (vt_symbol, action) -> 取整余量
@@ -215,7 +194,6 @@ class CopyEngine:
             self.paused_reason = ""
             self.started_at = time.time()
             self.baseline_ts = self.started_at     # 基线：此刻之前的成交一律不跟
-            self.start_my_balance = ctp_service.my_balance()
             self.follow_count = 0
             self.remainders.clear()
             # 每次运行用全新的停止事件：旧线程只认旧事件，绝不会被新一轮 start() 复活
@@ -257,7 +235,7 @@ class CopyEngine:
         return {"success": True, "message": "配置已更新"}
 
     def resume(self):
-        """人工确认后，解除风控 / 断连造成的自动暂停。"""
+        """人工确认后，解除断连造成的自动暂停。"""
         with self._lock:
             if not self.running:
                 return {"success": False, "message": "跟单未运行"}
@@ -358,17 +336,7 @@ class CopyEngine:
             self._skip(sig, action, "不在品种白名单内")
             return
 
-        # ---- 每日亏损熔断 / 最大跟单次数（只拦新开仓；平仓永远放行，避免风控把人困在仓位里）----
         is_open = action.startswith("open")
-        if is_open and cfg["daily_loss_limit"] > 0 and self.start_my_balance:
-            bal = ctp_service.my_balance()
-            if bal is not None and self.start_my_balance - bal >= cfg["daily_loss_limit"]:
-                self._pause(f"当日亏损 {self.start_my_balance - bal:.0f} 元已达熔断线 {cfg['daily_loss_limit']:g} 元")
-                self._skip(sig, action, "触发每日亏损熔断，跟单已暂停（平仓信号仍会处理）", level="error")
-                return
-        if is_open and cfg["max_follow_count"] > 0 and self.follow_count >= cfg["max_follow_count"]:
-            self._skip(sig, action, f"已达最大跟单次数 {cfg['max_follow_count']}")
-            return
 
         # ---- 合约 ----
         contract = ctp_service.my_contract(sig["vt_symbol"])
@@ -379,11 +347,9 @@ class CopyEngine:
         # ---- 手数 ----
         vt = sig["vt_symbol"]
         key = (vt, action)
-        my_bal = ctp_service.my_balance()
-        src_bal = ctp_service.monitor_balance()
         with self._lock:
             rem = self.remainders[key]
-        vol, new_rem, note = compute_volume(cfg, sig["volume"], my_bal, src_bal, rem)
+        vol, new_rem, note = compute_volume(cfg, sig["volume"], rem)
         with self._lock:
             self.remainders[key] = new_rem
 
@@ -405,20 +371,6 @@ class CopyEngine:
         if vol <= 0:
             self._skip(sig, action, f"计算手数为 0，已跳过（{note}）；余量已累积到下次")
             return
-
-        # ---- 单笔上限 / 最大持仓 ----
-        if cfg["max_order_volume"] > 0 and vol > cfg["max_order_volume"]:
-            note += f"；超过单笔上限 {cfg['max_order_volume']}，已下调"
-            vol = cfg["max_order_volume"]
-        if is_open and cfg["max_position"] > 0:
-            cur = ctp_service.my_symbol_volume(vt)
-            room = cfg["max_position"] - cur
-            if room <= 0:
-                self._skip(sig, action, f"{sig['symbol']} 持仓 {cur} 手已达上限 {cfg['max_position']}", volume=vol)
-                return
-            if vol > room:
-                note += f"；持仓上限剩余 {room} 手，已下调"
-                vol = room
 
         # 合约的最小 / 最大手数
         if contract:
@@ -526,7 +478,6 @@ class CopyEngine:
                 "trade_connected": ctp_service.is_connected(),
                 "my_balance": ctp_service.my_balance(),
                 "src_balance": ctp_service.monitor_balance(),
-                "start_my_balance": self.start_my_balance,
             }
 
     def get_records(self):

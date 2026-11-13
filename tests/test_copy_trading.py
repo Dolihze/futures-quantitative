@@ -1,7 +1,7 @@
 """量化监控跟单引擎的单元测试：python -m pytest tests/test_copy_trading.py -q
 
 用 FakeCtp 替换 ctp_service，不依赖真实 CTP / 网络，覆盖：
-手数计算、开平分类、配置校验、风控、平仓防多平、去重、基线过滤、模拟模式、实盘下单与撤单。"""
+手数计算、开平分类、配置校验、品种白名单 / 信号延迟、平仓防多平、去重、基线过滤、模拟模式、实盘下单与撤单。"""
 import os
 import sys
 import time
@@ -49,9 +49,6 @@ class FakeCtp:
     def my_available_close(self, vt, side):
         v, f = self.positions.get((vt, side), (0, 0))
         return max(v - f, 0)
-    def my_symbol_volume(self, vt):
-        return sum(v for (s, _), (v, _) in self.positions.items() if s == vt)
-
     def follow_price(self, vt, action, mode): return self.price
 
     def send_limit_order(self, vt, action, price, volume):
@@ -76,7 +73,7 @@ class FakeCtp:
 def fake(monkeypatch):
     f = FakeCtp()
     for name in ("monitor_connected", "is_connected", "my_balance", "monitor_balance", "my_contract",
-                 "my_position_volume", "my_available_close", "my_symbol_volume", "follow_price",
+                 "my_position_volume", "my_available_close", "follow_price",
                  "send_limit_order", "my_order", "my_cancel"):
         monkeypatch.setattr(ct.ctp_service, name, getattr(f, name))
     return f
@@ -85,7 +82,7 @@ def fake(monkeypatch):
 def make_engine(fake, **overrides):
     e = ct.CopyEngine()
     cfg = {"simulate": False, "size_mode": "multiple", "multiplier": 1, "signal_max_delay": 0,
-           "order_timeout": 0, "max_order_volume": 0, "max_position": 0}
+           "order_timeout": 0}
     cfg.update(overrides)
     res = e.start(cfg)
     assert res["success"], res
@@ -129,16 +126,10 @@ def test_classify():
 def test_compute_volume_modes():
     cfg = dict(ct.DEFAULT_CONFIG)
     cfg.update(size_mode="fixed", fixed_volume=3)
-    assert ct.compute_volume(cfg, 10, 1, 1)[0] == 3
+    assert ct.compute_volume(cfg, 10)[0] == 3
 
     cfg.update(size_mode="multiple", multiplier=0.5)
-    assert ct.compute_volume(cfg, 4, 1, 1)[0] == 2
-
-    cfg.update(size_mode="ratio", multiplier=1.0)
-    assert ct.compute_volume(cfg, 10, 50000, 100000)[0] == 5       # 权益比 0.5
-    assert ct.compute_volume(cfg, 10, None, 100000)[0] == 0        # 权益缺失 -> 不下单
-    assert ct.compute_volume(cfg, 10, 50000, 0)[0] == 0
-    assert ct.compute_volume(cfg, 10, 0, 100000)[0] == 0
+    assert ct.compute_volume(cfg, 4)[0] == 2
 
 
 def test_compute_volume_remainder_accumulates():
@@ -146,7 +137,7 @@ def test_compute_volume_remainder_accumulates():
     cfg.update(size_mode="multiple", multiplier=0.4)
     rem, total = 0.0, 0
     for _ in range(5):                      # 5 笔 × 1 手 × 0.4 = 2.0 手
-        v, rem, _ = ct.compute_volume(cfg, 1, 1, 1, rem)
+        v, rem, _ = ct.compute_volume(cfg, 1, rem)
         total += v
     assert total == 2                       # 余量累积，没有被系统性丢掉
 
@@ -154,13 +145,14 @@ def test_compute_volume_remainder_accumulates():
 def test_validate_config():
     assert ct.validate_config({})[1] == ""
     assert ct.validate_config({"size_mode": "x"})[1]
+    assert ct.validate_config({"size_mode": "ratio"})[1]          # 资金比例模式已移除
     assert ct.validate_config({"multiplier": 0})[1]
     assert ct.validate_config({"multiplier": -1})[1]
     assert ct.validate_config({"multiplier": float("nan")})[1]
     assert ct.validate_config({"multiplier": "abc"})[1]
     assert ct.validate_config({"fixed_volume": 1.5})[1]
     assert ct.validate_config({"price_mode": "foo"})[1]
-    assert ct.validate_config({"max_order_volume": 2.5})[1]
+    assert ct.validate_config({"signal_max_delay": -1})[1]
     assert ct.validate_config({"simulate": 0})[0]["simulate"] is False
     cfg, _ = ct.validate_config({"symbol_whitelist": "RB, ag，  cu"})
     assert cfg["symbol_whitelist"] == ["ag", "cu", "rb"]
@@ -259,14 +251,6 @@ def test_zero_volume_skipped(fake):
     e.stop()
 
 
-def test_ratio_mode_uses_balances(fake):
-    fake.my_bal, fake.src_bal = 50000.0, 200000.0                    # 比例 0.25
-    e = make_engine(fake, size_mode="ratio")
-    feed(e, tid="R1", volume=8)
-    assert fake.sent[0][3] == 2
-    e.stop()
-
-
 def test_missing_price_skips_and_never_guesses(fake):
     fake.price = (None, "行情尚未到达")
     e = make_engine(fake)
@@ -285,29 +269,8 @@ def test_missing_contract_skips_in_live(fake):
 
 
 # ----------------------------------------------------------------------------
-# 风控
+# 信号过滤：品种白名单 / 信号延迟
 # ----------------------------------------------------------------------------
-
-def test_max_order_volume_caps(fake):
-    e = make_engine(fake, max_order_volume=3)
-    feed(e, volume=10)
-    assert fake.sent[0][3] == 3
-    e.stop()
-
-
-def test_max_position_caps_and_blocks(fake):
-    e = make_engine(fake, max_position=5)
-    fake.positions[("rb2610.SHFE", "多")] = (4, 0)
-    feed(e, tid="P1", volume=3)
-    assert fake.sent[0][3] == 1                                       # 只剩 1 手空间
-    fake.positions[("rb2610.SHFE", "多")] = (5, 0)
-    feed(e, tid="P2", volume=1)
-    assert len(fake.sent) == 1                                        # 已满，拒绝
-    # 平仓不受最大持仓限制
-    feed(e, tid="P3", offset="平", direction="空", volume=1)
-    assert len(fake.sent) == 2
-    e.stop()
-
 
 def test_whitelist(fake):
     e = make_engine(fake, symbol_whitelist="ag")
@@ -324,29 +287,6 @@ def test_signal_delay_dropped(fake):
     feed(e, tid="D1", ts=old)
     assert fake.sent == []
     assert "延迟" in e.get_records()[0]["message"]
-    e.stop()
-
-
-def test_max_follow_count_blocks_opens_only(fake):
-    e = make_engine(fake, max_follow_count=1)
-    feed(e, tid="F1")
-    feed(e, tid="F2")                                                 # 第二次开仓被拦
-    assert len(fake.sent) == 1
-    fake.positions[("rb2610.SHFE", "多")] = (2, 0)
-    feed(e, tid="F3", offset="平", direction="空", volume=1)          # 平仓放行
-    assert len(fake.sent) == 2
-    e.stop()
-
-
-def test_daily_loss_pauses_opens_but_allows_closes(fake):
-    e = make_engine(fake, daily_loss_limit=1000)
-    fake.my_bal = 98000.0                                             # 较启动时亏 2000
-    feed(e, tid="L1")
-    assert fake.sent == []
-    assert e.paused_reason
-    # 暂停期间平仓信号也丢弃（引擎已暂停），但手动恢复后可继续
-    assert e.resume()["success"]
-    assert e.paused_reason == ""
     e.stop()
 
 

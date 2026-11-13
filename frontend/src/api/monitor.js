@@ -45,7 +45,7 @@ export function updateCopyConfig(config) {
   return request({ url: '/api/monitor/config', method: 'post', data: { config }, silent: true })
 }
 
-// 人工解除风控 / 断连造成的自动暂停
+// 人工解除断连造成的自动暂停
 export function resumeCopy() {
   return request({ url: '/api/monitor/resume', method: 'post', silent: true })
 }

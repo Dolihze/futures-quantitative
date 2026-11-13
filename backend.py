@@ -843,7 +843,7 @@ def monitor_config():
 
 @app.route('/api/monitor/resume', methods=['POST'])
 def monitor_resume():
-    """人工解除风控 / 断连造成的自动暂停"""
+    """人工解除断连造成的自动暂停"""
     return jsonify(copy_trading.engine.resume())
 
 

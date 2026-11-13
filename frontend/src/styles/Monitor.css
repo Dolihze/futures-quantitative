@@ -121,21 +121,14 @@
   font-weight: 600;
 }
 
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 10px;
-}
-
-.preview {
-  margin: -6px 0 12px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 1.6;
+/* 表单标签后面的说明图标（鼠标悬浮显示 tooltip），外观和「模拟模式」的问号一致 */
+.field-help {
+  margin-left: 4px;
+  font-size: 14px;
   color: var(--text-secondary);
-  background: rgba(var(--primary-rgb), 0.08);
-  border: 1px dashed rgba(var(--primary-rgb), 0.35);
+}
+.field-help:hover {
+  color: var(--text-primary);
 }
 
 /* 模拟模式开关：左侧依次是说明图标、文字；文字与下方 .hint 提示语同字号同颜色 */
@@ -165,8 +158,12 @@
 .start-panel .simulate-row {
   margin-bottom: 6px;
 }
+/* 提示语和表单标签（期货公司 / 账号 …）同字号、同行高、同颜色 */
 .start-panel .hint {
   margin-top: 4px;
+  font-size: 12px;
+  line-height: 24px;
+  color: var(--text-secondary);
 }
 
 .danger-tip {
@@ -187,6 +184,25 @@
   color: var(--text-secondary);
   font-size: 12px;
   padding-bottom: 2px;
+}
+/* 顶部标签布局：去掉 Element Plus 默认的 margin-bottom: 8px；
+   标签文字和后面的说明图标用 flex 垂直居中，避免按基线排列时图标偏上 */
+.control-panel :deep(.el-form-item--label-top .el-form-item__label) {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+/* 手数模式：两个选项平分整行宽度 */
+.control-panel :deep(.size-mode-group) {
+  display: flex;
+  width: 100%;
+}
+.control-panel :deep(.size-mode-group .el-radio-button) {
+  flex: 1;
+}
+.control-panel :deep(.size-mode-group .el-radio-button__inner) {
+  width: 100%;
 }
 
 /* 标签与输入框同一行的表单（被监控账号） */
@@ -215,7 +231,7 @@
 /* 概览卡片 */
 .stats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
