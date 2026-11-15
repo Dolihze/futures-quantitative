@@ -9,7 +9,6 @@
           </svg>
           返回策略总览
         </router-link>
-        <span class="nav-title">{{ result?.strategy.name || '策略详情' }}</span>
       </div>
       <div class="nav-right">
         <UserMenu />
