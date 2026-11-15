@@ -68,7 +68,31 @@
               <span class="legend-item"><i class="lg-line up"></i>盈利</span>
               <span class="legend-item"><i class="lg-line down"></i>亏损</span>
             </div>
+            <!-- 只切换图上显示的 K 线周期，回测结果不变；买卖点按时间重新落到新周期的 K 线上 -->
+            <el-select
+              v-model="viewPeriod"
+              class="kline-period-select"
+              size="small"
+              :loading="klineLoading"
+              :disabled="loading || klineLoading"
+              @change="changeViewPeriod"
+            >
+              <el-option
+                v-for="o in PERIOD_OPTIONS"
+                :key="o.value"
+                :value="o.value"
+                :label="o.value === strategyPeriod ? `${o.label}（回测周期）` : o.label"
+              />
+            </el-select>
           </div>
+          <el-alert
+            v-if="klineNotice"
+            class="kline-notice"
+            type="warning"
+            :title="klineNotice"
+            show-icon
+            :closable="false"
+          />
           <div ref="klineRef" class="detail-kline"></div>
         </section>
 
@@ -114,7 +138,7 @@
             </el-table-column>
             <el-table-column prop="lots" label="手数" width="60" align="right" />
             <el-table-column label="止盈 / 止损价" min-width="130" align="right">
-              <template #default="{ row }">{{ row.takeProfit.toFixed(2) }} / {{ row.stopLoss.toFixed(2) }}</template>
+              <template #default="{ row }">{{ row.takeProfit == null ? '无' : row.takeProfit.toFixed(2) }} / {{ row.stopLoss.toFixed(2) }}</template>
             </el-table-column>
             <el-table-column prop="reason" label="平仓原因" width="90" />
             <el-table-column label="持仓K线" width="80" align="right">
@@ -156,11 +180,22 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { runBacktest } from '@/api'
+import { runBacktest, getBacktestKline } from '@/api'
 import { chartColors, onThemeChange } from '@/utils/chartTheme'
 import { fmtMoney, fmtRatio, pnlClass, sideText } from './format'
 import { buildDayOptions, clampDays } from './range'
+import { mapTrades } from './klineMap'
+
+// K 线图可切换的显示周期（分钟），与后端 BACKTEST_PERIODS 一致
+const PERIOD_OPTIONS = [
+  { value: '1', label: '1分钟' },
+  { value: '5', label: '5分钟' },
+  { value: '15', label: '15分钟' },
+  { value: '30', label: '30分钟' },
+  { value: '60', label: '60分钟' }
+]
 
 // 成交明细每页条数
 const PAGE_SIZE = 10
@@ -203,6 +238,60 @@ const equityRef = ref(null)
 let klineChart = null
 let equityChart = null
 
+// ---------- K 线显示周期 ----------
+// 回测始终按策略自己的周期跑；这里只决定图上画哪个周期的 K 线。
+// 显示周期 = 策略周期时直接用回测返回的 K 线；否则单独请求对应周期的 K 线，买卖点按时间映射过去。
+const strategyPeriod = computed(() => String(result.value?.period || result.value?.strategy?.period || ''))
+const viewPeriod = ref('')
+const klineLoading = ref(false)
+const viewBars = ref([]) // 当前图上显示的 K 线（升序）
+const klineNotice = ref('')
+let klineSeq = 0
+
+// 图上用的成交点：显示周期 = 回测周期时用原始下标，其余按时间映射；hiddenTrades = 落在显示范围之外画不出来的笔数
+const viewTrades = computed(() => {
+  const all = result.value?.trades || []
+  if (viewPeriod.value === strategyPeriod.value) return { trades: all, hidden: 0 }
+  return mapTrades(all, viewBars.value)
+})
+
+// 显示周期（含图上 K 线）切换。只请求 K 线，不重跑回测
+async function changeViewPeriod() {
+  if (!result.value) return
+  await loadViewBars()
+  await nextTick()
+  renderKline()
+}
+
+async function loadViewBars() {
+  const my = ++klineSeq
+  klineNotice.value = ''
+  if (viewPeriod.value === strategyPeriod.value) {
+    viewBars.value = result.value.kline
+    return
+  }
+  klineLoading.value = true
+  try {
+    // days 用「全部可得数据」：不同周期可得的天数差别很大，取全量后由买卖点映射决定哪些能显示
+    const res = await getBacktestKline({ product: params.product, period: viewPeriod.value, days: 3650 })
+    if (my !== klineSeq) return
+    if (!res.success || !res.data?.length) throw new Error(res.message || '未获取到K线数据')
+    viewBars.value = res.data
+    const { hidden } = mapTrades(result.value.trades, res.data)
+    if (hidden > 0) {
+      klineNotice.value = `${viewPeriod.value}分钟线数据范围有限，有 ${hidden} 笔交易发生在这段 K 线之外，图上没有显示（成交明细里仍有）。`
+    }
+  } catch (e) {
+    if (my !== klineSeq) return
+    // 取不到就退回回测周期，保证图和买卖点始终一致
+    viewPeriod.value = strategyPeriod.value
+    viewBars.value = result.value.kline
+    klineNotice.value = `${e?.response?.data?.message || e?.message || '加载失败'}，已切回回测周期`
+  } finally {
+    if (my === klineSeq) klineLoading.value = false
+  }
+}
+
 // ---------- 数据 ----------
 let seq = 0
 
@@ -219,6 +308,12 @@ async function load() {
     } else {
       result.value = res
       page.value = 1
+      // 重新回测后 K 线范围可能变了：显示周期回到回测周期，用刚返回的 K 线
+      klineSeq++
+      klineLoading.value = false
+      viewPeriod.value = String(res.period || res.strategy?.period || '')
+      viewBars.value = res.kline
+      klineNotice.value = ''
       availableDays.value = res.coverage?.availableDays || 0
       // 所选天数超出可得数据时，选中项落到「全部」（结果本来就是全部数据，不必重新请求）
       requestedDays.value = params.days
@@ -283,8 +378,8 @@ function renderAll() {
 function renderKline() {
   if (!klineChart || !result.value) return
   const c = chartColors()
-  const bars = result.value.kline
-  const trades = result.value.trades
+  const bars = viewBars.value
+  const trades = viewTrades.value.trades
   const sideColor = (side) => (side === 'long' ? UP : DOWN)
 
   const entryPoints = trades.map((t) => ({
@@ -466,12 +561,18 @@ function renderEquity() {
 // 点击成交明细：把 K 线窗口移到这笔交易附近，并弹出提示
 function focusTrade(row) {
   if (!klineChart || !result.value) return
-  const total = result.value.kline.length
-  const span = Math.max(row.exitIndex - row.entryIndex, 10)
-  const from = Math.max(row.entryIndex - span, 0)
-  const to = Math.min(row.exitIndex + span, total - 1)
+  // 表格里的 row 带的是回测周期的下标；图上显示别的周期时，用映射后的下标定位（同一笔交易按 no 对应）
+  const shown = viewTrades.value.trades.find((t) => t.no === row.no)
+  if (!shown) {
+    ElMessage.info('这笔交易在当前显示周期的 K 线范围之外')
+    return
+  }
+  const total = viewBars.value.length
+  const span = Math.max(shown.exitIndex - shown.entryIndex, 10)
+  const from = Math.max(shown.entryIndex - span, 0)
+  const to = Math.min(shown.exitIndex + span, total - 1)
   klineChart.dispatchAction({ type: 'dataZoom', startValue: from, endValue: to })
-  klineChart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: row.entryIndex })
+  klineChart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: shown.entryIndex })
   klineRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 

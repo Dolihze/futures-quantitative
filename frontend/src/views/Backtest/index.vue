@@ -9,7 +9,6 @@
           </svg>
           返回首页
         </router-link>
-        <span class="nav-title">量化回测</span>
       </div>
       <div class="nav-right">
         <UserMenu />

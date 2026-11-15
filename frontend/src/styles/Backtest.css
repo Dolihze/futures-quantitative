@@ -376,6 +376,16 @@
   height: 520px;
 }
 
+/* K 线显示周期下拉：贴在卡片标题行最右边 */
+.kline-period-select {
+  width: 150px;
+  margin-left: auto;
+}
+
+.kline-notice {
+  margin-bottom: 10px;
+}
+
 .detail-equity {
   width: 100%;
   height: 280px;

@@ -3,7 +3,9 @@
 设计：
   - 策略 = 一个注册过的函数 `fn(bars, ctx) -> list[Signal | None]`，长度与 K 线相同；
     某根 K 线收盘时想开仓就返回 Signal（方向 + 止盈/止损距离），否则返回 None。
-  - 引擎负责：同一时刻只持一个仓位、逐根 K 线检查止盈止损、结算盈亏、统计胜率/盈亏比/净值曲线。
+    Signal 默认按该根收盘价市价开仓；填了 entry_price 则改为限价挂单（下一根起触价成交），
+    填了 stop_price 用绝对止损价，take_profit=None 表示不设止盈（只靠止损出局）。
+  - 引擎负责：同一时刻只持一个仓位（或一张挂单）、逐根 K 线检查止盈止损、结算盈亏、统计胜率/盈亏比/净值曲线。
   - 新增策略：在本文件里写一个函数并加上 `@register(...)` 即可，前端首页会自动出现新卡片。
 
 K 线 bars 是 dict 列表：{time, open, high, low, close, volume}，time 为 'YYYY-MM-DD HH:MM:SS'。
@@ -251,9 +253,13 @@ def reversal_indicator(bars: list[dict]) -> tuple[list, list]:
 @dataclass
 class Signal:
     side: str  # 'long' | 'short'
-    take_profit: float  # 止盈距离（价格）
-    stop_loss: float  # 止损距离（价格）
+    take_profit: Optional[float]  # 止盈距离（价格）；None = 不设止盈，只靠止损出局
+    stop_loss: float  # 止损距离（价格）；给了 stop_price 时被忽略
     reason: str = ""  # 触发原因，展示在成交明细里
+    # ---- 以下为可选扩展：限价挂单 / 绝对价止损。都不填时行为与旧版完全一致（收盘价开仓、距离止损） ----
+    entry_price: Optional[float] = None  # 限价挂单价：本根收盘后挂出，之后的 K 线触价才成交；None = 按本根收盘价立即开仓
+    stop_price: Optional[float] = None  # 绝对止损价；None = 用 stop_loss 距离相对成交价计算
+    expire_bars: Optional[int] = None  # 挂单有效根数（从下一根起算）；None = 一直有效，直到成交 / 止损位被破 / 数据结束
 
 
 @dataclass
@@ -337,6 +343,166 @@ def strategy_reversal(bars: list[dict], ctx: StrategyContext) -> list:
 
 
 # ---------------------------------------------------------------------------
+# 趋势跟随：三波段回踩建仓
+# ---------------------------------------------------------------------------
+TREND_SWING_TICKS = 15  # ZigZag 阈值（跳）：价格从极值反向运动超过它才确认一个转折点
+TREND_ENTRY_RATIO = 1 / 3  # 建仓位置 = 前一波段低点 + 波段高度 × 此比例（从低点往上量）
+TREND_PENDING_BARS = 30  # 挂单有效根数；超过未成交就撤单
+TREND_LEVELS = 3  # 趋势确认级数：连续 N 个低点 + N 个高点逐级抬高（做空相反）才算趋势
+
+
+def zigzag_pivots(bars: list[dict], threshold: float) -> list[dict]:
+    """ZigZag 转折点，逐根确认、不使用未来数据。
+
+    价格从当前极值反向运动 >= threshold 时，才确认该极值是一个转折点。
+    返回按确认时间升序的列表，每项：
+      {"kind": "high"|"low", "price", "index": 极值所在 K 线, "confirm": 确认它的那根 K 线}
+    相邻转折点一定高低交替；最后一个还在延伸中的极值没有被确认，不在列表里。
+    """
+    pivots: list[dict] = []
+    if not bars:
+        return pivots
+    # 先观察方向：第一根的高 / 低作为双向候选极值，哪边先运动够 threshold 就定方向
+    hi_p, hi_i = bars[0]["high"], 0
+    lo_p, lo_i = bars[0]["low"], 0
+    direction = 0  # 0 未定；1 = 正在找高点（向上段）；-1 = 正在找低点（向下段）
+    for i in range(1, len(bars)):
+        h, l = bars[i]["high"], bars[i]["low"]
+        if direction == 0:
+            if h > hi_p:
+                hi_p, hi_i = h, i
+            if l < lo_p:
+                lo_p, lo_i = l, i
+            up, down = hi_p - lo_p >= threshold and hi_i > lo_i, hi_p - lo_p >= threshold and lo_i > hi_i
+            if up:
+                pivots.append({"kind": "low", "price": lo_p, "index": lo_i, "confirm": i})
+                direction = 1
+            elif down:
+                pivots.append({"kind": "high", "price": hi_p, "index": hi_i, "confirm": i})
+                direction = -1
+            continue
+        if direction == 1:  # 向上段：跟踪高点，回落够 threshold 就确认高点
+            if h > hi_p:
+                hi_p, hi_i = h, i
+            elif hi_p - l >= threshold:
+                pivots.append({"kind": "high", "price": hi_p, "index": hi_i, "confirm": i})
+                direction = -1
+                lo_p, lo_i = l, i
+        else:  # 向下段：跟踪低点，反弹够 threshold 就确认低点
+            if l < lo_p:
+                lo_p, lo_i = l, i
+            elif h - lo_p >= threshold:
+                pivots.append({"kind": "low", "price": lo_p, "index": lo_i, "confirm": i})
+                direction = 1
+                hi_p, hi_i = h, i
+    return pivots
+
+
+def split_sessions(bars: list[dict], gap_minutes: float = 5) -> list[tuple[int, int]]:
+    """按时间缺口切分交易时段，返回 [(起始下标, 结束下标含)]。
+
+    1 分钟线里连续交易时 K 线间隔是 1 分钟；相邻两根间隔超过 gap_minutes 就说明跨了时段
+    （午间休市、10:15 小歇、日盘→夜盘、夜盘→次日日盘、周末）。时段之间有跳空，波段不能跨时段连。"""
+    from datetime import datetime
+
+    if not bars:
+        return []
+    spans: list[tuple[int, int]] = []
+    start = 0
+    prev = datetime.strptime(bars[0]["time"], "%Y-%m-%d %H:%M:%S")
+    for i in range(1, len(bars)):
+        cur = datetime.strptime(bars[i]["time"], "%Y-%m-%d %H:%M:%S")
+        if (cur - prev).total_seconds() > gap_minutes * 60:
+            spans.append((start, i - 1))
+            start = i
+        prev = cur
+    spans.append((start, len(bars) - 1))
+    return spans
+
+
+def _strictly(seq: list[float], rising: bool) -> bool:
+    return all((b > a) if rising else (b < a) for a, b in zip(seq, seq[1:]))
+
+
+@register(
+    id="trend_swing",
+    name="三波段趋势跟随",
+    description=(
+        f"1 分钟线 ZigZag 在同一交易时段内，连续 {TREND_LEVELS} 个低点和 {TREND_LEVELS} 个高点逐级抬高（上升趋势）后，"
+        "在前一个波段（低点→高点）从低点往上 1/3 处挂限价单顺势建仓，止损放在该波段底部，不设止盈，只靠止损出局。"
+        "做空规则镜像（高点、低点逐级降低）。每个交易时段独立识别，不跨时段连接波段。"
+    ),
+    category="趋势",
+    period="1",
+    params={
+        "波段识别": f"ZigZag，反向 {TREND_SWING_TICKS} 跳确认；每个交易时段独立",
+        "趋势确认": f"连续 {TREND_LEVELS} 个低点 + {TREND_LEVELS} 个高点逐级抬高（做空相反）",
+        "建仓位置": "前一波段低点 + 1/3 波段高度（做空为高点 - 1/3）",
+        "止损": "前一波段底部（做空为顶部）",
+        "止盈": "不设",
+        "挂单有效": f"{TREND_PENDING_BARS} 根 K 线，且不跨时段",
+    },
+)
+def strategy_trend_swing(bars: list[dict], ctx: StrategyContext) -> list:
+    """做多（做空镜像）：同一交易时段内确认的转折点序列 L1 H1 L2 H2 ... Ln Hn，
+    低点 L1<L2<...<Ln 且高点 H1<H2<...<Hn（n = TREND_LEVELS）才算上升趋势。
+    Hn 被确认（价格从 Hn 回落超过阈值）的那根 K 线收盘后，在 Ln + (Hn-Ln)/3 挂限价买单，止损 Ln。
+
+    只用确认时已知的转折点，没有未来函数。ZigZag 逐个交易时段单独计算：时段之间有跳空，
+    跨时段的转折点会把已经作废的旧结构当成趋势；挂单也不跨时段（时段末撤单）。
+    同一个转折点序列只挂一次单，止损后要等新的转折点出现才会再有信号。
+    """
+    threshold = ctx.tick_size * TREND_SWING_TICKS
+    need = TREND_LEVELS * 2
+    signals: list = [None] * len(bars)
+    for lo_idx, hi_idx in split_sessions(bars):
+        sub = bars[lo_idx : hi_idx + 1]
+        pivots = zigzag_pivots(sub, threshold)
+        for k in range(need - 1, len(pivots)):
+            window = pivots[k - need + 1 : k + 1]
+            last = window[-1]
+            i = lo_idx + last["confirm"]
+            if signals[i] is not None:
+                continue
+            lows = [p["price"] for p in window if p["kind"] == "low"]
+            highs = [p["price"] for p in window if p["kind"] == "high"]
+            # 本时段剩余的 K 线数：挂单不跨时段，最多只等到时段末
+            left = hi_idx - i
+            expire = min(TREND_PENDING_BARS, left)
+            if expire <= 0:
+                continue
+            if window[0]["kind"] == "low":  # 低 高 低 高 ...：上升趋势
+                if not (_strictly(lows, True) and _strictly(highs, True)):
+                    continue
+                lo_n, hi_n = lows[-1], highs[-1]
+                entry = _snap(lo_n + (hi_n - lo_n) * TREND_ENTRY_RATIO, ctx.tick_size)
+                if entry <= lo_n:
+                    continue
+                signals[i] = Signal("long", None, entry - lo_n, "三波段趋势·做多", entry_price=entry,
+                                    stop_price=lo_n, expire_bars=expire)
+            else:  # 高 低 高 低 ...：下降趋势
+                if not (_strictly(lows, False) and _strictly(highs, False)):
+                    continue
+                lo_n, hi_n = lows[-1], highs[-1]
+                entry = _snap(hi_n - (hi_n - lo_n) * TREND_ENTRY_RATIO, ctx.tick_size)
+                if entry >= hi_n:
+                    continue
+                signals[i] = Signal("short", None, hi_n - entry, "三波段趋势·做空", entry_price=entry,
+                                    stop_price=hi_n, expire_bars=expire)
+    return signals
+
+
+def _snap(price: float, tick: float) -> float:
+    """价格规整到最小变动价位的整数倍（去浮点尾巴）。"""
+    if not tick or tick <= 0:
+        return price
+    n = round(price / tick)
+    s = f"{tick:.10f}".rstrip("0").rstrip(".")
+    decimals = len(s.split(".")[1]) if "." in s else 0
+    return round(n * tick, decimals)
+
+
+# ---------------------------------------------------------------------------
 # 引擎
 # ---------------------------------------------------------------------------
 def _round(v: float, n: int = 2) -> float:
@@ -387,7 +553,7 @@ def run_backtest(
                 "lots": lots,
                 "reason": reason,
                 "signal": position["signal"],
-                "takeProfit": _round(position["takeProfit"], 4),
+                "takeProfit": _round(position["takeProfit"], 4) if position["takeProfit"] is not None else None,
                 "stopLoss": _round(position["stopLoss"], 4),
                 "profit": _round(profit),
                 "capital": _round(capital),
@@ -396,41 +562,75 @@ def run_backtest(
         )
         position = None
 
+    pending: Optional[dict] = None  # 等待成交的限价挂单
+
+    def levels(s: Signal, entry: float) -> tuple[Optional[float], float]:
+        """按成交价算出 (止盈价或 None, 止损价)。给了绝对止损价就用它，否则用距离。"""
+        if s.side == "long":
+            tp = None if s.take_profit is None else entry + s.take_profit
+            sl = s.stop_price if s.stop_price is not None else entry - s.stop_loss
+        else:
+            tp = None if s.take_profit is None else entry - s.take_profit
+            sl = s.stop_price if s.stop_price is not None else entry + s.stop_loss
+        return tp, sl
+
+    def open_position(i: int, s: Signal, entry: float, limit: bool = False):
+        nonlocal position
+        tp, sl = levels(s, entry)
+        position = {
+            "side": s.side,
+            "entryPrice": entry,
+            "entryTime": bars[i]["time"],
+            "entryIndex": i,
+            "takeProfit": tp,
+            "stopLoss": sl,
+            "signal": s.reason,
+            "limit": limit,  # 限价挂单成交：成交那根 K 线内也要检查止损
+        }
+
     for i, b in enumerate(bars):
-        # 1) 先处理已有仓位的止盈止损（开仓当根不检查，开仓价就是该根收盘）
-        if position is not None:
+        # 0) 处理挂单：信号出现的【下一根】起才可能成交（本根收盘才产生的信号，不能用本根的价格成交）
+        if position is None and pending is not None and i > pending["index"]:
+            s = pending["signal"]
+            _tp, sl = levels(s, s.entry_price)
+            long_ = s.side == "long"
+            if (long_ and b["low"] <= sl) or (not long_ and b["high"] >= sl):
+                # 价格先破了止损位：这笔单的前提（止损位有效）已不成立，作废。
+                # 同一根 K 线既触及挂单价又触及止损位时也按作废处理（无法判断先后，保守）
+                pending = None
+            elif (long_ and b["low"] <= s.entry_price) or (not long_ and b["high"] >= s.entry_price):
+                # 开盘价已经越过挂单价（跳空）时按开盘价成交，更真实也更不乐观
+                fill = min(s.entry_price, b["open"]) if long_ else max(s.entry_price, b["open"])
+                open_position(i, s, fill, limit=True)
+                pending = None
+                # 成交当根继续往下走，让下面的止损判断也适用于这一根（成交后同一根打到止损要算出局）
+            elif s.expire_bars is not None and i - pending["index"] >= s.expire_bars:
+                pending = None  # 挂单超时未成交，撤单
+
+        # 1) 先处理已有仓位的止盈止损（市价开仓当根不检查，开仓价就是该根收盘；挂单成交当根要检查）
+        if position is not None and (position["entryIndex"] != i or position["limit"]):
             hit_price = hit_reason = None
             if position["side"] == "long":
                 # 同一根 K 线内无法判断先后，按保守原则先判止损
                 if b["low"] <= position["stopLoss"]:
                     hit_price, hit_reason = position["stopLoss"], "止损"
-                elif b["high"] >= position["takeProfit"]:
+                elif position["takeProfit"] is not None and b["high"] >= position["takeProfit"]:
                     hit_price, hit_reason = position["takeProfit"], "止盈"
             else:
                 if b["high"] >= position["stopLoss"]:
                     hit_price, hit_reason = position["stopLoss"], "止损"
-                elif b["low"] <= position["takeProfit"]:
+                elif position["takeProfit"] is not None and b["low"] <= position["takeProfit"]:
                     hit_price, hit_reason = position["takeProfit"], "止盈"
             if hit_price is not None:
                 close_position(i, hit_price, hit_reason)
 
-        # 2) 空仓时才接收新信号，以收盘价开仓
-        if position is None and signals[i] is not None:
+        # 2) 空仓且没有挂单时才接收新信号
+        if position is None and pending is None and signals[i] is not None:
             s: Signal = signals[i]
-            entry = b["close"]
-            if s.side == "long":
-                tp, sl = entry + s.take_profit, entry - s.stop_loss
+            if s.entry_price is None:
+                open_position(i, s, b["close"])      # 市价：以收盘价开仓
             else:
-                tp, sl = entry - s.take_profit, entry + s.stop_loss
-            position = {
-                "side": s.side,
-                "entryPrice": entry,
-                "entryTime": b["time"],
-                "entryIndex": i,
-                "takeProfit": tp,
-                "stopLoss": sl,
-                "signal": s.reason,
-            }
+                pending = {"signal": s, "index": i}  # 限价：挂出，下一根起才可能成交
 
     # 3) 数据结束仍有持仓：按最后收盘价强平
     if position is not None:

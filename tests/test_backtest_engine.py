@@ -218,6 +218,247 @@ def test_pnl_uses_each_products_multiplier():
     assert run_with_signals(bars, sig, symbol="AU0", lots=1)["trades"][0]["profit"] == 3000.0
 
 
+# ----------------------------------------------------------------------------
+# 引擎扩展：限价挂单 / 绝对止损价 / 不设止盈
+# ----------------------------------------------------------------------------
+
+def tbar(i, o, h, l, c):
+    return bar(f"2026-10-20 09:{i:02d}:00", o, h, l, c)
+
+
+def test_limit_order_fills_on_later_bar_with_absolute_stop_and_no_take_profit():
+    bars = [
+        tbar(1, 100, 100, 100, 100),   # 信号：在 95 挂多单，止损 90，不设止盈
+        tbar(2, 100, 120, 99, 118),    # 最低 99 > 95，没成交
+        tbar(3, 118, 118, 94, 96),     # 最低 94 <= 95，95 成交；成交当根没打到止损 90
+        tbar(4, 96, 200, 96, 199),     # 涨到 200：没有止盈，继续持有
+        tbar(5, 199, 199, 89, 90),     # 跌破 90，止损出局
+    ]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90), None, None, None, None]
+    t = run_with_signals(bars, sig)["trades"]
+    assert len(t) == 1
+    assert t[0]["entryPrice"] == 95 and t[0]["entryIndex"] == 2
+    assert t[0]["takeProfit"] is None and t[0]["stopLoss"] == 90
+    assert t[0]["reason"] == "止损" and t[0]["exitPrice"] == 90 and t[0]["profit"] == -50.0
+
+
+def test_limit_order_cannot_fill_on_signal_bar():
+    bars = [
+        tbar(1, 100, 100, 90, 100),    # 信号当根最低 90 已低于挂单价 95，但信号收盘才产生，不能用本根成交
+        tbar(2, 100, 101, 99, 100),
+    ]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90), None]
+    assert run_with_signals(bars, sig)["trades"] == []
+
+
+def test_limit_order_gap_fills_at_open():
+    bars = [
+        tbar(1, 100, 100, 100, 100),
+        tbar(2, 90, 92, 88, 91),       # 跳空低开到 90，已低于挂单价 95：按开盘价 90 成交（不是 95）
+        tbar(3, 91, 100, 91, 99),
+    ]
+    sig = [be.Signal("long", None, 10, "t", entry_price=95, stop_price=80), None, None]
+    t = run_with_signals(bars, sig)["trades"]
+    assert t[0]["entryPrice"] == 90 and t[0]["reason"] == "强制平仓" and t[0]["profit"] == 90.0
+
+
+def test_limit_order_filled_and_stopped_in_same_bar():
+    bars = [
+        tbar(1, 100, 100, 100, 100),
+        tbar(2, 100, 100, 92, 93),     # 先触及挂单价 95 成交，同一根最低 92 未破止损 90：持有
+        tbar(3, 93, 93, 85, 88),       # 跌破止损 90
+    ]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90), None, None]
+    t = run_with_signals(bars, sig)["trades"]
+    assert len(t) == 1 and t[0]["entryIndex"] == 1 and t[0]["exitIndex"] == 2 and t[0]["profit"] == -50.0
+
+
+def test_limit_order_filled_bar_that_also_breaks_stop_is_cancelled_not_filled():
+    """成交当根若同时破了止损位：无法判断先后，保守地作废，不会出现“成交即止损”的假成交。"""
+    bars = [tbar(1, 100, 100, 100, 100), tbar(2, 100, 100, 85, 88)]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90), None]
+    assert run_with_signals(bars, sig)["trades"] == []
+
+
+def test_limit_order_cancelled_when_stop_level_broken_first():
+    bars = [
+        tbar(1, 100, 100, 100, 100),
+        tbar(2, 100, 100, 85, 86),     # 同一根既到挂单价 95 又破止损 90：无法判断先后，保守作废
+        tbar(3, 86, 100, 80, 95),      # 作废之后价格再回来也不会成交
+    ]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90), None, None]
+    assert run_with_signals(bars, sig)["trades"] == []
+
+
+def test_limit_order_expires():
+    bars = [tbar(1, 100, 100, 100, 100)] + [tbar(i, 100, 101, 99, 100) for i in range(2, 6)] + [
+        tbar(6, 100, 100, 90, 92),     # 第 5 根起触价，但挂单只有效 3 根，早已撤单
+    ]
+    sig = [be.Signal("long", None, 5, "t", entry_price=95, stop_price=90, expire_bars=3), None, None, None, None, None]
+    assert run_with_signals(bars, sig)["trades"] == []
+
+
+def test_short_limit_order_mirrors_long():
+    bars = [
+        tbar(1, 100, 100, 100, 100),
+        tbar(2, 100, 106, 100, 104),   # 最高 106 >= 105，空单 105 成交
+        tbar(3, 104, 111, 104, 110),   # 最高 111 >= 止损 110
+    ]
+    sig = [be.Signal("short", None, 5, "t", entry_price=105, stop_price=110), None, None]
+    t = run_with_signals(bars, sig)["trades"]
+    assert t[0]["side"] == "short" and t[0]["entryPrice"] == 105 and t[0]["exitPrice"] == 110
+    assert t[0]["profit"] == -50.0
+
+
+def test_no_new_signal_while_order_pending():
+    bars = [tbar(1, 100, 100, 100, 100), tbar(2, 100, 101, 99, 100), tbar(3, 100, 101, 99, 100)]
+    sig = [
+        be.Signal("long", None, 5, "a", entry_price=95, stop_price=90),
+        be.Signal("short", 10, 10, "b"),          # 挂单还在等：这个信号被忽略
+        None,
+    ]
+    assert run_with_signals(bars, sig)["trades"] == []
+
+
+# ----------------------------------------------------------------------------
+# ZigZag 与三波段趋势策略
+# ----------------------------------------------------------------------------
+
+SESSION_BREAK = "BREAK"   # path_bars 里的标记：此处插入一个时段间隔（模拟午休 / 日夜盘切换，价格可以跳空）
+
+
+def path_bars(points, start="2026-10-20 09:00:00"):
+    """用一串价格拐点生成逐根 1 分钟 K 线：每两个拐点之间每根走 1 个价位（open/close 连续）。
+    points 里的 SESSION_BREAK 后面的下一个价格直接跳空到该价位，并让时间间隔 2 小时（新时段）。"""
+    from datetime import datetime, timedelta
+
+    t = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+    out = []
+
+    def add(o, h, l, c):
+        out.append(bar(t.strftime("%Y-%m-%d %H:%M:%S"), o, h, l, c))
+
+    prev = None
+    jump = False
+    for p in points:
+        if p == SESSION_BREAK:
+            jump = True
+            continue
+        if prev is None or jump:
+            if prev is not None:
+                t += timedelta(hours=2)
+            add(p, p, p, p)
+            prev, jump = p, False
+            continue
+        step = 1 if p > prev else -1
+        while prev != p:
+            t += timedelta(minutes=1)
+            nxt = prev + step
+            add(prev, max(prev, nxt), min(prev, nxt), nxt)
+            prev = nxt
+    return out
+
+
+# 上升趋势（阈值 15 跳）：L1=100 H1=130 L2=110 H2=150 L3=125 H3=170，之后回落 170->150 确认 H3（回落 20 >= 15）
+# 建仓 = L3 + (H3-L3)/3 = 125 + 15 = 140，止损 L3 = 125
+UP3 = [100, 130, 110, 150, 125, 170, 150]
+# 下降趋势（镜像）：H1=200 L1=170 H2=190 L2=150 H3=175 L3=130，之后反弹 130->150 确认 L3
+# 建仓 = H3 - (H3-L3)/3 = 175 - 15 = 160，止损 H3 = 175
+DOWN3 = [200, 170, 190, 150, 175, 130, 150]
+
+
+def test_zigzag_confirms_pivots_with_threshold():
+    # 100 -> 130 -> 110 -> 150 -> 125：阈值 15
+    bars = path_bars([100, 130, 110, 150, 125])
+    pv = be.zigzag_pivots(bars, 15)
+    assert [(p["kind"], p["price"]) for p in pv] == [("low", 100), ("high", 130), ("low", 110), ("high", 150)]
+    # 确认发生在极值之后（不是极值当根），不使用未来数据
+    assert all(p["confirm"] > p["index"] for p in pv)
+    # 高低交替
+    assert [p["kind"] for p in pv] == ["low", "high", "low", "high"]
+
+
+def test_zigzag_ignores_moves_below_threshold():
+    bars = path_bars([100, 110, 103, 112, 101])    # 全部波动都小于 15
+    assert be.zigzag_pivots(bars, 15) == []
+
+
+def test_trend_swing_long_places_limit_at_one_third_above_low_and_stops_at_low():
+    # 3 级抬高后，回踩到 140 成交，随后跌破止损 125
+    bars = path_bars(UP3 + [140, 160, 124])
+    t = be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"]
+    assert len(t) == 1
+    assert t[0]["side"] == "long" and t[0]["entryPrice"] == 140
+    assert t[0]["stopLoss"] == 125 and t[0]["takeProfit"] is None
+    assert t[0]["reason"] == "止损" and t[0]["exitPrice"] == 125
+    assert t[0]["profit"] == (125 - 140) * 10      # 亏 15 个价位 × 乘数 10 × 1 手
+
+
+def test_trend_swing_needs_three_levels_not_two():
+    # 只有 2 级抬高（L1 H1 L2 H2）：不够，不挂单。这正是之前把“大跌后的小反弹”误当趋势的情形
+    bars = path_bars([100, 130, 110, 150, 125, 140, 100])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+
+
+def test_trend_swing_requires_every_low_and_high_to_rise():
+    # L3(105) 低于 L2(110)：低点没有逐级抬高，不是上升趋势
+    bars = path_bars([100, 130, 110, 150, 105, 170, 150, 140, 120])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+    # H3(145) 低于 H2(150)：高点没有逐级抬高
+    bars = path_bars([100, 130, 110, 150, 125, 145, 125, 130, 100])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+
+
+def test_trend_swing_short_mirrors_long():
+    # 3 级降低后，反弹到 160 成交，随后涨破止损 175
+    bars = path_bars(DOWN3 + [160, 140, 176])
+    t = be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"]
+    assert len(t) == 1
+    assert t[0]["side"] == "short" and t[0]["entryPrice"] == 160
+    assert t[0]["stopLoss"] == 175 and t[0]["takeProfit"] is None
+    assert t[0]["reason"] == "止损" and t[0]["profit"] == (160 - 175) * 10
+
+
+def test_trend_swing_keeps_winning_trade_open_without_take_profit():
+    # 建仓后一路上涨，没有止盈，直到数据结束才强平
+    bars = path_bars(UP3 + [140, 200])
+    t = be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"]
+    assert len(t) == 1 and t[0]["reason"] == "强制平仓" and t[0]["exitPrice"] == 200
+    assert t[0]["profit"] == (200 - 140) * 10
+
+
+def test_trend_swing_big_drop_then_small_bounce_is_not_an_uptrend():
+    """复现实测问题：大跌之后的小反弹只有 2 级抬高（L1 H1 L2 H2），旧逻辑会把它当上升趋势做多。
+    现在要求 3 级，这种小反弹不开仓。"""
+    # 大跌 300->200，然后反弹：L1=200 H1=230 L2=210 H2=250（2 级抬高），回落 250->230 确认 H2
+    bars = path_bars([300, 200, 230, 210, 250, 230, 240, 200])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+
+
+def test_split_sessions_by_time_gap():
+    bars = path_bars([100, 103, SESSION_BREAK, 90, 93])
+    spans = be.split_sessions(bars)
+    assert len(spans) == 2
+    assert bars[spans[0][1]]["close"] == 103 and bars[spans[1][0]]["open"] == 90
+
+
+def test_trend_swing_does_not_connect_pivots_across_sessions():
+    # 前 2 级结构在时段 1，第 3 级在时段 2（中间有跳空）：不能跨时段拼成 3 级
+    bars = path_bars([100, 130, 110, 150, SESSION_BREAK, 125, 170, 150, 140, 124])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+
+
+def test_trend_swing_pending_order_does_not_survive_session_end():
+    # 信号后本时段还剩几根就收盘，挂单随时段结束撤销；下一时段价格触及 140 也不会成交
+    bars = path_bars(UP3 + [SESSION_BREAK, 160, 140, 124])
+    assert be.run_backtest(bars, "trend_swing", "FU0", lots=1)["trades"] == []
+
+
+def test_trend_swing_registered_as_one_minute_strategy():
+    sdef = be.STRATEGIES["trend_swing"]
+    assert sdef.period == "1" and sdef.category == "趋势"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

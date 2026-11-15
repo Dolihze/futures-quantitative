@@ -81,6 +81,17 @@ export function runBacktest(params) {
   })
 }
 
+// 量化回测详情：只取某品种主连某周期的 K 线（不重跑回测），用于「K线与买卖点」切换显示周期
+export function getBacktestKline(params) {
+  return request({
+    url: '/api/backtest/kline',
+    method: 'get',
+    params,
+    timeout: 60000,
+    silent: true
+  })
+}
+
 // 交易复盘：上传交易记录 Excel（multipart）。
 // 业务错误（格式不对、列缺失等）后端返回 400 + message，这里由页面自己展示，不弹全局错误提示。
 // overwrite=true：文件夹里已有同名文件时直接覆盖。不带时后端对同名文件返回 409（error.response.data.exists），
