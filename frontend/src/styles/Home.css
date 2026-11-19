@@ -150,6 +150,14 @@
   color: var(--amber);
 }
 
+.feature-icon.depth {
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.15), rgba(var(--primary-rgb), 0.05));
+}
+
+.feature-icon.depth svg {
+  color: var(--cyan);
+}
+
 .feature-title {
   font-size: 20px;
   font-weight: 600;

@@ -248,3 +248,43 @@ export function cancelOrder(orderId) {
     silent: true
   })
 }
+
+// ===== 深度行情：历史 tick CSV -> K 线 + 历史盘口 =====
+// 上传 tick CSV（multipart）。文件可能很大（几十 MB），超时放宽到 10 分钟；
+// 同名文件 409 + exists 的处理同交易复盘（overwrite=true 覆盖）。
+export function uploadDepthFile(file, overwrite = false) {
+  const form = new FormData()
+  form.append('file', file)
+  if (overwrite) form.append('overwrite', '1')
+  return request({ url: '/api/depth/upload', method: 'post', data: form, timeout: 600000, silent: true })
+}
+
+// 列出项目 depth_files 文件夹里已导入的 tick CSV
+export function getDepthFiles() {
+  return request({ url: '/api/depth/files', method: 'get', silent: true })
+}
+
+// 删除 depth_files 里的一个文件
+export function deleteDepthFile(name) {
+  return request({ url: '/api/depth/files', method: 'delete', data: { name }, silent: true })
+}
+
+// 选择 depth_files 里已有文件进行解析，返回结构同 uploadDepthFile
+export function openDepthFile(name) {
+  return request({ url: '/api/depth/open', method: 'post', data: { name }, timeout: 600000, silent: true })
+}
+
+// 由 tick 聚合 K 线：params = { depthId, period(1/5/15/30/60/1440), day }
+export function getDepthKline(params) {
+  return request({ url: '/api/depth/kline', method: 'get', params, timeout: 120000, silent: true })
+}
+
+// 某一时刻的历史盘口：params = { depthId, ts } 或 { depthId, index }
+export function getDepthBook(params) {
+  return request({ url: '/api/depth/book', method: 'get', params, silent: true })
+}
+
+// 一段连续 tick（含盘口），用于回放预取：params = { depthId, start, count }
+export function getDepthTicks(params) {
+  return request({ url: '/api/depth/ticks', method: 'get', params, silent: true })
+}

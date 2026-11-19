@@ -38,7 +38,8 @@ futures-quantitative/
 │   └── sidecar/              # PyInstaller 打包出的后端（构建产物）
 ├── backend.py                # Flask 后端源码（sidecar 入口）
 ├── review.py                 # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
-├── tests/                    # review 的单元测试与 API 测试（python tests/test_review.py）
+├── depth_market.py           # 深度行情：tick CSV 解析、K 线聚合、历史盘口查询（不依赖 Flask）
+├── tests/                    # review / depth_market 的单元测试与 API 测试（python tests/test_review.py）
 ├── data/brokers.json         # 期货公司数据
 ├── scripts/
 │   ├── setup.mjs             # 首次准备：装前端依赖、装 Python 依赖、打包 sidecar
@@ -118,6 +119,13 @@ npm run backend:build
 | `/api/backtest/run` | GET | 量化回测详情：单个策略的 K 线、逐笔成交、净值曲线、完整统计，参数 `strategy` `product` `days` `lots` |
 | `/api/review/upload` | POST | 交易复盘：上传交易记录（multipart，字段 `file`，≤20MB），返回 `reviewId`、品种列表、数据时间范围、解析提示 |
 | `/api/review/curve` | GET | 交易复盘：按 `reviewId`、`products`（逗号分隔，空=全部）、`start`、`end`、`fee`（1=扣手续费）返回累计盈亏曲线和统计 |
+
+| `/api/depth/upload` | POST | 深度行情：上传 tick CSV（multipart，字段 `file`，≤500MB），返回 `depthId`、合约、tick 数、盘口档数、交易日列表；同名文件返回 409 + `exists`，带 `overwrite=1` 覆盖 |
+| `/api/depth/files` | GET / DELETE | 深度行情：列出 / 删除 `depth_files` 文件夹里已导入的 CSV（删除参数 JSON `name`） |
+| `/api/depth/open` | POST | 深度行情：解析 `depth_files` 里已有的文件（JSON `name`），返回结构同上传 |
+| `/api/depth/kline` | GET | 深度行情：由 tick 聚合 K 线，参数 `depthId` `period`（1/5/15/30/60/1440）`day`（交易日，可空） |
+| `/api/depth/book` | GET | 深度行情：某时刻历史盘口，参数 `depthId` + `ts`（毫秒时间戳，取不晚于它的最近一笔）或 `index`（tick 序号） |
+| `/api/depth/ticks` | GET | 深度行情：一段连续 tick（含盘口），参数 `depthId` `start` `count`（≤1000），用于回放预取 |
 
 > 前端所有请求路径都必须以 `/api` 开头，否则不会被 Vite 代理转发。
 
@@ -213,6 +221,30 @@ npm run backend:build
 **数据与隐私**：上传的记录只保存在后端内存中（最多保留最近 5 份），不会写入磁盘，应用重启后需重新导入。
 
 **测试**：`python tests/test_review.py`（解析与计算）、`python tests/test_review_api.py`（接口，含 Excel 上传）。
+
+## 深度行情
+
+导入下载的历史 tick CSV，渲染成多周期 K 线，并可逐笔还原历史盘口、回放。入口：首页「深度行情」。
+
+**CSV 格式**（UTF-8 或 GBK，首行为表头；列名不区分大小写，常见中英文别名自动识别）：
+
+| 列 | 说明 |
+|---|---|
+| `symbol` `code` `name` | 合约代码 / 代码 / 名称 |
+| `time` | 时间，`YYYYMMDDHHMMSSmmm`（17 位）；也兼容 14 位、12 位和 `2026-05-29 21:00:00.500` 这类字符串 |
+| `open` `current` `high` `low` | 当日开盘 / 最新价 / 最高 / 最低（K 线只用 `current`，由 tick 自己聚合 OHLC） |
+| `volume` `money` `position` | **当日累计**成交量 / 成交额 / 持仓量 |
+| `a{n}_p` `a{n}_v` `b{n}_p` `b{n}_v` | 卖 n / 买 n 的价格与挂单量，n=1~5，**有几档显示几档** |
+
+- **必需列**只有 `time` 和 `current`；没有成交量 / 盘口列时对应功能降级（界面给出提示）。
+- **成交量差分**：`volume` 按交易日分组后差分得到每笔增量，交易日内数值回退视为重置。
+- **交易日**：20:00 之后的夜盘归下一个交易日，周末顺延到周一（与复盘模块一致）。
+- **K 线**：按真实时间向下取整对齐（5 分钟线对齐 9:00、9:05…），支持 1/5/15/30/60 分钟和日线；日线按交易日聚合。
+- **历史盘口**：鼠标悬停 K 线预览该根 K 线最后一笔 tick 的盘口；点击 K 线定格到它的第一笔，之后可「上一笔 / 下一笔」步进，或按 2~100 笔/秒回放。
+- **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
+- **性能**：50 万笔（约 36MB）解析约 4 秒；解析结果只在后端内存缓存（最近 3 份），重启后需重新选择文件。
+- 红涨绿跌：盘口里买盘（多方）为红、卖盘（空方）为绿，与全站一致。
+- 测试：`python tests/test_depth_market.py`。改动 `depth_market.py` / `backend.py` 后需重新执行 `npm run backend:build`。
 
 ## 构建发布
 

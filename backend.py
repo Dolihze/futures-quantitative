@@ -3,7 +3,7 @@
 Flask Backend as Tauri Sidecar
 用于 Tauri 2.x 架构,作为独立进程运行
 """
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify, session, Request
 from flask_cors import CORS
 import json
 import os
@@ -16,6 +16,7 @@ import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py�
 import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
 import copy_trading  # 量化监控：监控账号成交 -> 自动跟单（copy_trading.py）
 import backtest_engine  # 量化回测：策略注册表、回测引擎与统计（backtest_engine.py）
+import depth_market  # 深度行情：历史 tick CSV -> K 线 / 历史盘口（depth_market.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -852,6 +853,226 @@ def monitor_config_save():
 def monitor_resume():
     """人工解除断连造成的自动暂停"""
     return jsonify(copy_trading.engine.resume())
+
+
+# ---------------------------------------------------------------------------
+# 深度行情：历史 tick CSV -> K 线 + 历史盘口
+# ---------------------------------------------------------------------------
+# 解析后的 tick 数据放在内存缓存里（depthId 临时，sidecar 重启即失效），只留最近 3 份（tick 数据较大）。
+DEPTH_CACHE = OrderedDict()
+DEPTH_CACHE_MAX = 3
+# 导入过的 tick CSV 保存在这个文件夹（同 review_files 的位置规则，已加入 .gitignore）；环境变量 DEPTH_FILES_DIR 可改（测试用）
+DEPTH_FILES_DIRNAME = 'depth_files'
+DEPTH_EXTS = ('.csv',)
+DEPTH_MAX_UPLOAD = 500 * 1024 * 1024   # tick 文件很大，单个上限 500MB（全局 20MB 限制只对 /api/depth 之外生效）
+
+
+def depth_files_dir():
+    return os.environ.get('DEPTH_FILES_DIR') or os.path.join(BASE_DIR, DEPTH_FILES_DIRNAME)
+
+
+def safe_depth_path(name):
+    """文件名 -> depth_files 里的真实路径；名字不合法返回 None（规则同 safe_review_path）。"""
+    if not name or name != os.path.basename(name) or name in ('.', '..'):
+        return None
+    if not name.lower().endswith(DEPTH_EXTS):
+        return None
+    root = os.path.realpath(depth_files_dir())
+    path = os.path.realpath(os.path.join(root, name))
+    if os.path.dirname(path) != root:
+        return None
+    return path
+
+
+class _DepthRequest(Request):
+    """MAX_CONTENT_LENGTH 是全局的（20MB，给复盘 Excel 用）；tick CSV 很大，只对深度行情上传放宽。
+    新版 Flask 里 request.max_content_length 是只读属性，所以用子类按路径返回上限。"""
+
+    @property
+    def max_content_length(self):
+        if self.path == '/api/depth/upload':
+            return DEPTH_MAX_UPLOAD
+        return super().max_content_length
+
+    @max_content_length.setter
+    def max_content_length(self, value):   # 旧版 Flask 的基类构造里可能会赋值，忽略即可
+        pass
+
+
+app.request_class = _DepthRequest
+
+
+def depth_analyze_to_response(content, filename):
+    """解析一份 tick CSV，放进缓存，返回 JSON（上传和从文件夹选择共用）。"""
+    try:
+        td = depth_market.parse(content, filename)
+    except depth_market.DepthParseError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        print(f"[Depth] 解析失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"解析失败：{e}"}), 400
+
+    depth_id = uuid.uuid4().hex
+    DEPTH_CACHE[depth_id] = td
+    while len(DEPTH_CACHE) > DEPTH_CACHE_MAX:
+        DEPTH_CACHE.popitem(last=False)
+
+    data = depth_market.summary(td)
+    data.update({"success": True, "depthId": depth_id, "filename": filename})
+    return jsonify(data)
+
+
+def _depth_get(depth_id):
+    """取缓存里的 tick 数据；失效时返回 (None, 响应)。"""
+    td = DEPTH_CACHE.get(depth_id or '')
+    if td is None:
+        return None, (jsonify({"success": False, "expired": True,
+                               "message": "数据已失效（后端重启或缓存被清理），请重新选择文件"}), 410)
+    DEPTH_CACHE.move_to_end(depth_id)
+    return td, None
+
+
+@app.route('/api/depth/upload', methods=['POST'])
+def depth_upload():
+    """上传 tick CSV：解析成功后保存到 depth_files。同名文件未带 overwrite=1 时返回 409 + exists:true（同复盘）。"""
+    f = request.files.get('file')
+    if f is None or not f.filename:
+        return jsonify({"success": False, "message": "请选择要上传的文件"}), 400
+    if not f.filename.lower().endswith(DEPTH_EXTS):
+        return jsonify({"success": False, "message": "仅支持 .csv 文件"}), 400
+    name = os.path.basename(f.filename.replace('\\', '/'))
+    path = safe_depth_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    overwrite = request.form.get('overwrite') == '1'
+    if os.path.exists(path) and not overwrite:
+        return jsonify({"success": False, "exists": True, "name": os.path.basename(path),
+                        "message": f"「{os.path.basename(path)}」已存在，是否覆盖？"}), 409
+
+    content = f.read()
+    resp = depth_analyze_to_response(content, name)
+    response, status = resp if isinstance(resp, tuple) else (resp, 200)
+    if status != 200:
+        return resp
+
+    data = response.get_json()
+    tmp = path + '.uploading'
+    try:
+        os.makedirs(depth_files_dir(), exist_ok=True)
+        with open(tmp, 'wb') as out:
+            out.write(content)
+        os.replace(tmp, path)
+        data["saved"] = True
+        data["overwritten"] = overwrite
+    except OSError as e:
+        print(f"[Depth] 保存到 {depth_files_dir()} 失败: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        data["saved"] = False
+        data["warnings"] = list(data.get("warnings", [])) + [f"文件没能保存到「{DEPTH_FILES_DIRNAME}」文件夹：{e}"]
+    return jsonify(data)
+
+
+@app.route('/api/depth/files')
+def depth_files():
+    """列出 depth_files 文件夹里的 tick CSV（最近修改的在前）。"""
+    root = depth_files_dir()
+    files = []
+    if os.path.isdir(root):
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if name.startswith(('~$', '.')) or not os.path.isfile(path) or not name.lower().endswith(DEPTH_EXTS):
+                continue
+            st = os.stat(path)
+            files.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime)})
+    files.sort(key=lambda x: (-x["mtime"], x["name"]))
+    return jsonify({"success": True, "dir": DEPTH_FILES_DIRNAME, "files": files})
+
+
+@app.route('/api/depth/files', methods=['DELETE'])
+def depth_file_delete():
+    name = (request.get_json(silent=True) or {}).get('name', '')
+    path = safe_depth_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    if not os.path.isfile(path):
+        return jsonify({"success": False, "fileMissing": True, "message": f"文件「{name}」不存在，可能已被移动或删除"}), 404
+    try:
+        os.remove(path)
+    except OSError as e:
+        return jsonify({"success": False, "message": f"删除失败：{e}（文件可能正被其它程序打开）"}), 400
+    return jsonify({"success": True, "name": name})
+
+
+@app.route('/api/depth/open', methods=['POST'])
+def depth_open():
+    """选择 depth_files 里已有的文件，返回结构和上传接口一致。"""
+    name = (request.get_json(silent=True) or {}).get('name', '')
+    path = safe_depth_path(name)
+    if path is None:
+        return jsonify({"success": False, "message": "文件名不合法"}), 400
+    if not os.path.isfile(path):
+        return jsonify({"success": False, "fileMissing": True, "message": f"文件「{name}」不存在，可能已被移动或删除，请刷新列表"}), 404
+    try:
+        with open(path, 'rb') as fh:
+            content = fh.read()
+    except OSError as e:
+        return jsonify({"success": False, "message": f"读取文件失败：{e}"}), 400
+    return depth_analyze_to_response(content, name)
+
+
+@app.route('/api/depth/kline')
+def depth_kline():
+    """由 tick 聚合 K 线。参数：depthId、period（1/5/15/30/60/1440，默认 1）、day（交易日，可空=全部）。"""
+    td, err = _depth_get(request.args.get('depthId'))
+    if err:
+        return err
+    try:
+        period = int(request.args.get('period', 1))
+        result = depth_market.build_kline(td, period, request.args.get('day') or None)
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        print(f"[Depth] 聚合 K 线失败: {e}")
+        return jsonify({"success": False, "message": f"生成 K 线失败：{e}"}), 500
+    return jsonify({"success": True, **result})
+
+
+@app.route('/api/depth/book')
+def depth_book():
+    """某一时刻的历史盘口。参数：depthId，ts（毫秒时间戳，取不晚于它的最近一笔）或 index（tick 序号）。"""
+    td, err = _depth_get(request.args.get('depthId'))
+    if err:
+        return err
+    try:
+        ts = request.args.get('ts')
+        index = request.args.get('index')
+        if ts is None and index is None:
+            return jsonify({"success": False, "message": "需要 ts 或 index 参数"}), 400
+        book = depth_market.book_at(td, ts=int(ts) if ts is not None else None,
+                                    index=int(index) if index is not None else None)
+    except ValueError:
+        return jsonify({"success": False, "message": "ts / index 必须是整数"}), 400
+    return jsonify({"success": True, "levels": td.levels, **book})
+
+
+@app.route('/api/depth/ticks')
+def depth_ticks():
+    """一段连续的 tick（含盘口），用于回放预取。参数：depthId、start（起始序号）、count（默认 200，最多 1000）。"""
+    td, err = _depth_get(request.args.get('depthId'))
+    if err:
+        return err
+    try:
+        start = int(request.args.get('start', 0))
+        count = min(max(int(request.args.get('count', 200)), 1), 1000)
+    except ValueError:
+        return jsonify({"success": False, "message": "start / count 必须是整数"}), 400
+    return jsonify({"success": True, "levels": td.levels, "total": td.count,
+                    "ticks": depth_market.ticks_range(td, start, count)})
 
 
 copy_trading.engine.load_saved_config()   # 恢复上次保存的跟单配置

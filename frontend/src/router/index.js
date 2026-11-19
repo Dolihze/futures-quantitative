@@ -38,6 +38,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/depth',
+    name: 'DepthMarket',
+    component: () => import('@/views/DepthMarket/index.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/review',
     name: 'Review',
     component: () => import('@/views/Review/index.vue'),

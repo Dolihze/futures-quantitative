@@ -87,6 +87,30 @@
           </div>
         </router-link>
 
+        <!-- 深度行情卡片 -->
+        <router-link to="/depth" class="feature-card">
+          <div class="feature-icon depth">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="6" y1="4" x2="6" y2="20"/>
+              <rect x="4" y="8" width="4" height="7" rx="1"/>
+              <line x1="13" y1="3" x2="13" y2="18"/>
+              <rect x="11" y="6" width="4" height="8" rx="1"/>
+              <line x1="19" y1="9" x2="19" y2="21"/>
+              <rect x="17" y="12" width="4" height="6" rx="1"/>
+            </svg>
+          </div>
+          <div class="feature-title">深度行情</div>
+          <div class="feature-description">
+            导入历史 tick CSV，聚合渲染多周期 K 线，并逐笔还原历史盘口与回放
+          </div>
+          <div class="feature-arrow">
+            <span>进入深度行情</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+        </router-link>
+
         <!-- 量化回测卡片 -->
         <router-link to="/backtest" class="feature-card" @click="handleBacktestClick">
           <div class="feature-icon backtest">
