@@ -86,64 +86,21 @@
   font-size: 16px;
 }
 
-/* 上传区 */
-.upload-text {
-  padding: 8px 0;
-}
-
-.upload-main {
-  color: var(--text-option);
-  font-size: 13px;
-}
-
-.upload-main em {
-  color: var(--primary);
-  font-style: normal;
-}
-
-.upload-tip {
-  margin-top: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.file-info {
-  margin-top: 14px;
-  padding: 10px 12px;
-  background: var(--bg-chart);
-  border-radius: 6px;
-}
-
-.file-name {
-  color: var(--text-body);
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-meta {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-/* 已导入的文件列表（项目 review_files 文件夹）：点击切换分析 */
-.saved-files {
-  margin-top: 14px;
-}
-
-.saved-files-head {
+/* 合约列表 */
+.panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.panel-head h3 {
+  margin-bottom: 0;
 }
 
 .saved-files-refresh {
-  color: var(--accent2);
+  color: var(--primary);
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -152,108 +109,113 @@
   pointer-events: none;
 }
 
-.saved-files-empty {
-  padding: 10px 12px;
-  background: var(--bg-chart);
-  border-radius: 6px;
+.contract-empty {
+  padding: 18px 4px;
   color: var(--text-muted);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.8;
+  text-align: center;
 }
 
-.saved-files-list {
-  list-style: none;
+.empty-link,
+.manage-link {
+  color: var(--primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.empty-link {
+  display: block;
+  margin-top: 6px;
+}
+
+.manage-link {
+  display: block;
+  margin-top: 12px;
+  text-align: right;
+}
+
+.empty-link:hover,
+.manage-link:hover {
+  text-decoration: underline;
+}
+
+.contract-list {
   margin: 0;
   padding: 0;
-  max-height: 220px;
+  list-style: none;
+  max-height: 46vh;
   overflow-y: auto;
 }
 
-.saved-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+.contract-item {
+  padding: 10px 12px;
   margin-bottom: 6px;
   background: var(--bg-chart);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition: all 0.15s;
 }
 
-.saved-file:hover {
-  border-color: rgba(var(--accent2-rgb), 0.4);
+.contract-item:hover {
+  border-color: rgba(var(--primary-rgb), 0.45);
 }
 
-.saved-file.active {
-  border-color: var(--accent2);
-  background: rgba(var(--accent2-rgb), 0.08);
+.contract-item.active {
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.12);
 }
 
-.saved-file.disabled {
+.contract-item.disabled {
   opacity: 0.6;
-  cursor: not-allowed;
+  pointer-events: none;
 }
 
-.saved-file-main {
-  flex: 1;
-  min-width: 0;   /* 让文件名过长时能被 ellipsis 截断，而不是把删除按钮挤出去 */
+.contract-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-/* 删除按钮：平时淡色，鼠标移到这一行时才变明显，悬停在按钮上变红 */
-.saved-file-delete {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: color 0.2s, opacity 0.2s;
-}
-
-.saved-file:hover .saved-file-delete {
-  opacity: 1;
-}
-
-.saved-file-delete:hover {
-  color: var(--up);
-}
-
-.saved-file-name {
+.contract-symbol {
   color: var(--text-body);
-  font-size: 13px;
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.contract-name {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.saved-file.active .saved-file-name {
-  color: var(--accent2);
-}
-
-.saved-file-meta {
-  margin-top: 3px;
+  white-space: nowrap;
   color: var(--text-muted);
+  font-size: 12px;
+}
+
+.contract-meta {
+  margin-top: 4px;
+  color: var(--text-secondary);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.depth-error,
+.depth-warning {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .depth-error {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: rgba(var(--up-rgb), 0.12);
-  border: 1px solid rgba(var(--up-rgb), 0.35);
-  border-radius: 6px;
-  color: var(--up-soft);
-  font-size: 12px;
-  line-height: 1.6;
-  word-break: break-all;
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--up);
 }
 
 .depth-warning {
-  margin-top: 8px;
+  background: rgba(245, 158, 11, 0.12);
   color: var(--amber);
-  font-size: 12px;
-  line-height: 1.6;
 }
 
 /* 当前视图统计 */

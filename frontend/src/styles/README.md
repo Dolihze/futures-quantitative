@@ -14,6 +14,7 @@ styles/
 ├── Review.css         # 交易复盘页面样式（index.vue 和它的子组件共用的部分：布局、空状态、加载中等）
 ├── ReviewKline.css    # 复盘页「当天交易回放」组件（ReviewKline.vue）自己的样式
 ├── DepthMarket.css    # 深度行情页面样式（views/DepthMarket/index.vue；DepthKline.vue / DepthBook.vue 的样式写在组件内）
+├── Database.css       # 数据库管理页面样式（views/Database/index.vue）
 └── README.md          # 本说明文档
 ```
 
@@ -44,6 +45,7 @@ styles/
 - `views/Login/index.vue` → `@import '@/styles/Login.css';`
 - `views/Review/index.vue`、`views/Review/ReviewFunding.vue` → `@import '@/styles/Review.css';`
 - `views/DepthMarket/index.vue` → `@import '@/styles/DepthMarket.css';`
+- `views/Database/index.vue` → `@import '@/styles/Database.css';`
 - `views/Review/ReviewKline.vue` → 先 `@import '@/styles/Review.css';`（共用部分），再 `@import '@/styles/ReviewKline.css';`（自己的样式，顺序不能反）
 
 ### 添加新页面样式

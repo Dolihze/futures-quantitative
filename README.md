@@ -38,7 +38,7 @@ futures-quantitative/
 │   └── sidecar/              # PyInstaller 打包出的后端（构建产物）
 ├── backend.py                # Flask 后端源码（sidecar 入口）
 ├── review.py                 # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
-├── depth_market.py           # 深度行情：tick CSV 解析、K 线聚合、历史盘口查询（不依赖 Flask）
+├── depth_market.py           # 深度行情：tick CSV 解析、多文件合并、K 线 / 足迹图聚合、历史盘口查询（不依赖 Flask）
 ├── tests/                    # review / depth_market 的单元测试与 API 测试（python tests/test_review.py）
 ├── data/brokers.json         # 期货公司数据
 ├── scripts/
@@ -121,6 +121,8 @@ npm run backend:build
 | `/api/review/curve` | GET | 交易复盘：按 `reviewId`、`products`（逗号分隔，空=全部）、`start`、`end`、`fee`（1=扣手续费）返回累计盈亏曲线和统计 |
 
 | `/api/depth/upload` | POST | 深度行情：上传 tick CSV（multipart，字段 `file`，≤500MB），返回 `depthId`、合约、tick 数、盘口档数、交易日列表；同名文件返回 409 + `exists`，带 `overwrite=1` 覆盖 |
+| `/api/depth/contracts` | GET / DELETE | 数据库管理 / 深度行情：已导入的合约列表（按合约合并多个文件，含交易日、tick 数、是否有 BS）+ 无法识别的文件；DELETE（JSON `symbol`）删除合约名下全部文件 |
+| `/api/depth/open-contract` | POST | 深度行情：打开一个合约（JSON `symbol`），后端把它的所有文件按时间合并成一条时间线，返回结构同 `upload` |
 | `/api/depth/files` | GET / DELETE | 深度行情：列出 / 删除 `depth_files` 文件夹里已导入的 CSV（删除参数 JSON `name`） |
 | `/api/depth/open` | POST | 深度行情：解析 `depth_files` 里已有的文件（JSON `name`），返回结构同上传 |
 | `/api/depth/kline` | GET | 深度行情：由 tick 聚合 K 线，参数 `depthId` `period`（1/5/15/30/60/1440）`day`（交易日，可空） |
@@ -225,7 +227,15 @@ npm run backend:build
 
 ## 深度行情
 
-导入下载的历史 tick CSV，渲染成多周期 K 线，并可逐笔还原历史盘口、回放。入口：首页「深度行情」。
+项目共六个模块：量化监控、下单交易、交易复盘、深度行情、量化回测、数据库管理。
+
+**数据库管理**（首页「数据库管理」）负责 tick 数据的导入与管理；**深度行情**（首页「深度行情」）只负责选合约、看图。
+
+- **数据库管理**：拖拽或点击导入 tick CSV（可一次多选，同名文件逐个询问是否覆盖）；合约表按合约合并显示文件数、交易日数、tick 数、时间范围、是否有 BS 列，点开合约可看它名下每个文件；支持删除单个文件或整个合约；解析不了的文件单独列出并说明原因。
+- **深度行情**：左侧是已导入的合约列表（最近导入的在最前），点击即切换；进入页面自动打开上次看的合约（没有则打开最近导入的）；从数据库管理点「查看」会直接打开对应合约。没有数据时右侧引导去数据库管理。
+- **按合约合并**：同一合约的多个文件（比如每个交易日一个）会合成一条时间线，交易日下拉里可选。成交量增量在**每个文件内部**单独差分后再拼接（不会把相邻文件的累计值错误相减）；多个文件覆盖同一交易日时，只保留 tick 数最多的那个文件，避免成交量翻倍，并给出提示。
+- **合约识别**：取文件里的合约代码列（`symbol` / `InstrumentID` …）；没有这一列时用文件名（去掉扩展名）当合约名。
+- **索引缓存**：合约列表需要读每个文件才能知道交易日和 tick 数，后端按（文件名、大小、修改时间）缓存，文件没变就不再重读；手动放进文件夹的 CSV 点「刷新」即可出现。
 
 **CSV 格式**（UTF-8 或 GBK，首行为表头；列名不区分大小写，自动识别下列常见写法，两种格式都可以直接导入）：
 
@@ -255,7 +265,7 @@ npm run backend:build
   - **大单阈值**：默认 100 手，工具栏「⚙ 设置」里调整，保存在浏览器 localStorage（`depth.bigOrder`）。调高只在前端过滤，调低会重新请求。注意这里的「大单」是**半秒快照内的集中成交**，不等于单个委托。
   - 操作：滚轮横向缩放，Shift+滚轮纵向缩放，拖动平移，悬停显示该价位的买 / 卖量，点击 K 线联动右侧盘口与回放。
   - 当前是**全量加载**（几万笔的 1 分钟线约 1.5MB、耗时不到 1 秒）；如果数据量更大出现卡顿，再改成按可视范围分段加载。
-- **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
+- **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后在数据库管理里点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
 - **性能**：50 万笔（约 36MB）解析约 4 秒；解析结果只在后端内存缓存（最近 3 份），重启后需重新选择文件。
 - 红涨绿跌：盘口里买盘（多方）为红、卖盘（空方）为绿，与全站一致。
 - 测试：`python tests/test_depth_market.py`。改动 `depth_market.py` / `backend.py` 后需重新执行 `npm run backend:build`。

@@ -158,6 +158,14 @@
   color: var(--cyan);
 }
 
+.feature-icon.database {
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.15), rgba(var(--primary-rgb), 0.05));
+}
+
+.feature-icon.database svg {
+  color: var(--amber);
+}
+
 .feature-title {
   font-size: 20px;
   font-weight: 600;

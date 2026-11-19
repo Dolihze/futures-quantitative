@@ -101,7 +101,7 @@
           </div>
           <div class="feature-title">深度行情</div>
           <div class="feature-description">
-            导入历史 tick CSV，聚合渲染多周期 K 线，并逐笔还原历史盘口与回放
+            基于已导入的历史 tick，渲染多周期 K 线与足迹图，逐笔还原历史盘口并回放
           </div>
           <div class="feature-arrow">
             <span>进入深度行情</span>
@@ -126,6 +126,27 @@
           </div>
           <div class="feature-arrow">
             <span>进入回测</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
+        </router-link>
+
+        <!-- 数据库管理卡片 -->
+        <router-link to="/database" class="feature-card">
+          <div class="feature-icon database">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+          </div>
+          <div class="feature-title">数据库管理</div>
+          <div class="feature-description">
+            导入与管理历史 tick 数据：按合约归档、查看交易日与数据范围，删除不再使用的数据
+          </div>
+          <div class="feature-arrow">
+            <span>进入数据库管理</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>

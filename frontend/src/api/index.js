@@ -259,6 +259,21 @@ export function uploadDepthFile(file, overwrite = false) {
   return request({ url: '/api/depth/upload', method: 'post', data: form, timeout: 600000, silent: true })
 }
 
+// 已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用
+export function getDepthContracts() {
+  return request({ url: '/api/depth/contracts', method: 'get', silent: true })
+}
+
+// 打开一个合约：后端把它名下所有文件合并成一条时间线，返回结构同 uploadDepthFile
+export function openDepthContract(symbol) {
+  return request({ url: '/api/depth/open-contract', method: 'post', data: { symbol }, timeout: 600000, silent: true })
+}
+
+// 删除一个合约（删掉它名下的全部文件）
+export function deleteDepthContract(symbol) {
+  return request({ url: '/api/depth/contracts', method: 'delete', data: { symbol }, silent: true })
+}
+
 // 列出项目 depth_files 文件夹里已导入的 tick CSV
 export function getDepthFiles() {
   return request({ url: '/api/depth/files', method: 'get', silent: true })

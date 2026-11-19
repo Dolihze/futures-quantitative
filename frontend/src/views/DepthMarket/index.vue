@@ -16,58 +16,42 @@
     </nav>
 
     <div class="main-container">
-      <!-- 左侧：导入与文件列表 -->
+      <!-- 左侧：已导入的合约，点击切换 -->
       <aside class="sidebar">
         <div class="control-panel">
-          <h3>📂 导入历史 tick</h3>
-          <el-upload
-            ref="uploadRef"
-            drag
-            :auto-upload="false"
-            :show-file-list="false"
-            accept=".csv"
-            :on-change="handleFileChange"
-            class="depth-upload"
-          >
-            <div class="upload-text">
-              <div class="upload-main">拖拽文件到此处，或 <em>点击选择</em></div>
-              <div class="upload-tip">支持 .csv（UTF-8 / GBK），单个 500MB 以内</div>
-            </div>
-          </el-upload>
-
-          <div v-if="fileInfo" class="file-info">
-            <div class="file-name" :title="fileInfo.filename">📄 {{ fileInfo.filename }}</div>
-            <div class="file-meta">{{ fileInfo.symbol }} {{ fileInfo.name }}</div>
-            <div class="file-meta">{{ fileInfo.tickCount.toLocaleString() }} 笔 tick · {{ fileInfo.levels || 0 }} 档盘口</div>
-            <div class="file-meta">{{ fileInfo.start.slice(0, 19) }}</div>
-            <div class="file-meta">~ {{ fileInfo.end.slice(0, 19) }}</div>
+          <div class="panel-head">
+            <h3>📈 合约</h3>
+            <a class="saved-files-refresh" :class="{ disabled: contractsLoading }" @click="loadContracts">刷新</a>
           </div>
 
-          <div class="saved-files">
-            <div class="saved-files-head">
-              <span>已导入的文件</span>
-              <a class="saved-files-refresh" :class="{ disabled: filesLoading }" @click="loadFileList">刷新</a>
-            </div>
-            <div v-if="!savedFiles.length" class="saved-files-empty">
-              {{ filesLoading ? '加载中...' : `还没有文件。导入的文件会保存到项目根目录的 ${filesDir} 文件夹，也可以直接把 CSV 放进去后点“刷新”` }}
-            </div>
-            <ul v-else class="saved-files-list">
-              <li
-                v-for="f in savedFiles"
-                :key="f.name"
-                class="saved-file"
-                :class="{ active: f.name === currentFileName, disabled: loading }"
-                :title="f.name"
-                @click="handleOpenFile(f.name)"
-              >
-                <div class="saved-file-main">
-                  <div class="saved-file-name">{{ f.name }}</div>
-                  <div class="saved-file-meta">{{ formatMtime(f.mtime) }} · {{ formatSize(f.size) }}</div>
-                </div>
-                <a class="saved-file-delete" title="删除这个文件" @click.stop="handleDeleteFile(f.name)">删除</a>
-              </li>
-            </ul>
+          <div v-if="!contracts.length" class="contract-empty">
+            <template v-if="contractsLoading">加载中...</template>
+            <template v-else>
+              还没有历史数据。
+              <router-link to="/database" class="empty-link">去「数据库管理」导入 tick 数据 →</router-link>
+            </template>
           </div>
+
+          <ul v-else class="contract-list">
+            <li
+              v-for="c in contracts"
+              :key="c.symbol"
+              class="contract-item"
+              :class="{ active: c.symbol === currentSymbol, disabled: loading }"
+              :title="`${c.symbol}  ${c.fileCount} 个文件`"
+              @click="openContract(c.symbol)"
+            >
+              <div class="contract-main">
+                <span class="contract-symbol">{{ c.symbol }}</span>
+                <span v-if="c.name" class="contract-name">{{ c.name }}</span>
+              </div>
+              <div class="contract-meta">
+                {{ rangeText(c) }} · {{ c.dayCount }} 个交易日 · {{ compactNum(c.tickCount) }} 笔
+              </div>
+            </li>
+          </ul>
+
+          <router-link v-if="contracts.length" to="/database" class="manage-link">管理 / 导入数据 →</router-link>
 
           <div v-if="errorMsg" class="depth-error"><span>{{ errorMsg }}</span></div>
           <div v-for="(w, i) in warnings" :key="i" class="depth-warning">⚠ {{ w }}</div>
@@ -141,8 +125,8 @@
               :bars="bars"
               :loading="klineLoading"
               :selected-index="selectedBar"
-              :empty-title="fileInfo ? '这个范围没有 K 线' : '还没有数据'"
-              :empty-desc="fileInfo ? '换一个周期或交易日试试' : '先在左侧导入历史 tick CSV，或从已导入的文件里选择'"
+              :empty-title="fileInfo ? '这个范围没有 K 线' : emptyTitle"
+              :empty-desc="fileInfo ? '换一个周期或交易日试试' : emptyDesc"
               @hover="onHover"
               @select="onSelect"
             />
@@ -154,8 +138,8 @@
               :tick-size="tickSize"
               :loading="klineLoading"
               :selected-index="selectedBar"
-              :empty-title="footprintError ? '无法生成足迹图' : fileInfo ? '这个范围没有数据' : '还没有数据'"
-              :empty-desc="footprintError || (fileInfo ? '换一个周期或交易日试试' : '先在左侧导入历史 tick CSV，或从已导入的文件里选择')"
+              :empty-title="footprintError ? '无法生成足迹图' : fileInfo ? '这个范围没有数据' : emptyTitle"
+              :empty-desc="footprintError || (fileInfo ? '换一个周期或交易日试试' : emptyDesc)"
               @hover="onHover"
               @select="onSelect"
             />
@@ -190,10 +174,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import {
-  uploadDepthFile, getDepthFiles, openDepthFile, deleteDepthFile,
+  getDepthContracts, openDepthContract,
   getDepthKline, getDepthFootprint, getDepthTicks
 } from '@/api'
 import DepthKline from './DepthKline.vue'
@@ -212,7 +196,7 @@ const SPEEDS = [
 const CHUNK = 200   // 回放预取块大小（笔）
 
 // ---------- 状态 ----------
-const uploadRef = ref(null)
+const route = useRoute()
 const loading = ref(false)
 const errorMsg = ref('')
 const warnings = ref([])
@@ -237,6 +221,16 @@ function loadBigOrder() {
 }
 const bigOrder = ref(loadBigOrder())
 
+// 没有打开任何合约时图区的提示：加载中 / 没有数据（引导去数据库管理）/ 有数据但还没选
+const emptyTitle = computed(() => {
+  if (loading.value || contractsLoading.value) return '正在加载...'
+  return contracts.value.length ? '请选择合约' : '还没有历史数据'
+})
+const emptyDesc = computed(() => {
+  if (loading.value || contractsLoading.value) return ''
+  return contracts.value.length ? '从左侧点击一个合约查看行情' : '请先到「数据库管理」导入历史 tick 数据，导入后会出现在左侧合约列表里'
+})
+
 // ---------- 统计 ----------
 const totalTicksInView = computed(() => bars.value.reduce((s, b) => s + (b.ticks || 0), 0))
 const totalVolume = computed(() => bars.value.reduce((s, b) => s + (b.volume || 0), 0))
@@ -256,46 +250,30 @@ function errorText(error, fallback) {
   return error?.message ? `${fallback}：${error.message}` : fallback
 }
 
-// ---------- 导入 / 文件列表 ----------
-async function handleFileChange(uploadFile) {
-  const file = uploadFile.raw
-  if (!file) return
-  // 同复盘：清掉组件内部列表和原生 input，否则再选同一个文件不会触发 change
-  uploadRef.value?.clearFiles()
-  const nativeInput = document.querySelector('.depth-upload input[type=file]')
-  if (nativeInput) nativeInput.value = ''
-  errorMsg.value = ''
-  warnings.value = []
-  loading.value = true
+// ---------- 合约列表 ----------
+// 数据的导入和删除在「数据库管理」模块；这里只负责选合约、看图。
+// 一个合约可能对应多个文件（比如每个交易日一个），后端会按合约合并成一条时间线。
+const contracts = ref([])
+const contractsLoading = ref(false)
+const currentSymbol = computed(() => fileInfo.value?.symbol || '')
+const LAST_SYMBOL_KEY = 'depth.lastSymbol'   // 记住上次看的合约，下次进来自动打开
+
+async function loadContracts() {
+  contractsLoading.value = true
   try {
-    let res
-    try {
-      res = await uploadDepthFile(file)
-    } catch (error) {
-      if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
-      loading.value = false
-      const name = error.response.data.name || file.name
-      try {
-        await ElMessageBox.confirm(`文件夹中已存在「${name}」，是否覆盖？`, '文件已存在', {
-          confirmButtonText: '覆盖', cancelButtonText: '取消', type: 'warning'
-        })
-      } catch {
-        return
-      }
-      loading.value = true
-      res = await uploadDepthFile(file, true)
-    }
-    await applyResult(res)
-    ElMessage.success(`已导入 ${res.tickCount.toLocaleString()} 笔 tick`)
-    loadFileList()
+    const res = await getDepthContracts()
+    contracts.value = res.contracts || []
+    return contracts.value
   } catch (error) {
-    errorMsg.value = errorText(error, '文件解析失败')
+    contracts.value = []
+    errorMsg.value = errorText(error, '读取合约列表失败')
+    return []
   } finally {
-    loading.value = false
+    contractsLoading.value = false
   }
 }
 
-// 解析结果（上传或从列表选择，结构相同）设为当前数据：重置回放状态，默认看最后一个交易日的 1 分钟线
+// 解析结果设为当前数据：重置回放状态，默认看最后一个交易日的 1 分钟线
 async function applyResult(res) {
   stopPlay()
   resetCursor()
@@ -303,82 +281,64 @@ async function applyResult(res) {
   warnings.value = res.warnings || []
   period.value = 1
   day.value = res.days?.length ? res.days[res.days.length - 1] : ''
+  // 足迹图要 BS 列：当前合约没有时自动退回 K 线视图，避免一进来就是报错空白页
+  if (viewMode.value === 'footprint' && res.hasBs === false) viewMode.value = 'kline'
   await loadKline()
 }
 
-const savedFiles = ref([])
-const filesLoading = ref(false)
-const filesDir = ref('depth_files')
-const currentFileName = computed(() => fileInfo.value?.filename || '')
-
-async function loadFileList() {
-  filesLoading.value = true
-  try {
-    const res = await getDepthFiles()
-    savedFiles.value = res.files || []
-    filesDir.value = res.dir || filesDir.value
-  } catch {
-    savedFiles.value = []
-  } finally {
-    filesLoading.value = false
-  }
-}
-
 let openSeq = 0
-async function handleOpenFile(name) {
-  if (loading.value || name === currentFileName.value) return
+async function openContract(symbol) {
+  if (loading.value || (symbol === currentSymbol.value && fileInfo.value)) return
   const seq = ++openSeq
   errorMsg.value = ''
   warnings.value = []
   loading.value = true
   try {
-    const res = await openDepthFile(name)
+    const res = await openDepthContract(symbol)
     if (seq !== openSeq) return
     await applyResult(res)
-    ElMessage.success(`已切换到 ${name}（${res.tickCount.toLocaleString()} 笔 tick）`)
+    localStorage.setItem(LAST_SYMBOL_KEY, symbol)
   } catch (error) {
     if (seq !== openSeq) return
-    errorMsg.value = errorText(error, '文件解析失败')
-    if (error?.response?.data?.fileMissing) loadFileList()
+    errorMsg.value = errorText(error, '打开合约失败')
+    // 合约已被删除 / 文件消失：刷新列表，别让用户对着一个点不开的条目
+    if (error?.response?.data?.fileMissing) loadContracts()
   } finally {
     if (seq === openSeq) loading.value = false
   }
 }
 
-async function handleDeleteFile(name) {
-  if (loading.value) return
-  try {
-    await ElMessageBox.confirm(
-      name === currentFileName.value
-        ? `确定要删除「${name}」吗？这是当前正在查看的文件，删除后当前图表不受影响，但之后无法再从列表中选择它。`
-        : `确定要删除「${name}」吗？`,
-      '删除文件',
-      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return
-  }
-  try {
-    await deleteDepthFile(name)
-    ElMessage.success(`已删除 ${name}`)
-  } catch (error) {
-    if (!error?.response?.data?.fileMissing) ElMessage.error(errorText(error, '删除失败'))
-  }
-  loadFileList()
+// 进入页面：优先 URL 里的 ?symbol=（从数据库管理点「查看」过来），其次上次看的合约，最后是最近导入的那个
+async function autoOpen() {
+  const list = await loadContracts()
+  if (!list.length) return
+  const want = [route.query.symbol, localStorage.getItem(LAST_SYMBOL_KEY)]
+    .find((sym) => sym && list.some((c) => c.symbol === sym))
+  await openContract(want || list[0].symbol)
 }
 
-const formatSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
-const formatMtime = (s) => {
-  const d = new Date(s * 1000)
-  const p = (v) => String(v).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+// 从数据库管理跳回来时 query 可能变化（同一个组件实例复用），跟着切换
+watch(() => route.query.symbol, (sym) => {
+  if (sym && contracts.value.some((c) => c.symbol === sym)) openContract(String(sym))
+})
+
+const compactNum = (n) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)} 万` : String(n))
+// 时间范围：同一年内省略年份，跨度大时才显示年
+const rangeText = (c) => {
+  const a = c.start.slice(0, 10)
+  const b = c.end.slice(0, 10)
+  const short = (d) => d.slice(5)
+  if (a.slice(0, 4) !== b.slice(0, 4)) return `${a} ~ ${b}`
+  return a === b ? short(a) : `${short(a)} ~ ${short(b)}`
 }
-loadFileList()
+
+onMounted(autoOpen)
 
 // ---------- K 线 / 足迹图 ----------
 // 足迹图接口一次返回 K 线 + 价位成交量 + 大单，切到足迹图时 bars 就是它的结果（字段是 K 线的超集）。
 // 大单接口按「当前阈值与 100 取小」请求：前端调高阈值时本地过滤即可，调低阈值时才需要重新请求（见 watch bigOrder）
 let klineSeq = 0
+let reopening = false   // 防止「失效 -> 重开 -> 又失效」死循环
 let fetchedBigOrder = DEFAULT_BIG_ORDER   // 当前 bigOrders 是按多大的阈值取回来的
 async function loadKline() {
   if (!fileInfo.value) return
@@ -411,8 +371,15 @@ async function loadKline() {
     bars.value = []
     bigOrders.value = []
     if (error?.response?.data?.expired) {
+      // 后端重启 / 缓存被淘汰：数据本身还在磁盘上，自动按合约重新打开，用户无感
+      const sym = fileInfo.value?.symbol
       fileInfo.value = null
-      errorMsg.value = error.response.data.message
+      if (sym && !reopening) {
+        reopening = true
+        try { await openContract(sym) } finally { reopening = false }
+      } else {
+        errorMsg.value = error.response.data.message
+      }
     } else if (viewMode.value === 'footprint') {
       // 足迹图失败（比如文件没有 BS 列）放在图区里说明，不占用左侧错误栏
       footprintError.value = errorText(error, '生成足迹图失败')

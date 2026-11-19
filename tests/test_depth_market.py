@@ -259,6 +259,118 @@ def test_footprint_api():
     assert client.get("/api/depth/footprint?depthId=nope").status_code == 410
 
 
+# ---------------------------------------------------------------------------
+# 合约合并 / 合约索引
+# ---------------------------------------------------------------------------
+def _day_rows(symbol, day, start_cum, n=5, minute0=0, bs="多开", hour=9):
+    """某个交易日（日盘）的 n 笔 tick：每笔 +10 手，累计量从 start_cum 开始。day 形如 '2026-9-17'。"""
+    rows = []
+    for i in range(n):
+        cum = start_cum + (i + 1) * 10
+        rows.append(f"{symbol},{day} {hour}:{minute0 + i},{bs},{5000 + i},{4999 + i},5,{5001 + i},6,{cum},3.6E+09,300000,5000,5010,4990")
+    return rows
+
+
+def test_merge_keeps_per_file_volume_increments():
+    # 两个交易日各一个文件：第二天开盘累计量从头开始（比前一天末尾小很多）。
+    # 如果合并后再整体差分，第二天首笔会被错算；合并必须只拼接各文件已算好的增量。
+    a = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv")
+    b = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-18", 0), HEADER_B), "b.csv")
+    m = dm.merge([a, b])
+    assert m.count == 10 and m.days == ["2026-09-17", "2026-09-18"]
+    assert list(m.vol) == [10] * 10
+    # 乱序传入也按时间合并
+    m2 = dm.merge([b, a])
+    assert list(m2.ts) == list(m.ts) and m2.symbol == "fu2701"
+    assert [x["time"][:10] for x in dm.build_kline(m, 1440)["bars"]] == ["2026-09-17", "2026-09-18"]
+
+
+def test_merge_dedups_overlapping_days():
+    full = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-17", 0, n=8), HEADER_B), "full.csv")
+    part = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-17", 0, n=3), HEADER_B), "part.csv")
+    other = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-18", 0, n=4), HEADER_B), "other.csv")
+    m = dm.merge([part, full, other])
+    # 9-17 只保留 tick 更多的 full（8 笔），不翻倍
+    assert m.count == 8 + 4
+    assert sum(m.vol[m.day == "2026-09-17"]) == 80
+    assert any("重复出现" in w for w in m.warnings)
+
+
+def test_merge_levels_and_bs_mismatch_degrade():
+    with_bs = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv")
+    text = "time,last,volume,a1_p,a1_v,b1_p,b1_v\n2026-9-18 9:00,100,5,101,1,99,1\n2026-9-18 9:01,101,9,102,1,100,1\n"
+    no_bs = dm.parse(text.encode(), "b.csv")
+    m = dm.merge([with_bs, no_bs])
+    assert m.bs is None and any("BS" in w for w in m.warnings)
+    assert dm.merge([with_bs]) is with_bs
+
+
+def test_peek_meta_matches_parse():
+    content = csv_bytes(ROWS_B, HEADER_B)
+    meta = dm.peek_meta(content, "a2611.csv")
+    td = dm.parse(content, "a2611.csv")
+    assert meta["symbol"] == td.symbol and meta["tickCount"] == td.count and meta["days"] == td.days
+    assert meta["start"] == dm.fmt_ts(td.ts[0], True) and meta["end"] == dm.fmt_ts(td.ts[-1], True)
+    assert meta["hasBs"] is True and meta["levels"] == 1
+    try:
+        dm.peek_meta(b"a,b\n1,2\n", "x.csv")
+    except dm.DepthParseError:
+        pass
+    else:
+        raise AssertionError("无法识别的文件应抛 DepthParseError")
+
+
+def _clear_depth_files():
+    for n in os.listdir(_TMP_DIR):
+        os.remove(os.path.join(_TMP_DIR, n))
+    backend._DEPTH_META_CACHE.clear()
+
+
+def test_contracts_index_open_and_delete():
+    _clear_depth_files()
+    assert client.get("/api/depth/contracts").get_json()["contracts"] == []
+    # fu2701 两个交易日（两个文件），a2611 一个文件，外加一个无法识别的文件
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "fu_0917.csv").status_code == 200
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-18", 0), HEADER_B), "fu_0918.csv").status_code == 200
+    assert _upload(csv_bytes(ROWS_B, HEADER_B), "a2611.csv").status_code == 200
+    with open(os.path.join(_TMP_DIR, "junk.csv"), "wb") as f:
+        f.write(b"x,y\n1,2\n")
+
+    j = client.get("/api/depth/contracts").get_json()
+    by = {c["symbol"]: c for c in j["contracts"]}
+    assert set(by) == {"fu2701", "a2611"}
+    fu = by["fu2701"]
+    assert fu["fileCount"] == 2 and fu["tickCount"] == 10 and fu["dayCount"] == 2 and fu["hasBs"] is True
+    assert fu["days"] == ["2026-09-17", "2026-09-18"]
+    assert [f["name"] for f in fu["files"]] == ["fu_0917.csv", "fu_0918.csv"]   # 按开始时间升序
+    assert [x["name"] for x in j["unrecognized"]] == ["junk.csv"]
+
+    # 索引缓存：文件没变不会重复读（缓存条目的签名保持不变）
+    sig = backend._DEPTH_META_CACHE["fu_0917.csv"][0]
+    client.get("/api/depth/contracts")
+    assert backend._DEPTH_META_CACHE["fu_0917.csv"][0] == sig
+
+    # 按合约打开：两个文件合并，增量不被错误相减
+    o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+    assert o["success"] and o["tickCount"] == 10 and o["fileCount"] == 2 and o["days"] == ["2026-09-17", "2026-09-18"]
+    k = client.get(f"/api/depth/kline?depthId={o['depthId']}&period=1440").get_json()
+    assert [b["volume"] for b in k["bars"]] == [50, 50]
+    assert client.post("/api/depth/open-contract", json={"symbol": "nope"}).status_code == 404
+
+    # 文件被改动后索引随之更新（缓存按大小 / 修改时间失效）
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0, n=7), HEADER_B), "fu_0917.csv").status_code == 200
+    fu2 = {c["symbol"]: c for c in client.get("/api/depth/contracts").get_json()["contracts"]}["fu2701"]
+    assert fu2["tickCount"] == 7 + 5
+
+    # 删除合约：只删它名下的文件
+    d = client.delete("/api/depth/contracts", json={"symbol": "fu2701"}).get_json()
+    assert d["success"] and sorted(d["deleted"]) == ["fu_0917.csv", "fu_0918.csv"]
+    left = {c["symbol"] for c in client.get("/api/depth/contracts").get_json()["contracts"]}
+    assert left == {"a2611"} and os.path.exists(os.path.join(_TMP_DIR, "a2611.csv"))
+    assert client.delete("/api/depth/contracts", json={"symbol": "fu2701"}).status_code == 404
+    _clear_depth_files()
+
+
 def _upload(content, name="t.csv", overwrite=True):
     data = {"file": (io.BytesIO(content), name)}
     if overwrite:

@@ -1,0 +1,406 @@
+/* Database 样式（数据库管理）
+   导航栏与其它模块一致；主体是单列：标题 + 导入区 + 合约表。 */
+
+.db-container {
+  min-height: 100vh;
+  background: var(--bg-page-alt);
+}
+
+/* 顶部导航栏 */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--bg-navbar);
+  border-bottom: 1px solid var(--border-navbar);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back-btn {
+  padding: 6px 14px;
+  background: var(--nav-btn-bg);
+  border: 1px solid var(--nav-btn-border);
+  border-radius: 6px;
+  color: var(--nav-btn-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.back-btn:hover {
+  background: var(--nav-btn-bg-hover);
+  border-color: var(--nav-btn-border-hover);
+}
+
+.back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 主体 */
+.db-body {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+
+.db-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.db-head h2 {
+  margin: 0 0 8px;
+  color: var(--accent2);
+  font-size: 22px;
+}
+
+.db-sub {
+  margin: 0;
+  max-width: 760px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.db-sub code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text-body);
+  font-size: 12px;
+}
+
+.db-goto {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border: 1px solid var(--nav-btn-border);
+  border-radius: 6px;
+  background: var(--nav-btn-bg);
+  color: var(--primary);
+  font-size: 13px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.db-goto:hover {
+  background: var(--nav-btn-bg-hover);
+  border-color: var(--nav-btn-border-hover);
+}
+
+/* 导入区 */
+.db-upload {
+  margin-bottom: 14px;
+}
+
+.db-upload-text {
+  padding: 10px 0;
+}
+
+.db-upload-main {
+  color: var(--text-option);
+  font-size: 14px;
+}
+
+.db-upload-main em {
+  color: var(--primary);
+  font-style: normal;
+}
+
+.db-upload-tip {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 导入任务 */
+.db-tasks {
+  margin-bottom: 18px;
+  padding: 8px 14px;
+  background: var(--bg-panel);
+  border-radius: 8px;
+}
+
+.db-task {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.task-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+.db-task.ok .task-icon {
+  color: var(--down);
+}
+
+.db-task.error .task-icon {
+  color: var(--up);
+}
+
+.db-task.skip .task-icon,
+.db-task.wait .task-icon {
+  color: var(--text-muted);
+}
+
+.task-name {
+  max-width: 260px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+}
+
+.task-msg {
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.db-task.error .task-msg {
+  color: var(--up);
+}
+
+/* 面板 */
+.db-panel {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  background: var(--bg-panel);
+  border-radius: 10px;
+}
+
+.db-panel.warn {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.db-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: var(--accent2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.db-total {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.db-link {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.db-link.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.db-empty {
+  padding: 28px 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* 合约表 */
+.db-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) 56px 64px 96px minmax(210px, 1.6fr) 44px 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.db-row-head {
+  height: 30px;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-panel);
+}
+
+.db-row-item {
+  height: 44px;
+  border-bottom: 1px solid var(--border-panel);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.db-row-item:hover,
+.db-row-item.open {
+  background: rgba(var(--primary-rgb), 0.07);
+}
+
+.c-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.c-range {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.c-symbol {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.c-symbol b {
+  color: var(--text-body);
+  font-size: 14px;
+}
+
+.c-symbol small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.c-symbol .arrow {
+  width: 10px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+.c-flag {
+  text-align: center;
+}
+
+.c-flag.yes {
+  color: var(--down);
+  font-weight: 700;
+}
+
+.c-flag.no {
+  color: var(--text-muted);
+}
+
+.c-op {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.op-link {
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.op-link:hover {
+  text-decoration: underline;
+}
+
+.op-link.danger {
+  color: var(--up);
+}
+
+/* 展开的文件列表 */
+.db-files {
+  padding: 6px 8px 10px 30px;
+  background: rgba(0, 0, 0, 0.12);
+  border-bottom: 1px solid var(--border-panel);
+}
+
+.db-files.flat {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.db-file {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(200px, 1.4fr) 80px 72px 120px 40px;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.db-files.flat .db-file {
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 2fr) 72px 40px;
+}
+
+.f-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+}
+
+.f-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.f-err {
+  color: var(--amber);
+  word-break: break-all;
+}
+
+/* Element Plus 上传拖拽区 */
+:deep(.el-upload-dragger) {
+  background: var(--bg-chart);
+  border: 1px dashed rgba(var(--primary-rgb), 0.5);
+  padding: 22px 10px;
+}
+
+:deep(.el-upload-dragger:hover) {
+  border-color: var(--primary);
+}
+
+:deep(.el-upload) {
+  width: 100%;
+}
+
+:deep(.el-upload-dragger) {
+  width: 100%;
+}

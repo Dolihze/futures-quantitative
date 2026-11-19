@@ -977,6 +977,141 @@ def depth_upload():
     return jsonify(data)
 
 
+# ---------------------------------------------------------------------------
+# 合约索引：把 depth_files 里的 CSV 按【合约】分组（一个合约可对应多个文件）。
+# 每个文件的元数据（合约 / 交易日 / tick 数 / 时间范围）要读一遍 CSV 才知道，大文件很慢，
+# 所以缓存到内存，按 (文件名, 大小, 修改时间) 判断是否失效；文件没变就不会再读。
+# ---------------------------------------------------------------------------
+_DEPTH_META_CACHE = {}   # name -> ((size, mtime_ns), meta | {"error": str})
+
+
+def _depth_file_meta(name, path):
+    st = os.stat(path)
+    sig = (st.st_size, st.st_mtime_ns)
+    hit = _DEPTH_META_CACHE.get(name)
+    if hit and hit[0] == sig:
+        return hit[1]
+    try:
+        with open(path, 'rb') as fh:
+            meta = depth_market.peek_meta(fh.read(), name)
+    except depth_market.DepthParseError as e:
+        meta = {"error": str(e)}
+    except Exception as e:
+        meta = {"error": f"读取失败：{e}"}
+    _DEPTH_META_CACHE[name] = (sig, meta)
+    return meta
+
+
+def _depth_scan():
+    """扫描 depth_files：返回 (按合约分组的列表, 无法识别的文件列表)。合约按「最近导入的文件」倒序。"""
+    root = depth_files_dir()
+    groups, bad = {}, []
+    if not os.path.isdir(root):
+        return [], []
+    alive = set()
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if name.startswith(('~$', '.')) or not os.path.isfile(path) or not name.lower().endswith(DEPTH_EXTS):
+            continue
+        alive.add(name)
+        st = os.stat(path)
+        meta = _depth_file_meta(name, path)
+        if "error" in meta:
+            bad.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime), "error": meta["error"]})
+            continue
+        g = groups.setdefault(meta["symbol"], {"symbol": meta["symbol"], "name": "", "files": []})
+        g["name"] = g["name"] or meta["name"]
+        g["files"].append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime),
+                           "tickCount": meta["tickCount"], "days": meta["days"],
+                           "start": meta["start"], "end": meta["end"], "hasBs": meta["hasBs"]})
+    for gone in set(_DEPTH_META_CACHE) - alive:   # 文件被删了，清掉缓存
+        _DEPTH_META_CACHE.pop(gone, None)
+
+    out = []
+    for g in groups.values():
+        fs = g["files"]
+        days = sorted({d for f in fs for d in f["days"]})
+        out.append({
+            "symbol": g["symbol"], "name": g["name"],
+            "fileCount": len(fs), "files": sorted(fs, key=lambda f: f["start"]),
+            "tickCount": sum(f["tickCount"] for f in fs),
+            "days": days, "dayCount": len(days),
+            "start": min(f["start"] for f in fs), "end": max(f["end"] for f in fs),
+            "hasBs": all(f["hasBs"] for f in fs),
+            "mtime": max(f["mtime"] for f in fs),
+            "size": sum(f["size"] for f in fs),
+        })
+    out.sort(key=lambda g: (-g["mtime"], g["symbol"]))
+    bad.sort(key=lambda x: (-x["mtime"], x["name"]))
+    return out, bad
+
+
+@app.route('/api/depth/contracts')
+def depth_contracts():
+    """已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用。"""
+    contracts, bad = _depth_scan()
+    return jsonify({"success": True, "dir": DEPTH_FILES_DIRNAME, "contracts": contracts, "unrecognized": bad})
+
+
+@app.route('/api/depth/open-contract', methods=['POST'])
+def depth_open_contract():
+    """打开一个合约：把它的所有文件解析后按时间合并成一条时间线，返回结构同 /api/depth/open。"""
+    symbol = (request.get_json(silent=True) or {}).get('symbol', '')
+    contracts, _ = _depth_scan()
+    c = next((x for x in contracts if x["symbol"] == symbol), None)
+    if c is None:
+        return jsonify({"success": False, "fileMissing": True,
+                        "message": f"合约「{symbol}」没有数据文件，可能已被删除，请刷新列表"}), 404
+    parts = []
+    for f in c["files"]:
+        path = safe_depth_path(f["name"])
+        try:
+            with open(path, 'rb') as fh:
+                parts.append(depth_market.parse(fh.read(), f["name"]))
+        except depth_market.DepthParseError as e:
+            return jsonify({"success": False, "message": f"{f['name']}：{e}"}), 400
+        except OSError as e:
+            return jsonify({"success": False, "message": f"读取 {f['name']} 失败：{e}"}), 400
+        except Exception as e:
+            print(f"[Depth] 解析 {f['name']} 失败: {e}")
+            return jsonify({"success": False, "message": f"解析 {f['name']} 失败：{e}"}), 400
+    try:
+        td = depth_market.merge(parts)
+    except Exception as e:
+        print(f"[Depth] 合并 {symbol} 失败: {e}")
+        return jsonify({"success": False, "message": f"合并文件失败：{e}"}), 400
+
+    depth_id = uuid.uuid4().hex
+    DEPTH_CACHE[depth_id] = td
+    while len(DEPTH_CACHE) > DEPTH_CACHE_MAX:
+        DEPTH_CACHE.popitem(last=False)
+    data = depth_market.summary(td)
+    data.update({"success": True, "depthId": depth_id, "filename": symbol, "fileCount": len(parts)})
+    return jsonify(data)
+
+
+@app.route('/api/depth/contracts', methods=['DELETE'])
+def depth_contract_delete():
+    """删除一个合约：删掉它名下的全部文件。返回删除了哪些、哪些失败。"""
+    symbol = (request.get_json(silent=True) or {}).get('symbol', '')
+    contracts, _ = _depth_scan()
+    c = next((x for x in contracts if x["symbol"] == symbol), None)
+    if c is None:
+        return jsonify({"success": False, "fileMissing": True, "message": f"合约「{symbol}」没有数据文件"}), 404
+    deleted, failed = [], []
+    for f in c["files"]:
+        path = safe_depth_path(f["name"])
+        try:
+            os.remove(path)
+            deleted.append(f["name"])
+        except OSError as e:
+            failed.append({"name": f["name"], "error": str(e)})
+    if failed:
+        return jsonify({"success": False, "deleted": deleted, "failed": failed,
+                        "message": f"{len(failed)} 个文件删除失败（可能正被其它程序打开）：{failed[0]['name']}"}), 400
+    return jsonify({"success": True, "deleted": deleted})
+
+
 @app.route('/api/depth/files')
 def depth_files():
     """列出 depth_files 文件夹里的 tick CSV（最近修改的在前）。"""

@@ -44,6 +44,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/database',
+    name: 'Database',
+    component: () => import('@/views/Database/index.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/review',
     name: 'Review',
     component: () => import('@/views/Review/index.vue'),

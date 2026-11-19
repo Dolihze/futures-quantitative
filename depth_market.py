@@ -605,5 +605,116 @@ def summary(td: TickData) -> dict:
         'days': td.days,
         'start': fmt_ts(td.ts[0], True),
         'end': fmt_ts(td.ts[-1], True),
+        'hasBs': td.bs is not None,
         'warnings': td.warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 多文件合并：同一个合约的多个 CSV（比如每个交易日一个文件）合成一条时间线
+# ---------------------------------------------------------------------------
+def merge(parts: list) -> TickData:
+    """把同一合约的多份 TickData 按时间合并。
+
+    重要：成交量增量（vol）是每个文件【单独】差分得到的，这里只拼接已经算好的数组，
+    绝不能先拼 cum_vol 再差分——每个文件的首笔处理（盘中截取判断、交易日开盘重置）是文件内的事，
+    合在一起差分会把相邻文件的首尾错误地相减。
+
+    重叠处理：两个文件覆盖了同一个交易日时（比如重复下载、一个是全天一个是片段），
+    同一交易日只保留 tick 数更多的那个文件的数据，并在 warnings 里提示，避免同一天的 K 线成交量翻倍。
+    """
+    if not parts:
+        raise DepthParseError('没有可合并的数据')
+    if len(parts) == 1:
+        return parts[0]
+
+    # 每个交易日只取一个来源：tick 最多的文件；并列取靠前的（调用方按文件名排序，结果稳定）
+    best = {}
+    for pi, p in enumerate(parts):
+        for d, n in zip(*np.unique(p.day.astype(str), return_counts=True)):
+            if d not in best or n > best[d][1]:
+                best[d] = (pi, int(n))
+    warnings = []
+    for p in parts:
+        warnings.extend(p.warnings)
+    dup_days = sorted({d for pi, p in enumerate(parts) for d in set(p.day.astype(str)) if best[d][0] != pi})
+    if dup_days:
+        warnings.append(f'{len(dup_days)} 个交易日在多个文件里重复出现（{dup_days[0]}'
+                        f'{"…" if len(dup_days) > 1 else ""}），每个交易日只保留 tick 最多的那个文件的数据')
+
+    keep = []   # 每个文件保留的 tick 掩码
+    for pi, p in enumerate(parts):
+        keep.append(np.array([best[str(d)][0] == pi for d in p.day], dtype=bool))
+
+    levels = min(p.levels for p in parts)
+    if len({p.levels for p in parts}) > 1:
+        warnings.append(f'各文件的盘口档数不一致，合并后只保留 {levels} 档')
+    has_bs = all(p.bs is not None for p in parts)
+    if not has_bs and any(p.bs is not None for p in parts):
+        warnings.append('部分文件没有 BS 列，合并后无法生成足迹图')
+
+    def cat(getter):
+        return np.concatenate([getter(p)[k] for p, k in zip(parts, keep)])
+
+    ts = cat(lambda p: p.ts)
+    order = np.argsort(ts, kind='stable')   # 稳定排序：时间相同的 tick 保持「文件顺序 + 文件内顺序」
+
+    def srt(a):
+        return a[order]
+
+    merged = TickData(
+        ts=srt(ts),
+        price=srt(cat(lambda p: p.price)),
+        vol=srt(cat(lambda p: p.vol)),
+        cum_vol=srt(cat(lambda p: p.cum_vol)),
+        money=srt(cat(lambda p: p.money)),
+        position=srt(cat(lambda p: p.position)),
+        day=srt(cat(lambda p: p.day)),
+        bs=srt(np.concatenate([p.bs[k] for p, k in zip(parts, keep)])) if has_bs else None,
+        ask_p=[srt(np.concatenate([p.ask_p[n][k] for p, k in zip(parts, keep)])) for n in range(levels)],
+        ask_v=[srt(np.concatenate([p.ask_v[n][k] for p, k in zip(parts, keep)])) for n in range(levels)],
+        bid_p=[srt(np.concatenate([p.bid_p[n][k] for p, k in zip(parts, keep)])) for n in range(levels)],
+        bid_v=[srt(np.concatenate([p.bid_v[n][k] for p, k in zip(parts, keep)])) for n in range(levels)],
+        symbol=parts[0].symbol,
+        name=next((p.name for p in parts if p.name), ''),
+        warnings=warnings,
+    )
+    merged.days = sorted(set(merged.day.tolist()))
+    return merged
+
+
+def peek_meta(content: bytes, filename: str = '') -> dict:
+    """只读文件的合约代码 / 交易日 / tick 数 / 时间范围，不做完整解析（给「数据库管理」的合约索引用）。
+
+    和 parse 用同一套列识别和时间解析，所以结论一致；但跳过成交量差分、盘口、BS 等较重的步骤。
+    无法识别的文件抛 DepthParseError。
+    """
+    df = _read_csv(content)
+    if df.empty:
+        raise DepthParseError('文件里没有数据行')
+    columns = {_norm(c): c for c in df.columns}
+    c_time = _find_col(columns, 'time')
+    c_price = _find_col(columns, 'price')
+    if c_time is None or c_price is None:
+        raise DepthParseError('缺少时间或最新价列')
+    dt = _parse_time(df[c_time])
+    ok = dt.notna() & (_to_num(df[c_price]) > 0)
+    if not ok.any():
+        raise DepthParseError('没有可用的 tick')
+    dt = dt[ok].reset_index(drop=True)
+    days = _trading_day(dt)
+    c_sym = _find_col(columns, 'symbol')
+    c_name = _find_col(columns, 'name')
+    symbol = str(df[c_sym].iloc[0]).strip() if c_sym else ''
+    if not symbol:
+        symbol = re.sub(r'\.[^.]+$', '', filename or '') or '未知合约'
+    return {
+        'symbol': symbol,
+        'name': str(df[c_name].iloc[0]).strip() if c_name else '',
+        'tickCount': int(ok.sum()),
+        'days': sorted(set(days.tolist())),
+        'start': fmt_ts(int(dt.min().value // 1_000_000), True),
+        'end': fmt_ts(int(dt.max().value // 1_000_000), True),
+        'hasBs': _find_col(columns, 'bs') is not None,
+        'levels': len(_detect_levels(columns)),
     }
