@@ -10,7 +10,9 @@
     </div>
 
     <template v-else>
-      <div class="book-time">{{ book.time }}</div>
+      <div class="book-time">
+        {{ timeText }}<span class="book-seq">第 {{ (book.index + 1).toLocaleString() }} 笔</span>
+      </div>
 
       <div class="book-table">
         <div class="book-row book-row-head">
@@ -30,6 +32,7 @@
           <span class="last-price">{{ fmt(book.price) }}</span>
           <span class="last-meta">现量 {{ fmt(book.volume) }}</span>
           <span v-if="book.position != null" class="last-meta">仓 {{ fmt(book.position) }}</span>
+          <span v-if="book.bs" class="last-bs" :class="book.bs.startsWith('多') ? 'up-text' : book.bs.startsWith('空') ? 'down-text' : ''">{{ book.bs }}</span>
         </div>
 
         <div v-for="b in book.bids" :key="'b' + b.level" class="book-row">
@@ -88,6 +91,12 @@ const bidRatio = computed(() => {
   return t > 0 ? (bidTotal.value / t) * 100 : 50
 })
 
+// 时间显示：毫秒位全是 0 时（数据只精确到秒 / 分钟）不显示 .000，避免误导成"精确到毫秒"
+const timeText = computed(() => {
+  const t = props.book?.time || ''
+  return t.endsWith('.000') ? t.slice(0, -4) : t
+})
+
 const lastClass = computed(() => {
   const p = props.book?.price
   if (p == null || props.prevPrice == null || p === props.prevPrice) return ''
@@ -132,6 +141,17 @@ const lastClass = computed(() => {
 
 .book-time {
   color: var(--text-secondary);
+}
+
+.book-seq {
+  margin-left: 10px;
+  color: var(--text-muted);
+}
+
+.last-bs {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .book-empty {

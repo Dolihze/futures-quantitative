@@ -12,6 +12,12 @@
       <span>量 <b>{{ hoverBar.volume }}</b></span>
       <span v-if="hoverBar.position != null">仓 <b>{{ hoverBar.position }}</b></span>
       <span class="info-ticks">{{ hoverBar.ticks }} 笔</span>
+      <!-- 成交性质（多开 / 空开 / 多平 / 空平…）：文件里有 BS 列才显示。多方动作红、空方动作绿 -->
+      <span v-if="bsList.length" class="info-bs">
+        <i v-for="x in bsList" :key="x.name" :class="x.name.startsWith('多') ? 'up' : x.name.startsWith('空') ? 'down' : ''">
+          {{ x.name }} {{ x.volume }}
+        </i>
+      </span>
     </div>
 
     <div v-if="!bars.length" class="chart-empty">
@@ -50,6 +56,16 @@ let chart = null
 let resizeObserver = null
 const hoverIndex = ref(-1)
 const hoverBar = computed(() => props.bars[hoverIndex.value] || null)
+
+// 悬停 K 线里各类成交性质的手数，按手数从大到小；0 手的不显示
+const bsList = computed(() => {
+  const bs = hoverBar.value?.bs
+  if (!bs) return []
+  return Object.entries(bs)
+    .filter(([, v]) => v)
+    .map(([name, volume]) => ({ name, volume }))
+    .sort((a, b) => b.volume - a.volume)
+})
 
 // 价格涨跌色：相对当前悬停 K 线的开盘价
 const cls = (v) => {
@@ -256,6 +272,24 @@ defineExpose({ resize: () => chart?.resize() })
 
 .info-ticks {
   color: var(--text-muted);
+}
+
+.info-bs {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.info-bs i {
+  font-style: normal;
+  color: var(--text-secondary);
+}
+
+.info-bs i.up {
+  color: var(--up);
+}
+
+.info-bs i.down {
+  color: var(--down);
 }
 
 .chart-empty {
