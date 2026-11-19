@@ -2,7 +2,7 @@
 
 > **历史文档**：本文记录 2026-10-18 将纯 HTML 页面迁移到 Vue 的清理工作（当时为 pywebview + `app.py`）。
 > 项目现已迁移到 **Tauri 2.x**，`app.py` 已移除，其 API 全部保留在 `backend.py` 中。
-> 最新的启动与构建方式请见根目录 [`README.md`](README.md)。
+> 最新的启动与构建方式请见根目录 [`README.md`](../../README.md)。
 
 ## 清理时间
 2026-10-18
@@ -115,7 +115,7 @@ npm run backend:dev    # 仅 Flask，端口 5000
 npm run frontend:dev   # 仅 Vite，端口 5173
 ```
 
-详见根目录 [`README.md`](README.md)。
+详见根目录 [`README.md`](../../README.md)。
 
 ## 技术栈对比
 
@@ -187,6 +187,6 @@ npm run frontend:dev   # 仅 Vite，端口 5173
 ## 相关文档
 
 - [Vue迁移评估标准](./DEVELOPMENT_REPORT.md)
-- [项目启动指南](./README.md)
-- [前端开发文档](./frontend/README.md)
-- [API接口文档](./README_BACKTEST.md)
+- [项目启动指南](../../README.md)
+- [前端开发文档](../../frontend/README.md)
+- [API接口文档](../README_BACKTEST.md)

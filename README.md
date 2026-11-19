@@ -40,6 +40,9 @@ futures-quantitative/
 ├── review.py                 # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
 ├── depth_market.py           # 深度行情：tick CSV 解析、多文件合并、K 线 / 足迹图聚合、历史盘口查询（不依赖 Flask）
 ├── tests/                    # review / depth_market 的单元测试与 API 测试（python tests/test_review.py）
+├── docs/                     # 补充文档
+│   ├── README_BACKTEST.md    # 量化回测使用说明
+│   └── archive/              # 早期开发与 Vue 迁移记录（历史文档，仅供追溯）
 ├── data/brokers.json         # 期货公司数据
 ├── scripts/
 │   ├── setup.mjs             # 首次准备：装前端依赖、装 Python 依赖、打包 sidecar
@@ -311,7 +314,7 @@ npm run build           # 2. 构建前端并生成安装包
 
 ## 更多文档
 
-- [`README_BACKTEST.md`](README_BACKTEST.md)：回测功能使用说明
+- [`docs/README_BACKTEST.md`](docs/README_BACKTEST.md)：回测功能使用说明
 - [`frontend/README.md`](frontend/README.md)：前端说明
 - [`src-tauri/sidecar/README.md`](src-tauri/sidecar/README.md)：sidecar 打包说明
-- [`DEVELOPMENT_REPORT.md`](DEVELOPMENT_REPORT.md)、[`MIGRATION_COMPLETE.md`](MIGRATION_COMPLETE.md)、[`HTML_MIGRATION_CLEANUP.md`](HTML_MIGRATION_CLEANUP.md)：早期开发与 Vue 迁移记录（历史文档）
+- [`docs/archive/DEVELOPMENT_REPORT.md`](docs/archive/DEVELOPMENT_REPORT.md)、[`docs/archive/MIGRATION_COMPLETE.md`](docs/archive/MIGRATION_COMPLETE.md)、[`docs/archive/HTML_MIGRATION_CLEANUP.md`](docs/archive/HTML_MIGRATION_CLEANUP.md)：早期开发与 Vue 迁移记录（历史文档）

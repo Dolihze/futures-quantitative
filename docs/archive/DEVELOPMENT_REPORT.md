@@ -2,7 +2,7 @@
 
 > **历史文档**：本文记录 2026-10-02 回测功能的初版开发（当时为 pywebview + Flask 架构）。
 > 项目现已迁移到 **Tauri 2.x**，`app.py`、`templates/`、`start.bat` 均已移除。
-> 最新的启动与构建方式请见根目录 [`README.md`](README.md)。
+> 最新的启动与构建方式请见根目录 [`README.md`](../../README.md)。
 
 ## 📅 开发时间
 2026-10-02
@@ -78,7 +78,7 @@ npm run backend:build   # 首次或修改 backend.py 后
 npm run dev
 ```
 
-详见根目录 [`README.md`](README.md)。
+详见根目录 [`README.md`](../../README.md)。
 
 ### 访问步骤
 1. 启动程序后自动打开桌面窗口
@@ -197,8 +197,8 @@ npm run dev
 ## 📞 技术支持
 
 如有问题，请查看：
-1. [README.md](README.md) - 启动、构建与故障排除
-2. [README_BACKTEST.md](README_BACKTEST.md) - 回测使用说明
+1. [README.md](../../README.md) - 启动、构建与故障排除
+2. [README_BACKTEST.md](../README_BACKTEST.md) - 回测使用说明
 3. requirements.txt - 依赖清单
 
 ## 🎉 总结
