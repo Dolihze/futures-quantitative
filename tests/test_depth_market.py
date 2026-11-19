@@ -175,6 +175,90 @@ def test_mixed_time_formats_and_bs_codes():
     assert [dm.fmt_ts(x, True)[11:] for x in td.ts] == ["09:00:00.000", "09:00:30.000", "09:01:00.500", "09:02:00.000"]
 
 
+def test_footprint_levels_and_side():
+    td = dm.parse(csv_bytes(ROWS_B, HEADER_B), "a2611.csv")
+    fp = dm.build_footprint(td, 1)
+    assert [b["time"] for b in fp["bars"]] == ["2026-09-17 08:59", "2026-09-17 09:00", "2026-09-17 09:01"]
+    # 价位成交量之和 == K 线成交量（含中性），不能丢量
+    for b in fp["bars"]:
+        total = sum((lv["buy"] or 0) + (lv["sell"] or 0) + (lv["neutral"] or 0) for lv in b["levels"])
+        assert total == b["volume"], (b["time"], total, b["volume"])
+
+    lv = {x["price"]: x for x in fp["bars"][1]["levels"]}
+    # 价位从低到高
+    assert [x["price"] for x in fp["bars"][1]["levels"]] == sorted(lv)
+    # 9:00：5031 空开 79（卖方主动）；5029 空开 67；5028 空开 133 + 多开 58；5027 空开 4；5025 多平 83 + 空开 105
+    assert lv[5031]["sell"] == 79 and lv[5031]["buy"] == 0
+    assert lv[5028]["sell"] == 133 and lv[5028]["buy"] == 58
+    assert lv[5025]["sell"] == 83 + 105          # 多平 = 卖出平多，属于卖方主动
+    # 08:59：首笔增量 0（盘中截取），第二笔空开 29
+    assert [(x["price"], x["sell"]) for x in fp["bars"][0]["levels"]] == [(5033, 29)]
+    # 9:01 多开 17 -> 买方主动
+    assert fp["bars"][2]["levels"][0]["buy"] == 17
+    assert fp["tickSize"] == 1
+
+
+def test_footprint_big_orders_threshold():
+    td = dm.parse(csv_bytes(ROWS_B, HEADER_B), "a2611.csv")
+    # 默认 100 手：只有 133 和 105 两笔
+    big = dm.build_footprint(td, 1)["bigOrders"]
+    assert [(x["volume"], x["price"], x["side"], x["bar"]) for x in big] == [(133, 5028, -1, 1), (105, 5025, -1, 1)]
+    assert big[0]["index"] == 4 and big[0]["bs"] == "空开"
+    # 调低到 60：多出 79 和 67 和 83
+    assert [x["volume"] for x in dm.build_footprint(td, 1, big_order=60)["bigOrders"]] == [79, 67, 133, 83, 105]
+    # 调高到 1000：没有
+    assert dm.build_footprint(td, 1, big_order=1000)["bigOrders"] == []
+    # 阈值不影响价位成交量
+    a = dm.build_footprint(td, 1, big_order=10)["bars"]
+    b = dm.build_footprint(td, 1, big_order=500)["bars"]
+    assert a == b
+
+
+def test_footprint_5m_and_daily_consistent_with_kline():
+    td = dm.parse(csv_bytes(ROWS_B, HEADER_B), "a2611.csv")
+    for period in (1, 5, 1440):
+        fp = dm.build_footprint(td, period)
+        kl = dm.build_kline(td, period)
+        assert len(fp["bars"]) == len(kl["bars"])
+        for f, k in zip(fp["bars"], kl["bars"]):
+            assert (f["open"], f["high"], f["low"], f["close"], f["volume"]) == (k["open"], k["high"], k["low"], k["close"], k["volume"])
+            assert sum((x["buy"] or 0) + (x["sell"] or 0) + (x["neutral"] or 0) for x in f["levels"]) == f["volume"]
+    # 5 分钟线把 08:59 和 09:00 分到两根（08:55 桶 / 09:00 桶）
+    assert [b["time"] for b in dm.build_footprint(td, 5)["bars"]] == ["2026-09-17 08:55", "2026-09-17 09:00"]
+
+
+def test_footprint_neutral_and_requires_bs():
+    text = ("time,last,bs,volume\n"
+            "2026-9-17 9:00,100,多开,10\n2026-9-17 9:00,100,双开,25\n2026-9-17 9:00,101,xx,40\n")
+    td = dm.parse(text.encode(), "x.csv")
+    lv = {x["price"]: x for x in dm.build_footprint(td, 1)["bars"][0]["levels"]}
+    assert lv[100]["buy"] == 10 and lv[100]["neutral"] == 15 and lv[101]["neutral"] == 15
+    # 没有 BS 列
+    td2 = dm.parse(csv_bytes(), "a.csv")
+    try:
+        dm.build_footprint(td2, 1)
+    except ValueError as e:
+        assert "BS" in str(e)
+    else:
+        raise AssertionError("没有 BS 列应抛 ValueError")
+
+
+def test_footprint_api():
+    r = _upload(csv_bytes(ROWS_B, HEADER_B), "fp.csv")
+    did = r.get_json()["depthId"]
+    j = client.get(f"/api/depth/footprint?depthId={did}&period=1").get_json()
+    assert j["success"] and len(j["bars"]) == 3 and j["bigOrder"] == 100 and len(j["bigOrders"]) == 2
+    j2 = client.get(f"/api/depth/footprint?depthId={did}&bigOrder=60").get_json()
+    assert len(j2["bigOrders"]) == 5
+    assert client.get(f"/api/depth/footprint?depthId={did}&bigOrder=0").status_code == 400
+    assert client.get(f"/api/depth/footprint?depthId={did}&bigOrder=abc").status_code == 400
+    # 旧格式（没有 BS）：400 + 可读说明
+    did2 = _upload(csv_bytes(), "nobs.csv").get_json()["depthId"]
+    r2 = client.get(f"/api/depth/footprint?depthId={did2}")
+    assert r2.status_code == 400 and "BS" in r2.get_json()["message"]
+    assert client.get("/api/depth/footprint?depthId=nope").status_code == 410
+
+
 def _upload(content, name="t.csv", overwrite=True):
     data = {"file": (io.BytesIO(content), name)}
     if overwrite:

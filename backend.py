@@ -1042,6 +1042,30 @@ def depth_kline():
     return jsonify({"success": True, **result})
 
 
+@app.route('/api/depth/footprint')
+def depth_footprint():
+    """足迹图数据：每根 K 线每个价位的买 / 卖 / 中性成交量 + 大单列表。
+
+    参数：depthId、period（1/5/15/30/60/1440，默认 1）、day（交易日，可空）、bigOrder（大单阈值，手，默认 100）。
+    没有 BS 列的文件无法区分买卖方向，返回 400 + 说明。
+    """
+    td, err = _depth_get(request.args.get('depthId'))
+    if err:
+        return err
+    try:
+        period = int(request.args.get('period', 1))
+        big_order = int(request.args.get('bigOrder', depth_market.DEFAULT_BIG_ORDER))
+        result = depth_market.build_footprint(td, period, request.args.get('day') or None, big_order)
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        print(f"[Depth] 生成足迹图失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"生成足迹图失败：{e}"}), 500
+    return jsonify({"success": True, **result})
+
+
 @app.route('/api/depth/book')
 def depth_book():
     """某一时刻的历史盘口。参数：depthId，ts（毫秒时间戳，取不晚于它的最近一笔）或 index（tick 序号）。"""

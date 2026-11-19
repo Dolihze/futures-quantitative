@@ -279,6 +279,12 @@ export function getDepthKline(params) {
   return request({ url: '/api/depth/kline', method: 'get', params, timeout: 120000, silent: true })
 }
 
+// 足迹图：每根 K 线每个价位的买 / 卖 / 中性成交量 + 大单列表。
+// params = { depthId, period, day, bigOrder }。文件没有 BS 列时后端返回 400 + message（页面自己展示）
+export function getDepthFootprint(params) {
+  return request({ url: '/api/depth/footprint', method: 'get', params, timeout: 120000, silent: true })
+}
+
 // 某一时刻的历史盘口：params = { depthId, ts } 或 { depthId, index }
 export function getDepthBook(params) {
   return request({ url: '/api/depth/book', method: 'get', params, silent: true })

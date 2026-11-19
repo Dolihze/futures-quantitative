@@ -92,6 +92,12 @@
           <div class="toolbar-title">深度行情<span v-if="fileInfo" class="toolbar-symbol">{{ fileInfo.symbol }}</span></div>
           <div v-if="fileInfo" class="toolbar">
             <div class="info-item">
+              <el-radio-group v-model="viewMode" size="small" @change="onViewModeChange">
+                <el-radio-button value="kline">K 线</el-radio-button>
+                <el-radio-button value="footprint">足迹图</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="info-item">
               <span class="info-label">周期:</span>
               <el-radio-group v-model="period" size="small" @change="loadKline">
                 <el-radio-button v-for="p in PERIOD_OPTIONS" :key="p.value" :value="p.value">{{ p.label }}</el-radio-button>
@@ -104,17 +110,52 @@
                 <el-option v-for="d in fileInfo.days" :key="d" :label="d" :value="d" />
               </el-select>
             </div>
+            <el-popover placement="bottom-end" :width="280" trigger="click" popper-class="depth-settings">
+              <template #reference>
+                <el-button size="small" class="settings-btn">⚙ 设置</el-button>
+              </template>
+              <div class="settings-panel">
+                <div class="settings-title">足迹图设置</div>
+                <div class="settings-row">
+                  <span class="settings-label">大单阈值（手）</span>
+                  <el-input-number
+                    v-model="bigOrder"
+                    :min="1"
+                    :max="100000"
+                    :step="10"
+                    size="small"
+                    controls-position="right"
+                  />
+                </div>
+                <div class="settings-tip">单笔 tick 成交量 ≥ 阈值，在足迹图上用圆圈标出。默认 {{ DEFAULT_BIG_ORDER }} 手，修改后自动保存。</div>
+                <el-button size="small" @click="bigOrder = DEFAULT_BIG_ORDER">恢复默认</el-button>
+              </div>
+            </el-popover>
           </div>
         </div>
 
         <div class="depth-body">
           <div class="depth-main">
             <DepthKline
+              v-if="viewMode === 'kline'"
               :bars="bars"
               :loading="klineLoading"
               :selected-index="selectedBar"
               :empty-title="fileInfo ? '这个范围没有 K 线' : '还没有数据'"
               :empty-desc="fileInfo ? '换一个周期或交易日试试' : '先在左侧导入历史 tick CSV，或从已导入的文件里选择'"
+              @hover="onHover"
+              @select="onSelect"
+            />
+            <DepthFootprint
+              v-else
+              :bars="bars"
+              :big-orders="bigOrders"
+              :big-order="bigOrder"
+              :tick-size="tickSize"
+              :loading="klineLoading"
+              :selected-index="selectedBar"
+              :empty-title="footprintError ? '无法生成足迹图' : fileInfo ? '这个范围没有数据' : '还没有数据'"
+              :empty-desc="footprintError || (fileInfo ? '换一个周期或交易日试试' : '先在左侧导入历史 tick CSV，或从已导入的文件里选择')"
               @hover="onHover"
               @select="onSelect"
             />
@@ -153,9 +194,10 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   uploadDepthFile, getDepthFiles, openDepthFile, deleteDepthFile,
-  getDepthKline, getDepthTicks
+  getDepthKline, getDepthFootprint, getDepthTicks
 } from '@/api'
 import DepthKline from './DepthKline.vue'
+import DepthFootprint from './DepthFootprint.vue'
 import DepthBook from './DepthBook.vue'
 
 const PERIOD_OPTIONS = [
@@ -179,6 +221,21 @@ const period = ref(1)
 const day = ref('')
 const bars = ref([])
 const klineLoading = ref(false)
+
+// 视图：K 线 / 足迹图。两个视图共用周期、交易日、游标、盘口、回放；足迹图的数据里自带 K 线，bars 直接取它
+const viewMode = ref('kline')
+const bigOrders = ref([])          // 足迹图接口返回的大单（按请求时的阈值过滤过；前端再按当前阈值过滤）
+const tickSize = ref(1)
+const footprintError = ref('')
+
+// 大单阈值（手）：默认 100，修改后持久化到 localStorage，下次打开保持
+const DEFAULT_BIG_ORDER = 100
+const BIG_ORDER_KEY = 'depth.bigOrder'
+function loadBigOrder() {
+  const n = Number(localStorage.getItem(BIG_ORDER_KEY))
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_BIG_ORDER
+}
+const bigOrder = ref(loadBigOrder())
 
 // ---------- 统计 ----------
 const totalTicksInView = computed(() => bars.value.reduce((s, b) => s + (b.ticks || 0), 0))
@@ -318,29 +375,47 @@ const formatMtime = (s) => {
 }
 loadFileList()
 
-// ---------- K 线 ----------
+// ---------- K 线 / 足迹图 ----------
+// 足迹图接口一次返回 K 线 + 价位成交量 + 大单，切到足迹图时 bars 就是它的结果（字段是 K 线的超集）。
+// 大单接口按「当前阈值与 100 取小」请求：前端调高阈值时本地过滤即可，调低阈值时才需要重新请求（见 watch bigOrder）
 let klineSeq = 0
+let fetchedBigOrder = DEFAULT_BIG_ORDER   // 当前 bigOrders 是按多大的阈值取回来的
 async function loadKline() {
   if (!fileInfo.value) return
   const seq = ++klineSeq
   stopPlay()
   resetCursor()
   klineLoading.value = true
+  footprintError.value = ''
   try {
-    const res = await getDepthKline({
+    const params = {
       depthId: fileInfo.value.depthId,
       period: period.value,
       day: period.value === 1440 ? '' : day.value
-    })
-    if (seq !== klineSeq) return
-    bars.value = res.bars || []
+    }
+    if (viewMode.value === 'footprint') {
+      fetchedBigOrder = bigOrder.value
+      const res = await getDepthFootprint({ ...params, bigOrder: fetchedBigOrder })
+      if (seq !== klineSeq) return
+      bars.value = res.bars || []
+      bigOrders.value = res.bigOrders || []
+      tickSize.value = res.tickSize || 1
+    } else {
+      const res = await getDepthKline(params)
+      if (seq !== klineSeq) return
+      bars.value = res.bars || []
+    }
     errorMsg.value = ''
   } catch (error) {
     if (seq !== klineSeq) return
     bars.value = []
+    bigOrders.value = []
     if (error?.response?.data?.expired) {
       fileInfo.value = null
       errorMsg.value = error.response.data.message
+    } else if (viewMode.value === 'footprint') {
+      // 足迹图失败（比如文件没有 BS 列）放在图区里说明，不占用左侧错误栏
+      footprintError.value = errorText(error, '生成足迹图失败')
     } else {
       errorMsg.value = errorText(error, '生成 K 线失败')
     }
@@ -348,6 +423,36 @@ async function loadKline() {
     if (seq === klineSeq) klineLoading.value = false
   }
 }
+
+function onViewModeChange() {
+  loadKline()
+}
+
+// 阈值变化：保存；足迹图下，调低阈值（比已取回数据用的阈值更小）需要重新请求才能拿到更多大单，
+// 调高则前端本地过滤。请求做 400ms 防抖，避免连续点步进按钮时频繁请求
+let bigTimer = null
+watch(bigOrder, (v) => {
+  const n = Math.max(1, Math.floor(Number(v) || DEFAULT_BIG_ORDER))
+  localStorage.setItem(BIG_ORDER_KEY, String(n))
+  if (viewMode.value !== 'footprint' || !fileInfo.value) return
+  if (n < fetchedBigOrder) {
+    clearTimeout(bigTimer)
+    bigTimer = setTimeout(async () => {
+      try {
+        const res = await getDepthFootprint({
+          depthId: fileInfo.value.depthId,
+          period: period.value,
+          day: period.value === 1440 ? '' : day.value,
+          bigOrder: n
+        })
+        bigOrders.value = res.bigOrders || []
+        fetchedBigOrder = n
+      } catch {
+        // 取不到就沿用已有的大单，不打扰用户
+      }
+    }, 400)
+  }
+})
 
 // ---------- 历史盘口 ----------
 // 盘口来源三种：悬停（预览，不改变游标）、点击/步进/回放（游标，定格）。
@@ -537,9 +642,44 @@ watch(speed, () => {
 onUnmounted(() => {
   stopPlay()
   clearTimeout(hoverTimer)
+  clearTimeout(bigTimer)
 })
 </script>
 
 <style scoped>
 @import '@/styles/DepthMarket.css';
+</style>
+
+<!-- el-popover 的内容渲染在 body 下，不在本组件 DOM 内，scoped 样式命中不了，所以设置面板的样式单独用非 scoped 写，类名带 depth- 前缀避免冲突 -->
+<style>
+.depth-settings .settings-title {
+  margin-bottom: 12px;
+  color: var(--accent2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.depth-settings .settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.depth-settings .settings-row .el-input-number {
+  width: 110px;
+}
+
+.depth-settings .settings-label {
+  color: var(--text-muted2);
+  font-size: 13px;
+}
+
+.depth-settings .settings-tip {
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
 </style>

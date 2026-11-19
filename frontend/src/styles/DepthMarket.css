@@ -368,6 +368,11 @@
   width: 140px;
 }
 
+/* 设置面板（el-popover 内容渲染在 body 下，样式不能 scoped 限定，类名带前缀避免冲突） */
+.settings-btn {
+  margin-left: 4px;
+}
+
 /* K 线 + 盘口：左大右小 */
 .depth-body {
   flex: 1;

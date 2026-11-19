@@ -374,6 +374,35 @@ def _clean(x):
 # ---------------------------------------------------------------------------
 # K 线聚合
 # ---------------------------------------------------------------------------
+def _group_ticks(td: TickData, period: int, day: str = None):
+    """把 tick 分配到 K 线：返回 (idx, keys, labels)。
+
+    idx：参与聚合的 tick 序号（按 day 过滤后）；keys：每个 tick 所属 K 线的组号（与 idx 等长）；
+    labels：组号 -> K 线时间文字。build_kline 和 build_footprint 共用，保证两者的 K 线完全一致。
+    """
+    if period not in PERIODS:
+        raise ValueError(f'不支持的周期：{period}，可选 {PERIODS}')
+    mask = np.ones(td.count, dtype=bool) if not day else (td.day == day)
+    idx = np.nonzero(mask)[0]
+    if len(idx) == 0:
+        return idx, np.array([], dtype=np.int64), []
+
+    ts = td.ts[idx]
+    days = td.day[idx]
+    if period == 1440:
+        # 日线的 key 是交易日字符串；用 factorize 保持出现顺序
+        codes, uniques = pd.factorize(days)
+        labels = [str(u) for u in uniques]
+    else:
+        step = period * 60_000
+        bucket = (ts // step) * step
+        # 同一个 bucket 内如果跨交易日（理论上只会出现在 60 分钟线跨夜盘边界），按 (交易日, bucket) 分开
+        key_df = pd.DataFrame({'d': days, 'b': bucket})
+        codes, uniques = pd.factorize(pd.MultiIndex.from_frame(key_df))
+        labels = [fmt_ts(u[1])[:16] for u in uniques]
+    return idx, codes, labels
+
+
 def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
     """由 tick 聚合 K 线。
 
@@ -384,10 +413,7 @@ def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
     自然整点对齐（9:00、9:05 …）。夜盘不特殊处理，同一个交易日里按真实时间连续排列。
     每根 bar 额外带 first/last tick 序号（ti0 / ti1），前端可据此联动盘口。
     """
-    if period not in PERIODS:
-        raise ValueError(f'不支持的周期：{period}，可选 {PERIODS}')
-    mask = np.ones(td.count, dtype=bool) if not day else (td.day == day)
-    idx = np.nonzero(mask)[0]
+    idx, keys, labels = _group_ticks(td, period, day)
     if len(idx) == 0:
         return {'bars': [], 'period': period}
 
@@ -397,21 +423,6 @@ def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
     money = td.money[idx]
     pos = td.position[idx]
     days = td.day[idx]
-
-    if period == 1440:
-        key_days = days
-        # 日线的 key 是交易日字符串；用 factorize 保持出现顺序
-        codes, uniques = pd.factorize(key_days)
-        keys = codes
-        labels = [str(u) for u in uniques]
-    else:
-        step = period * 60_000
-        bucket = (ts // step) * step
-        # 同一个 bucket 内如果跨交易日（理论上只会出现在 60 分钟线跨夜盘边界），按 (交易日, bucket) 分开
-        key_df = pd.DataFrame({'d': days, 'b': bucket})
-        codes, uniques = pd.factorize(pd.MultiIndex.from_frame(key_df))
-        keys = codes
-        labels = [fmt_ts(u[1])[:16] for u in uniques]
 
     # 逐组聚合（用 pandas groupby，tick 数量几十万量级也很快）
     g = pd.DataFrame({
@@ -453,6 +464,93 @@ def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
             'bs': bar_bs,
         })
     return {'bars': bars, 'period': period}
+
+
+# ---------------------------------------------------------------------------
+# 足迹图：每根 K 线内每个价位的主动买 / 主动卖成交量 + 大单
+# ---------------------------------------------------------------------------
+DEFAULT_BIG_ORDER = 100   # 大单阈值默认值（手）：单笔 tick 的成交量增量 >= 它就算大单
+
+# 成交性质 -> 主动方向。买方主动：多开（买入开多）、空平（买入平空）；
+# 卖方主动：空开（卖出开空）、多平（卖出平多）。其余（双开 / 双平 / 多换 / 空换 / 认不出）方向不明，计入「中性」
+_BUY_BS = ('多开', '空平')
+_SELL_BS = ('空开', '多平')
+
+
+def _side_of(bs: np.ndarray) -> np.ndarray:
+    """成交性质 -> 方向：1 = 买方主动，-1 = 卖方主动，0 = 方向不明。"""
+    side = np.zeros(len(bs), dtype=np.int8)
+    side[np.isin(bs, _BUY_BS)] = 1
+    side[np.isin(bs, _SELL_BS)] = -1
+    return side
+
+
+def build_footprint(td: TickData, period: int = 1, day: str = None, big_order: int = DEFAULT_BIG_ORDER) -> dict:
+    """足迹图数据：K 线（同 build_kline）+ 每根 K 线里每个价位的买 / 卖 / 中性成交量 + 大单列表。
+
+    - 一笔 tick 的成交量增量整笔算在它的最新价上（tick 只有一个最新价，半秒内跨价位的成交无法拆开，是近似）。
+    - 每个价位：buy = 买方主动手数，sell = 卖方主动手数，neutral = 方向不明手数。
+    - 大单：成交量增量 >= big_order 的单笔 tick；返回所在 K 线序号、价位、手数、方向、tick 序号。
+      阈值只影响大单列表，不影响价位成交量，所以前端调阈值时不需要重新取价位数据（但这里仍支持传参，方便单独取）。
+    - 没有 BS 列的数据无法判断方向：抛 ValueError，由接口返回可读提示。
+    """
+    if td.bs is None:
+        raise ValueError('这个文件没有成交性质（BS）列，无法区分买卖方向，不能生成足迹图')
+    if big_order < 1:
+        raise ValueError('大单阈值必须 >= 1 手')
+
+    kl = build_kline(td, period, day)
+    bars = kl['bars']
+    if not bars:
+        return {'bars': [], 'period': period, 'bigOrders': [], 'bigOrder': big_order, 'tickSize': None}
+
+    # 与 build_kline 用同一套分组：keys 的组号就是 bars 的序号（groupby sort=True 且组号从 0 连续递增）
+    idx, bi_arr, _ = _group_ticks(td, period, day)
+    price = td.price[idx]
+    vol = td.vol[idx]
+    side = _side_of(td.bs[idx])
+
+    # 价位用整数 * 价格最小变动单位换算，避免浮点 key 不一致：这里直接用四舍五入到 1e-6 的价格作为 key
+    df = pd.DataFrame({
+        'b': bi_arr,
+        'p': np.round(price, 6),
+        'buy': np.where(side == 1, vol, 0.0),
+        'sell': np.where(side == -1, vol, 0.0),
+        'neu': np.where(side == 0, vol, 0.0),
+    })
+    agg = df.groupby(['b', 'p'], sort=True).sum()
+
+    levels_by_bar = {}
+    for (b, p), row in agg.iterrows():
+        levels_by_bar.setdefault(int(b), []).append({
+            'price': _clean(p), 'buy': _clean(row['buy']), 'sell': _clean(row['sell']), 'neutral': _clean(row['neu']),
+        })
+
+    for bi, b in enumerate(bars):
+        b['levels'] = levels_by_bar.get(bi, [])   # 价位按价格从低到高
+
+    # 大单：增量 >= 阈值的单笔 tick
+    big_mask = vol >= big_order
+    big = []
+    for j in np.nonzero(big_mask)[0]:
+        ti = int(idx[j])
+        big.append({
+            'bar': int(bi_arr[j]), 'index': ti,
+            'price': _clean(price[j]), 'volume': _clean(vol[j]),
+            'side': int(side[j]), 'bs': str(td.bs[ti]) or None,
+            'time': fmt_ts(td.ts[ti], with_ms=False),
+        })
+
+    # 最小价位间隔（足迹图每格的高度）：取所有出现过的价位相邻差的最小值
+    prices = np.unique(np.round(price, 6))
+    tick_size = None
+    if len(prices) >= 2:
+        diffs = np.diff(prices)
+        diffs = diffs[diffs > 1e-9]
+        if len(diffs):
+            tick_size = _clean(diffs.min())
+
+    return {'bars': bars, 'period': period, 'bigOrders': big, 'bigOrder': big_order, 'tickSize': tick_size}
 
 
 # ---------------------------------------------------------------------------
