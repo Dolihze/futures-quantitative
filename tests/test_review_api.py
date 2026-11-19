@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 _TMP_REVIEW_DIR = tempfile.mkdtemp(prefix="review_files_test_")
 os.environ["REVIEW_FILES_DIR"] = _TMP_REVIEW_DIR
 
-import backend  # noqa: E402
+from backend import app as backend  # noqa: E402
 from test_review import HEADER_A, ROWS_A, make_xlsx  # noqa: E402
 
 client = backend.app.test_client()
@@ -82,7 +82,7 @@ def test_detail_sheet_upload_merge_fee_and_flags():
     assert net["segments"][0]["start"] == "2026-10-21 21:00:00" and net["segments"][3]["end"] == "2026-10-22 15:00:00"
     # 休息时间不画：整条轴 = 左边留白 + 345 分钟的交易时间 + 3 个段间隔，远小于真实跨度（约 18 小时）。
     # 精确值，不用宽松上限：之前一个按“第一个点”平移的 bug（夜盘起点跑到负坐标）就是被宽松上限漏过去的
-    import review
+    from backend import review
     assert net["segments"][0]["x0"] == review.AXIS_PAD, "整条轴从 AXIS_PAD 开始，不能是负数"
     assert net["segments"][-1]["x1"] == review.AXIS_PAD + 345 + 3 * review.SESSION_GAP_WIDTH
     # 第一笔（21:30:05）在夜盘内，比夜盘开盘晚 30.0833 分钟；起点在它左边 START_POINT_OFFSET

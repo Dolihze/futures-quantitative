@@ -2,7 +2,7 @@
  * 调试模式（登录页「调试模式（跳过登录）」，broker === 'debug'）下交易页使用的假数据。
  *
  * 为什么放在前端：调试模式没有后端 CTP 会话，真实接口全部会失败；假数据只服务于前端界面调试，
- * 不应该混进 ctp_service.py 这类真实交易代码。只有 broker === 'debug' 时才会走到这里（见 api/trading.js），
+ * 不应该混进 backend/ctp_service.py 这类真实交易代码。只有 broker === 'debug' 时才会走到这里（见 api/trading.js），
  * 真实账号的数据流完全不受影响。
  *
  * 所有函数的返回值和真实接口一致：Promise<{ success, data?, message? }>（axios 拦截器已经解包 response.data），

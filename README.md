@@ -36,10 +36,15 @@ futures-quantitative/
 │   ├── capabilities/         # Tauri 2 权限（shell / sidecar）
 │   ├── icons/                # 应用图标（由 scripts/gen-icon.py 生成）
 │   └── sidecar/              # PyInstaller 打包出的后端（构建产物）
-├── backend.py                # Flask 后端源码（sidecar 入口）
-├── review.py                 # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
-├── depth_market.py           # 深度行情：tick CSV 解析、多文件合并、K 线 / 足迹图聚合、历史盘口查询（不依赖 Flask）
-├── tests/                    # review / depth_market 的单元测试与 API 测试（python tests/test_review.py）
+├── backend/                  # Python 后端包
+│   ├── app.py                # Flask 后端源码（sidecar 入口，原 backend.py）
+│   ├── review.py             # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
+│   ├── depth_market.py       # 深度行情：tick CSV 解析、多文件合并、K 线 / 足迹图聚合、历史盘口查询（不依赖 Flask）
+│   ├── backtest_engine.py    # 量化回测：策略注册表、回测引擎与统计
+│   ├── copy_trading.py       # 量化监控：监控账号成交 -> 自动跟单
+│   ├── ctp_service.py        # CTP 实盘 / 仿真登录、资金持仓
+│   └── credential_store.py   # 「记住账号」凭据存储（DPAPI 加密）
+├── tests/                    # 各模块的单元测试与 API 测试（python tests/test_review.py）
 ├── docs/                     # 补充文档
 │   ├── README_BACKTEST.md    # 量化回测使用说明
 │   └── archive/              # 早期开发与 Vue 迁移记录（历史文档，仅供追溯）
@@ -84,7 +89,7 @@ npm run backend:build
 `npm run dev` 会依次：启动 Vue 前端（5173）→ 编译并运行 Tauri → Tauri 拉起 Python sidecar（5000）→ 打开桌面窗口。
 首次编译 Rust 依赖需要几分钟，之后增量编译很快。
 
-之后每次修改 `backend.py`，需要单独重新执行 `npm run backend:build`。
+之后每次修改 `backend/` 下的 Python 代码，需要单独重新执行 `npm run backend:build`。
 
 ## 常用命令
 
@@ -93,7 +98,7 @@ npm run backend:build
 | `npm run setup` | 首次准备：安装前端、Python 依赖并打包 sidecar |
 | `npm run dev` | 启动完整开发环境（Tauri + 前端 + sidecar） |
 | `npm run build` | 构建安装包 |
-| `npm run backend:build` | 用 PyInstaller 打包 `backend.py` 并生成 sidecar |
+| `npm run backend:build` | 用 PyInstaller 打包 `backend/app.py` 并生成 sidecar |
 | `npm run backend:dev` | 仅运行 Flask（调试 API，端口 5000，不打开窗口） |
 | `npm run frontend:dev` | 仅运行 Vite（浏览器访问 http://localhost:5173） |
 | `npx tauri info` | 查看 Tauri 环境信息 |
@@ -101,7 +106,7 @@ npm run backend:build
 ## 开发说明
 
 - **前端**：改动自动热更新，无需重启。
-- **Python 后端**：改动 `backend.py` 后需重新执行 `npm run backend:build`，再重启 `npm run dev`（sidecar 是打包后的 exe，不会读取源码）。
+- **Python 后端**：改动 `backend/` 下的代码后需重新执行 `npm run backend:build`，再重启 `npm run dev`（sidecar 是打包后的 exe，不会读取源码）。
 - **Rust**：改动 `src-tauri/` 会自动重新编译。
 - **开发者工具**：debug 模式下按 **F12**（或右键 → 检查）。`main.rs` 另外提供 `open_devtools` / `close_devtools` / `toggle_devtools` 命令。
 - **登录态**：保存在 `sessionStorage`，关闭窗口即失效，每次启动都从登录页开始。登录页的「记住账号」使用 `localStorage`。
@@ -203,7 +208,7 @@ npm run backend:build
 - **段与段首尾相接，休息时间不画**（夜盘到 09:00、10:15 到 10:30、11:30 到 13:30 都去掉）。**段宽与真实时长成正比**（夜盘 120 分钟、早盘一 75、早盘二 60、午盘 90），所以横轴仍然是时间。
 - **每个有成交的交易日都画完整的四段**，哪怕某一段没有成交（例如早盘二）。没有任何成交的交易日不画。
 - **段内的位置与真实时间成正比**：09:15 的成交在早盘一起点右边 15 分钟处。
-- **落在四个时段之外的成交不会丢**，归入距离最近的时段、贴在该段的边界上，悬停里显示的仍是真实成交时间：集合竞价（08:59）归早盘一，两场之间的休息（10:19）归早盘一，收盘后的撮合延迟（11:31、15:05）归所在场次，午休正中间两边一样远时归午盘。**夜盘延续到凌晨的成交（23:20、00:30 等）也归夜盘、贴在 23:00 处**，这些成交在轴上分不出先后（会叠在同一个位置，悬停时一起列出）。如果你交易的品种夜盘晚于 23:00 收盘，需要调整 `review.py` 里 `SESSIONS` 的夜盘结束时间。
+- **落在四个时段之外的成交不会丢**，归入距离最近的时段、贴在该段的边界上，悬停里显示的仍是真实成交时间：集合竞价（08:59）归早盘一，两场之间的休息（10:19）归早盘一，收盘后的撮合延迟（11:31、15:05）归所在场次，午休正中间两边一样远时归午盘。**夜盘延续到凌晨的成交（23:20、00:30 等）也归夜盘、贴在 23:00 处**，这些成交在轴上分不出先后（会叠在同一个位置，悬停时一起列出）。如果你交易的品种夜盘晚于 23:00 收盘，需要调整 `backend/review.py` 里 `SESSIONS` 的夜盘结束时间。
 - **不画背景色块**。交易日与交易日之间用一条竖向虚线分隔；一个交易日内部四段之间的虚线，只在放大到一两个交易日、每段够宽时才出现，避免多天视图里密密麻麻像一张网格。
 
 **X 轴标签**
@@ -271,7 +276,7 @@ npm run backend:build
 - **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后在数据库管理里点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
 - **性能**：50 万笔（约 36MB）解析约 4 秒；解析结果只在后端内存缓存（最近 3 份），重启后需重新选择文件。
 - 红涨绿跌：盘口里买盘（多方）为红、卖盘（空方）为绿，与全站一致。
-- 测试：`python tests/test_depth_market.py`。改动 `depth_market.py` / `backend.py` 后需重新执行 `npm run backend:build`。
+- 测试：`python tests/test_depth_market.py`。改动 `backend/depth_market.py` / `backend/app.py` 后需重新执行 `npm run backend:build`。
 
 ## 构建发布
 
@@ -286,8 +291,8 @@ npm run build           # 2. 构建前端并生成安装包
 
 `npm run backend:build` 做了这些事，修改时请注意保持：
 
-- 入口是 **`backend.py`**（不是其它文件）。
-- `--add-data "data;data"`：把 `data/brokers.json` 打进 exe；`backend.py` 会在 PyInstaller 临时目录、exe 同级目录和项目目录中依次查找数据文件。
+- 入口是 **`backend/app.py`**（不是其它文件）；`--paths .` 让 PyInstaller 把项目根目录加入搜索路径，才能解析 `from backend import ...`。
+- `--add-data "data;data"`：把 `data/brokers.json` 打进 exe；`backend/app.py` 会在 PyInstaller 临时目录、exe 同级目录和项目目录中依次查找数据文件。
 - `--collect-data akshare`：akshare 自带的 `file_fold/calendar.json` 等数据文件必须打包，否则 `/api/backtest/kline` 会 500。
 - `scripts/copy-sidecar.mjs`：Tauri 要求 sidecar 文件名带目标三元组后缀（如 `python-backend-x86_64-pc-windows-msvc.exe`），脚本会自动生成。
 - 构建产物 `src-tauri/sidecar/*.exe` 已在 `.gitignore` 中，不会提交。
@@ -304,9 +309,9 @@ npm run build           # 2. 构建前端并生成安装包
 | 交易复盘提示“文件里只有日期，没有具体的成交时间” | 导入的是只有日期的表（例如结算单里的「平仓明细」）。同一天的成交分不出先后，无法按成交时间聚合。请导入带「成交时间」列的「成交明细」工作表。 |
 | 交易复盘提示“当前筛选下只有开仓，没有平仓” | 曲线只统计「平」的成交。这个筛选范围里的成交都还没有平仓，把时间范围拉长，或换一个有平仓的品种。 |
 | 交易复盘打开后，X 轴只有几个日期、没有时间 | 正常：多个交易日同时显示时每段只有几十个像素，放不下时间标签。用滚轮或下方滑块放大到一两个交易日，边界时间和段名就会出现。 |
-| 交易复盘里有几笔成交叠在同一个位置（夜盘 23:00 处、或某段的边界上） | 这些成交落在四个固定时段之外（夜盘延续到凌晨、集合竞价、撮合延迟），被归入最近的时段、贴在该段边界上，悬停时一起列出，各自显示真实时间。夜盘晚于 23:00 收盘的品种，需调整 `review.py` 里 `SESSIONS` 的夜盘结束时间。 |
+| 交易复盘里有几笔成交叠在同一个位置（夜盘 23:00 处、或某段的边界上） | 这些成交落在四个固定时段之外（夜盘延续到凌晨、集合竞价、撮合延迟），被归入最近的时段、贴在该段边界上，悬停时一起列出，各自显示真实时间。夜盘晚于 23:00 收盘的品种，需调整 `backend/review.py` 里 `SESSIONS` 的夜盘结束时间。 |
 | 交易复盘提示“交易记录已失效” | sidecar 重启过（内存里的记录已清空），重新导入文件即可。 |
-| 修改了 `review.py` 但没有效果 | 同 `backend.py`：sidecar 是打包后的 exe，需要重新执行 `npm run backend:build`。 |
+| 修改了 `backend/review.py` 但没有效果 | 同 `backend/app.py`：sidecar 是打包后的 exe，需要重新执行 `npm run backend:build`。 |
 | sidecar 找不到 | 确认 `src-tauri/sidecar/` 下同时有 `python-backend.exe` 和 `python-backend-<triple>.exe`，没有则重新执行 `npm run backend:build`。 |
 | Rust 编译失败 | `rustup update`，必要时 `cd src-tauri && cargo clean`。 |
 | 前端白屏 | 先 `npm run frontend:dev`，浏览器访问 http://localhost:5173 确认前端本身正常。 |

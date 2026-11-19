@@ -53,7 +53,7 @@
 
 ## 🔧 当时修改的文件（记录）
 
-1. `app.py` - 添加回测路由和API接口（现位于 `backend.py`）
+1. `app.py` - 添加回测路由和API接口（现位于 `backend/app.py`）
 2. `templates/home.html` - 添加量化回测入口（已由 Vue 取代）
 
 ## 📦 依赖安装
@@ -74,7 +74,7 @@ pip install -r requirements.txt
 ```bash
 npm install
 cd frontend && npm install && cd ..
-npm run backend:build   # 首次或修改 backend.py 后
+npm run backend:build   # 首次或修改 backend/ 下的代码后
 npm run dev
 ```
 

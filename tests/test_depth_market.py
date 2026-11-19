@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 _TMP_DIR = tempfile.mkdtemp(prefix="depth_files_test_")
 os.environ["DEPTH_FILES_DIR"] = _TMP_DIR
 
-import depth_market as dm  # noqa: E402
-import backend  # noqa: E402
+from backend import depth_market as dm  # noqa: E402
+from backend import app as backend  # noqa: E402
 
 client = backend.app.test_client()
 

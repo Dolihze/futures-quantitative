@@ -6,7 +6,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import backtest_engine as be  # noqa: E402
+from backend import backtest_engine as be  # noqa: E402
 
 
 def bar(time, o, h, l, c):
@@ -147,7 +147,7 @@ def test_product_catalog():
 
 def test_backtest_api_selects_product_main_contract():
     """product 参数选择品种主连：默认燃料油 FU0；未知品种返回 400；每个品种用自己的合约乘数结算。"""
-    import backend
+    from backend import app as backend
 
     asked = []
     bars = [bar("2026-10-20 09:05:00", 100, 100, 100, 100), bar("2026-10-20 09:10:00", 100, 101, 99, 100)]
@@ -186,7 +186,7 @@ def test_data_coverage_reports_truncation():
 
 
 def test_api_returns_coverage_so_60_and_90_are_not_silently_identical():
-    import backend
+    from backend import app as backend
 
     # 5 分钟线只有约 3 周：构造 21 天数据，每天 1 根
     bars = [bar(f"2026-10-{d:02d} 09:05:00", 100, 100, 100, 100) for d in range(1, 22)]

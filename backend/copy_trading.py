@@ -25,7 +25,7 @@ import time
 import queue
 import collections
 
-import ctp_service
+from backend import ctp_service
 
 # 手数模式
 SIZE_MULTIPLE = "multiple"  # 固定倍数：源手数 × multiplier

@@ -11,12 +11,18 @@ import sys
 import uuid
 from collections import OrderedDict
 
-import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
-import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
-import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
-import copy_trading  # 量化监控：监控账号成交 -> 自动跟单（copy_trading.py）
-import backtest_engine  # 量化回测：策略注册表、回测引擎与统计（backtest_engine.py）
-import depth_market  # 深度行情：历史 tick CSV -> K 线 / 历史盘口（depth_market.py）
+# 直接以脚本运行（python backend/app.py）时，把项目根目录加入 sys.path，
+# 这样 `from backend import ...` 在开发、测试、PyInstaller 打包三种场景下都能工作。
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from backend import review  # 交易复盘：Excel 解析与盈亏曲线（review.py）
+from backend import ctp_service  # CTP 实盘 / 仿真登录、资金持仓（ctp_service.py）
+from backend import credential_store  # 「记住账号」凭据存储，DPAPI 加密（credential_store.py）
+from backend import copy_trading  # 量化监控：监控账号成交 -> 自动跟单（copy_trading.py）
+from backend import backtest_engine  # 量化回测：策略注册表、回测引擎与统计（backtest_engine.py）
+from backend import depth_market  # 深度行情：历史 tick CSV -> K 线 / 历史盘口（depth_market.py）
 
 # 配置 Flask 应用
 app = Flask(__name__)
@@ -37,8 +43,8 @@ def get_base_dir():
         # 打包后运行（PyInstaller）
         return os.path.dirname(sys.executable)
     else:
-        # 开发模式
-        return os.path.dirname(os.path.abspath(__file__))
+        # 开发模式：app.py 位于 backend/ 下，基础目录为项目根目录（data/ 所在处）
+        return _PROJECT_ROOT
 
 BASE_DIR = get_base_dir()
 
@@ -160,7 +166,7 @@ def get_account():
 # 新浪 K 线按 (合约, 周期) 缓存几分钟：首页一次要对所有策略回测，详情页又会再取一次，不必每次都请求网络。
 BACKTEST_KLINE_CACHE = {}
 BACKTEST_KLINE_TTL = 300  # 秒
-# 量化回测的对象是各常见品种的「主连」（新浪主连代码 = 品种代码 + 0，如 FU0），品种目录见 backtest_engine.py。
+# 量化回测的对象是各常见品种的「主连」（新浪主连代码 = 品种代码 + 0，如 FU0），品种目录见 backend/backtest_engine.py。
 # 前端用 product（品种代码，如 FU）选择，默认燃料油主连；主连是拼接的连续行情，没有交割月换月问题。
 BACKTEST_PERIODS = ('1', '5', '15', '30', '60')
 
