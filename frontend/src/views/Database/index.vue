@@ -22,6 +22,7 @@
           <h2>数据库管理</h2>
           <p class="db-sub">
             管理深度行情用的历史 tick 数据。文件保存在项目根目录的 <code>{{ dir }}</code> 文件夹，
+            导入时会读取文件内的交易日并自动改名为「合约名_YYYYMMDD」，重名时提示是否覆盖；
             同一合约的多个文件（如每个交易日一个）会自动合并成一条时间线。
           </p>
         </div>
@@ -218,8 +219,9 @@ async function importOne(file, task) {
     } catch (error) {
       if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
       const name = error.response.data.name || file.name
+      task.name = name
       try {
-        await ElMessageBox.confirm(`文件夹中已存在「${name}」，是否覆盖？`, '文件已存在', {
+        await ElMessageBox.confirm(`文件重复：文件夹中已存在「${name}」（导入文件「${file.name}」），是否覆盖？`, '文件重复', {
           confirmButtonText: '覆盖', cancelButtonText: '跳过', type: 'warning'
         })
       } catch {
@@ -230,6 +232,7 @@ async function importOne(file, task) {
       res = await uploadDepthFile(file, true)
     }
     const extra = res.warnings?.length ? `（${res.warnings[0]}）` : ''
+    if (res.savedName) task.name = res.savedName
     upd('ok', `${res.symbol} · ${res.tickCount.toLocaleString()} 笔 · ${res.days.length} 个交易日${res.hasBs ? '' : ' · 无 BS 列'}${extra}`)
     await loadContracts()
   } catch (error) {

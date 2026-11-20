@@ -948,16 +948,26 @@ def depth_upload():
         return jsonify({"success": False, "message": "请选择要上传的文件"}), 400
     if not f.filename.lower().endswith(DEPTH_EXTS):
         return jsonify({"success": False, "message": "仅支持 .csv 文件"}), 400
-    name = os.path.basename(f.filename.replace('\\', '/'))
+    orig_name = os.path.basename(f.filename.replace('\\', '/'))
+    content = f.read()
+
+    # 每次导入的文件名可能都一样（如 fu2701.csv），实际是不同日期的数据：
+    # 先读文件内部的合约和交易日，改名为「合约名_YYYYMMDD.csv」再判断是否重名
+    try:
+        name = depth_market.canonical_name(content, orig_name, os.path.splitext(orig_name)[1].lower() or '.csv')
+    except depth_market.DepthParseError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        print(f"[Depth] 读取文件日期失败: {e}")
+        return jsonify({"success": False, "message": f"读取文件日期失败：{e}"}), 400
     path = safe_depth_path(name)
     if path is None:
-        return jsonify({"success": False, "message": "文件名不合法"}), 400
+        return jsonify({"success": False, "message": f"文件名不合法：{name}"}), 400
     overwrite = request.form.get('overwrite') == '1'
     if os.path.exists(path) and not overwrite:
-        return jsonify({"success": False, "exists": True, "name": os.path.basename(path),
-                        "message": f"「{os.path.basename(path)}」已存在，是否覆盖？"}), 409
+        return jsonify({"success": False, "exists": True, "name": name, "originalName": orig_name,
+                        "message": f"「{name}」已存在，是否覆盖？"}), 409
 
-    content = f.read()
     resp = depth_analyze_to_response(content, name)
     response, status = resp if isinstance(resp, tuple) else (resp, 200)
     if status != 200:
@@ -972,6 +982,8 @@ def depth_upload():
         os.replace(tmp, path)
         data["saved"] = True
         data["overwritten"] = overwrite
+        data["savedName"] = name
+        data["originalName"] = orig_name
     except OSError as e:
         print(f"[Depth] 保存到 {depth_files_dir()} 失败: {e}")
         try:

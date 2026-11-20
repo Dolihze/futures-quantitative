@@ -683,6 +683,21 @@ def merge(parts: list) -> TickData:
     return merged
 
 
+def canonical_name(content: bytes, filename: str = '', ext: str = '.csv') -> str:
+    """读取文件内部数据（合约代码 + 交易日），返回规范文件名「合约名_YYYYMMDD.csv」。
+
+    日期取文件内的【交易日】（夜盘归下一交易日，与图表一致）；一个文件含多个交易日时写成
+    「合约名_YYYYMMDD-YYYYMMDD.csv」（最早-最晚）。解析失败抛 DepthParseError。
+    """
+    meta = peek_meta(content, filename)
+    days = meta['days']
+    first = days[0].replace('-', '')
+    last = days[-1].replace('-', '')
+    date_part = first if first == last else f'{first}-{last}'
+    symbol = re.sub(r'[\\/:*?"<>|\s]+', '', str(meta['symbol'])) or '未知合约'
+    return f'{symbol}_{date_part}{ext}'
+
+
 def peek_meta(content: bytes, filename: str = '') -> dict:
     """只读文件的合约代码 / 交易日 / tick 数 / 时间范围，不做完整解析（给「数据库管理」的合约索引用）。
 
