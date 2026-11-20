@@ -45,15 +45,17 @@ futures-quantitative/
 │   ├── config.py             # 基础目录、数据文件查找、端口（BACKEND_PORT）
 │   ├── errors.py             # ApiError + wrap_errors：路由里 raise 统一错误，不再逐个路由写 try/except
 │   ├── schemas.py            # 接口响应契约（pydantic），OpenAPI 和前端类型的来源
-│   ├── routes/               # HTTP 层（Blueprint）：account / trading / backtest / review / monitor / depth
-│   ├── services/             # 文件夹管理与内存缓存：review_service / depth_service / backtest_service
-│   └── core/                 # 与 Flask 无关的领域逻辑，可单独测试
+│   ├── routes/               # HTTP 层（Blueprint，文件名 *_routes.py）：account / trading / backtest / review / monitor / depth
+│   ├── services/             # 文件夹管理与内存缓存（文件名 *_service.py）：review / depth / backtest
+│   └── core/                 # 与 Flask 无关的领域逻辑，可单独测试（沿用业务名，不加后缀）
 │       ├── review.py         #   交易复盘：Excel 解析与盈亏曲线计算
 │       ├── depth_market.py   #   深度行情：tick CSV 解析、K 线 / 足迹图聚合、历史盘口
 │       ├── backtest_engine.py#   量化回测：策略注册表、回测引擎与统计
 │       ├── copy_trading.py   #   量化监控：监控账号成交 -> 自动跟单
 │       ├── ctp_service.py    #   CTP 实盘 / 仿真登录、资金持仓
 │       └── credential_store.py#  「记住账号」凭据存储（DPAPI 加密）
+│   # 同一业务域的三层文件名各带本层后缀，全项目文件名唯一，例如：
+│   #   routes/review_routes.py -> services/review_service.py -> core/review.py
 ├── tests/                    # 各模块的单元测试与 API 测试（python tests/test_review.py）
 ├── docs/                     # 补充文档
 │   └── README_BACKTEST.md    # 量化回测使用说明
@@ -301,7 +303,7 @@ npm run backend:build
 - **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后在数据库管理里点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
 - **性能**：50 万笔（约 36MB）解析约 4 秒；解析结果只在后端内存缓存（最近 3 份），重启后需重新选择文件。
 - 红涨绿跌：盘口里买盘（多方）为红、卖盘（空方）为绿，与全站一致。
-- 测试：`python tests/test_depth_market.py`。改动 `backend/core/depth_market.py` / `backend/routes/depth.py` 后需重新执行 `npm run backend:build`。
+- 测试：`python tests/test_depth_market.py`。改动 `backend/core/depth_market.py` / `backend/routes/depth_routes.py` 后需重新执行 `npm run backend:build`。
 
 ## 构建发布
 

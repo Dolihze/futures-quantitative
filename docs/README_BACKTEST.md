@@ -64,7 +64,7 @@ npm install
 npm run dev
 ```
 
-首次运行或修改 `backend/routes/backtest.py` / `backend/core/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包后端。登录后在首页点击"量化回测"即可进入策略总览。
+首次运行或修改 `backend/routes/backtest_routes.py` / `backend/core/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包后端。登录后在首页点击"量化回测"即可进入策略总览。
 
 ## 注意事项
 
