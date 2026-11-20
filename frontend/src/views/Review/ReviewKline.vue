@@ -60,7 +60,7 @@ import { chartColors, onThemeChange } from '@/utils/chartTheme'
 const props = defineProps({
   reviewId: { type: String, default: '' },
   products: { type: Array, default: () => [] },   // 页面右上角选中的品种（回放页只看这个品种），空 = 全部
-  days: { type: Array, default: () => [] },       // 文件里有成交的全部交易日（升序）
+  days: { type: Array, default: () => [] },       // 文件里有成交的全部交易日（升序）；传单个日期 = 固定看这一天（从总览点进来）
   active: { type: Boolean, default: true }        // 当前 Tab 是否可见；隐藏时筛选变化不立刻请求，等切回来再刷新
 })
 

@@ -3,12 +3,17 @@
     <!-- 顶部导航栏 -->
     <nav class="navbar">
       <div class="nav-left">
-        <router-link to="/" class="back-btn">
+        <router-link to="/review" class="back-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
-          返回首页
+          返回账户总览
         </router-link>
+        <div class="day-switch">
+          <button type="button" class="day-btn" :disabled="!prevDay" @click="gotoDay(prevDay)">‹ 上一日</button>
+          <span class="day-title">{{ day }}</span>
+          <button type="button" class="day-btn" :disabled="!nextDay" @click="gotoDay(nextDay)">下一日 ›</button>
+        </div>
       </div>
       <div class="nav-right">
         <UserMenu />
@@ -19,45 +24,11 @@
       <!-- 左侧：导入与统计 -->
       <aside class="sidebar">
         <div class="control-panel">
-          <h3>📂 历史交易记录</h3>
-
+          <h3>📅 {{ day }} 交易复盘</h3>
           <div v-if="fileInfo" class="file-info">
-            <div class="file-name" :title="fileInfo.filename">📄 {{ fileInfo.filename }}</div>
-            <div class="file-meta">
-              {{ fileInfo.tradeCount }} 手成交 · {{ fileInfo.products.length }} 个品种
-            </div>
-            <div class="file-meta">交易日 {{ tradeDateText }}</div>
+            <div class="file-meta">{{ dayTradeCount }} 手成交</div>
+            <div class="file-meta">数据来自已导入的全部交易记录（{{ fileInfo.fileCount }} 个文件）</div>
           </div>
-
-          <!-- 已导入的文件：保存在项目的 review_files 文件夹里，点一下就能直接切换分析 -->
-          <div class="saved-files">
-            <div class="saved-files-head">
-              <span>点击文件切换分析</span>
-              <span>
-                <router-link to="/database" class="saved-files-refresh">去导入 / 管理</router-link>
-                <a class="saved-files-refresh" :class="{ disabled: filesLoading }" @click="loadFileList">刷新</a>
-              </span>
-            </div>
-            <div v-if="!reviewFiles.length" class="saved-files-empty">
-              {{ filesLoading ? '加载中...' : '还没有交易记录。请先到「数据库管理 → 历史交易记录管理」导入文件' }}
-            </div>
-            <ul v-else class="saved-files-list">
-              <li
-                v-for="f in reviewFiles"
-                :key="f.name"
-                class="saved-file"
-                :class="{ active: f.name === currentFileName, disabled: loading }"
-                :title="f.name"
-                @click="handleOpenFile(f.name)"
-              >
-                <div class="saved-file-main">
-                  <div class="saved-file-name">{{ f.name }}</div>
-                  <div class="saved-file-meta">{{ formatMtime(f.mtime) }} · {{ formatSize(f.size) }}</div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
           <div v-if="errorMsg" class="review-error">
             <span>{{ errorMsg }}</span>
           </div>
@@ -76,9 +47,8 @@
             </div>
             <div class="result-item" :class="{ wide: !fileInfo.hasFee }">
               <div class="result-label">交易日期</div>
-              <!-- 跨多天时 “起 ~ 止” 放不进半行：每个日期保持完整，只允许在两个日期之间换行 -->
               <div class="result-value neutral">
-                <span v-for="(d, i) in statDateParts" :key="i" class="result-date-part">{{ d }}</span>
+                <span class="result-date-part">{{ day.replaceAll('-', '/') }}</span>
               </div>
             </div>
             <div v-if="fileInfo.hasFee" class="result-item">
@@ -100,7 +70,13 @@
       </aside>
 
       <!-- 右侧：盈亏曲线 / 当天 K 线 -->
-      <div class="chart-container">
+      <div v-if="noDayData" class="chart-container day-empty">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">{{ day }} 没有成交记录</div>
+        <div class="empty-desc">这一天不在已导入的交易记录里</div>
+        <router-link to="/review" class="day-empty-btn">返回账户总览</router-link>
+      </div>
+      <div v-else class="chart-container">
         <div class="chart-header">
           <div class="view-tabs" role="tablist">
             <button
@@ -173,28 +149,22 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
-import { useRoute } from 'vue-router'
-import { getReviewFiles, openReviewFile, getReviewCurve } from '@/api'
+import { useRoute, useRouter } from 'vue-router'
+import { getReviewOverview, getReviewCurve } from '@/api'
 import ReviewKline from './ReviewKline.vue'
 import ReviewFunding from './ReviewFunding.vue'
 
 // ---------- 状态 ----------
 const route = useRoute()
+const router = useRouter()
+// 当前交易日（来自路由 /review/day/:day）
+const day = computed(() => String(route.params.day || ''))
 const loading = ref(false)
 const loadingText = ref('')
 const errorMsg = ref('')
 const warnings = ref([])
 const fileInfo = ref(null)         // { reviewId, filename, products, start, end, tradeCount }
 const curve = ref(null)            // { points, stats, trades }
-
-// 交易日文字：导出的 Excel 通常只有一天，只有一天时显示 “2026-10-29”，跨多天（比如夜盘归到下一交易日）才显示范围
-const tradeDateText = computed(() => {
-  if (!fileInfo.value) return ''
-  const start = fileInfo.value.start.slice(0, 10)
-  const end = fileInfo.value.end.slice(0, 10)
-  return start === end ? start : `${start} ~ ${end}`
-})
 
 // 右侧视图：资金曲线 / 当天 K 线
 const viewMode = ref('curve')
@@ -215,17 +185,8 @@ watch(
   },
   { immediate: true }
 )
-// 统计里的“交易日期”，格式 YYYY/MM/DD；规则同上：一天只写一天，跨多天写“起 ~ 止”。
-// 拆成数组渲染：跨多天时两个日期各自成段，窄的格子里只在两个日期之间换行，不会把一个日期从中间截断
-const statDateParts = computed(() => {
-  if (!fileInfo.value) return []
-  const start = fileInfo.value.start.slice(0, 10).replaceAll('-', '/')
-  const end = fileInfo.value.end.slice(0, 10).replaceAll('-', '/')
-  return start === end ? [start] : [`${start} ~`, end]
-})
-
-// 当天交易回放能看的交易日 = 文件里有成交的交易日
-const tradingDays = computed(() => fileInfo.value?.days || [])
+// 当天交易回放：固定看路由里的这一天
+const tradingDays = computed(() => (day.value ? [day.value] : []))
 
 const stats = computed(() => curve.value?.stats || {})
 // 是否扣手续费：文件里有手续费数据就扣（没有就是未扣手续费的平仓盈亏）。不再提供开关
@@ -262,71 +223,58 @@ function errorText(error, fallback) {
   return error?.message ? `${fallback}：${error.message}` : fallback
 }
 
-// 把一份解析结果（上传或从文件夹选择，返回结构相同）设为当前数据，并取一次曲线
-async function applyReviewResult(res) {
-  fileInfo.value = res
-  warnings.value = res.warnings || []
-  await fetchCurve(true)
-}
+// ---------- 数据：合并后的全部交易记录（reviewId）+ 当天 ----------
+let retried = false                // reviewId 失效时只自动重取一次，避免死循环
+const allDays = ref([])            // 有成交的全部交易日（升序），上一日 / 下一日用
+const dayTradeCount = ref(0)       // 当天成交手数
+const noDayData = ref(false)         // 路由里的这一天没有成交（手输地址 / 文件被删）
 
-// ---------- 已导入文件（项目 review_files 文件夹）----------
-const reviewFiles = ref([])          // [{ name, size, mtime }]，最近修改的在前
-const filesLoading = ref(false)
-const filesDir = ref('review_files')
-const currentFileName = computed(() => fileInfo.value?.filename || '')
+const dayIndex = computed(() => allDays.value.indexOf(day.value))
+const prevDay = computed(() => (dayIndex.value > 0 ? allDays.value[dayIndex.value - 1] : ''))
+const nextDay = computed(() => (dayIndex.value >= 0 && dayIndex.value < allDays.value.length - 1 ? allDays.value[dayIndex.value + 1] : ''))
+const gotoDay = (d) => d && router.push({ name: 'ReviewDay', params: { day: d } })
 
-async function loadFileList() {
-  filesLoading.value = true
-  try {
-    const res = await getReviewFiles()
-    reviewFiles.value = res.files || []
-    filesDir.value = res.dir || filesDir.value
-  } catch (error) {
-    // 列表只是辅助功能，取不到时不打断主流程，也不弹错误
-    reviewFiles.value = []
-  } finally {
-    filesLoading.value = false
-  }
-}
-
-// 点击列表里的文件：直接分析，不用再从外部选文件。点击当前正在分析的文件不重复加载
-let openSeq = 0
-async function handleOpenFile(name) {
-  if (loading.value || name === currentFileName.value) return
-  const seq = ++openSeq
+// 拉取总览，得到合并后的 reviewId；再按当天取曲线。reviewId 在后端缓存里，重启 / 文件变化后会换新
+async function loadAll() {
   errorMsg.value = ''
   warnings.value = []
   loading.value = true
-  loadingText.value = '正在解析交易记录...'
+  loadingText.value = '正在加载交易记录...'
   try {
-    const res = await openReviewFile(name)
-    if (seq !== openSeq) return
-    await applyReviewResult(res)
-    ElMessage.success(`已切换到 ${name}（${res.tradeCount} 手成交）`)
+    const res = await getReviewOverview({ fee: 1 })
+    allDays.value = (res.days || []).map((d) => d.day)
+    const today = (res.days || []).find((d) => d.day === day.value)
+    dayTradeCount.value = today?.volume || 0
+    noDayData.value = !today
+    // 当天可选品种：总览里的品种列表。回放页默认选成交额最大的品种
+    fileInfo.value = {
+      reviewId: res.reviewId,
+      filename: day.value,
+      products: (res.products || []).map((p) => p.product),
+      hasFee: !!res.hasFee,
+      fileCount: res.fileCount || 0,
+      days: [day.value]
+    }
+    warnings.value = res.warnings || []
+    if (!today) {
+      curve.value = null
+      return
+    }
+    await fetchCurve(true)
   } catch (error) {
-    if (seq !== openSeq) return
-    errorMsg.value = errorText(error, '文件解析失败')
-    // 文件已经不在文件夹里（被删除或移动）：刷新列表，让它从列表里消失
-    if (error?.response?.data?.fileMissing) loadFileList()
+    errorMsg.value = errorText(error, '加载交易记录失败')
   } finally {
-    if (seq === openSeq) loading.value = false
+    loading.value = false
   }
 }
 
-const formatSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
-const formatMtime = (s) => {
-  const d = new Date(s * 1000)
-  const p = (v) => String(v).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-// 进入页面：先取文件列表，再自动打开「?file= 指定的文件」，没指定就打开最近导入的一个，进来就能看
-loadFileList().then(() => {
-  const want = String(route.query.file || '')
-  const target = reviewFiles.value.find((f) => f.name === want) || reviewFiles.value[0]
-  if (target) handleOpenFile(target.name)
+// 换日（上一日 / 下一日）：组件复用，路由参数变了就重新取当天的曲线
+watch(day, () => {
+  retried = false
+  if (fileInfo.value) loadAll()   // 回放组件的 days 随 day 变化，自己会刷新
 })
 
+loadAll()
 let requestSeq = 0
 async function fetchCurve(isFirst = false) {
   if (!fileInfo.value) return
@@ -338,6 +286,8 @@ async function fetchCurve(isFirst = false) {
     // 不再有筛选条件：全部品种、整个文件的时间范围（不传 products / start / end），有手续费数据就扣
     const res = await getReviewCurve({
       reviewId: fileInfo.value.reviewId,
+      start: day.value,
+      end: day.value,
       fee: feeApplied.value ? 1 : 0
     })
     if (seq !== requestSeq) return
@@ -352,9 +302,16 @@ async function fetchCurve(isFirst = false) {
   } catch (error) {
     if (seq !== requestSeq) return
     if (error?.response?.data?.expired) {
+      // 后端缓存里的合并记录失效了（后端重启 / 被挤出缓存）：重新取一次总览换新的 reviewId，只重试一次
       fileInfo.value = null
       curve.value = null
-      errorMsg.value = error.response.data.message
+      if (isFirst && !retried) {
+        retried = true
+        loading.value = false
+        await loadAll()
+        return
+      }
+      errorMsg.value = '交易记录已失效，请返回账户总览后重新进入'
     } else if (!isFirst) {
       errorMsg.value = errorText(error, '获取盈亏曲线失败')
     } else {

@@ -249,6 +249,12 @@ export function cancelOrder(orderId) {
   })
 }
 
+// 交易复盘·账户总览：合并 review_files 全部交易记录，按交易日 / 品种聚合。
+// params = { fee(1/0), start, end }；返回的 reviewId 可直接用于 getReviewCurve / getReviewDayTrades 等单日接口
+export function getReviewOverview(params) {
+  return request({ url: '/api/review/overview', method: 'get', params, timeout: 120000, silent: true })
+}
+
 // 交易记录文件列表 + 每个文件的元信息（品种 / 交易日 / 成交手数），数据库管理用
 export function getReviewFilesDetail() {
   return request({ url: '/api/review/files/detail', method: 'get', silent: true })

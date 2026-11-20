@@ -52,6 +52,13 @@ const routes = [
   {
     path: '/review',
     name: 'Review',
+    component: () => import('@/views/Review/Overview.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    // 某一个交易日的复盘（账户盈亏曲线 + 当天交易回放），从总览点进来
+    path: '/review/day/:day',
+    name: 'ReviewDay',
     component: () => import('@/views/Review/index.vue'),
     meta: { requiresAuth: true }
   }

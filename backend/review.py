@@ -661,6 +661,124 @@ def _num(v: float):
     return int(f) if f.is_integer() else round(f, 4)
 
 
+def merge_records(parts: list[pd.DataFrame]) -> pd.DataFrame:
+    """把多个文件解析出的成交记录合并成一份（账户总览用）。
+
+    同一笔成交可能出现在多个文件里（比如先导入了一天的文件，又导入了包含这一天的整月文件），
+    所以按「时间 + 合约 + 买卖 + 开平 + 价格 + 手数 + 成交序号」去重，只保留一份。
+    成交序号缺失（NaN）时用 -1 代替参与去重，否则 NaN 之间互不相等，去不掉重。
+    每份 records 的 pnl / is_close 已由 analyze 在单文件内算好；盈亏配对是文件内的，合并后不再重算。
+    """
+    parts = [p for p in parts if p is not None and not p.empty]
+    if not parts:
+        return pd.DataFrame()
+    df = pd.concat(parts, ignore_index=True)
+    key = ["time", "symbol", "direction", "offset", "price", "volume", "_seq"]
+    df = df.assign(_seq=df["seq"].fillna(-1))
+    df = df.drop_duplicates(subset=key, keep="first").drop(columns=["_seq"])
+    return _sort_by_session(df)
+
+
+def build_overview(records: pd.DataFrame, include_fee: bool = True) -> dict:
+    """账户整体概览：按交易日聚合盈亏，并给出品种结构、品种盈亏/胜率、交易统计。
+
+    口径与 build_curve 一致：每笔盈亏 = 平仓盈亏 - 手续费（开仓手续费记到该合约之后的第一笔平仓上）。
+    没有入金 / 权益数据，所以不提供收益率、权益、最大使用率。
+    """
+    empty = {"days": [], "products": [], "stats": _empty_stats() | {"profitLossRatio": 0.0, "tradingDays": 0,
+             "winDays": 0, "lossDays": 0, "dayWinRate": 0.0, "volume": 0, "turnover": 0.0},
+             "start": "", "end": ""}
+    if records is None or records.empty:
+        return empty
+    df = _sort_by_session(records)
+    df = df.assign(fee_charge=_attribute_fees(df), _day=df["time"].map(trading_day))
+    fee_used = df["fee_charge"] if include_fee else 0.0
+    # 逐行盈亏 = 平仓盈亏 - 归属到这一行的手续费（开仓行 pnl=0，费用已归到之后的平仓行）
+    df = df.assign(net=df["pnl"] - fee_used)
+
+    # ---- 按交易日 ----
+    day_rows = []
+    for day, g in df.groupby("_day", sort=True):
+        closes = g[g["is_close"]]
+        merged = _merge_same_time(closes) if not closes.empty else closes
+        wins = int((merged["pnl"] > 0).sum()) if len(merged) else 0
+        losses = int((merged["pnl"] < 0).sum()) if len(merged) else 0
+        day_rows.append({
+            "day": day.strftime("%Y-%m-%d"),
+            "pnl": round(float(g["net"].sum()), 2),
+            "grossPnl": round(float(g["pnl"].sum()), 2),
+            "fee": round(float(g["fee"].sum()), 2),
+            "closeCount": int(len(merged)),
+            "winCount": wins, "lossCount": losses,
+            "volume": _num(g["volume"].sum()),
+        })
+    cum = 0.0
+    for r in day_rows:
+        cum += r["pnl"]
+        r["cumPnl"] = round(cum, 2)
+
+    # ---- 逐笔平仓（合并同刻）：用于胜率 / 盈亏比 / 回撤 / 品种统计 ----
+    closes_all = df[df["is_close"]]
+    merged_all = _merge_same_time(closes_all) if not closes_all.empty else closes_all
+    wins_s = merged_all.loc[merged_all["pnl"] > 0, "pnl"] if len(merged_all) else pd.Series(dtype=float)
+    loss_s = merged_all.loc[merged_all["pnl"] < 0, "pnl"] if len(merged_all) else pd.Series(dtype=float)
+    avg_win = float(wins_s.mean()) if len(wins_s) else 0.0
+    avg_loss = abs(float(loss_s.mean())) if len(loss_s) else 0.0
+    # 盈亏比 = 平均每笔盈利 / 平均每笔亏损（百分数形式，和截图「盈亏比 108.77%」一致）
+    pl_ratio = round(avg_win / avg_loss * 100, 2) if avg_loss else 0.0
+
+    # 最大回撤：按交易日累计盈亏序列算（累计值从 0 起，峰值不低于 0）
+    cum_s = pd.Series([r["cumPnl"] for r in day_rows], dtype=float)
+    max_dd = float((cum_s.cummax().clip(lower=0) - cum_s).max()) if len(cum_s) else 0.0
+
+    n_win, n_loss = len(wins_s), len(loss_s)
+    day_wins = sum(1 for r in day_rows if r["pnl"] > 0)
+    day_losses = sum(1 for r in day_rows if r["pnl"] < 0)
+    total_pnl = round(float(df["net"].sum()), 2)
+    stats = {
+        "totalPnl": total_pnl,
+        "grossPnl": round(float(df["pnl"].sum()), 2),
+        "totalFee": round(float(df["fee"].sum()), 2),
+        "closeCount": int(len(merged_all)),
+        "winCount": n_win, "lossCount": n_loss,
+        "winRate": round(n_win / (n_win + n_loss) * 100, 2) if (n_win + n_loss) else 0.0,
+        "profitLossRatio": pl_ratio,
+        "maxDrawdown": round(max_dd, 2),
+        "maxProfit": round(float(wins_s.max()), 2) if n_win else 0.0,
+        "maxLoss": round(float(loss_s.min()), 2) if n_loss else 0.0,
+        "tradingDays": len(day_rows),
+        "winDays": day_wins, "lossDays": day_losses,
+        "dayWinRate": round(day_wins / (day_wins + day_losses) * 100, 2) if (day_wins + day_losses) else 0.0,
+        "volume": _num(df["volume"].sum()),
+        "turnover": round(float((df["price"] * df["volume"] *
+                                 df["product"].map(lambda p: CONTRACT_MULTIPLIER.get(p, DEFAULT_MULTIPLIER))).sum()), 2),
+    }
+
+    # ---- 按品种 ----
+    mult = df["product"].map(lambda p: CONTRACT_MULTIPLIER.get(p, DEFAULT_MULTIPLIER))
+    df = df.assign(_turnover=df["price"] * df["volume"] * mult)
+    total_turnover = float(df["_turnover"].sum()) or 1.0
+    products = []
+    for prod, g in df.groupby("product", sort=False):
+        pc = g[g["is_close"]]
+        pm = _merge_same_time(pc) if not pc.empty else pc
+        w = int((pm["pnl"] > 0).sum()) if len(pm) else 0
+        l = int((pm["pnl"] < 0).sum()) if len(pm) else 0
+        products.append({
+            "product": str(prod),
+            "pnl": round(float(g["net"].sum()), 2),
+            "turnover": round(float(g["_turnover"].sum()), 2),
+            "turnoverRatio": round(float(g["_turnover"].sum()) / total_turnover * 100, 2),
+            "closeCount": int(len(pm)), "winCount": w, "lossCount": l,
+            "winRate": round(w / (w + l) * 100, 2) if (w + l) else 0.0,
+            "volume": _num(g["volume"].sum()),
+        })
+    products.sort(key=lambda x: -x["turnover"])
+
+    return {"days": day_rows, "products": products, "stats": stats,
+            "start": day_rows[0]["day"] if day_rows else "", "end": day_rows[-1]["day"] if day_rows else ""}
+
+
 def _empty_stats() -> dict:
     return {"totalPnl": 0.0, "grossPnl": 0.0, "totalFee": 0.0, "closeCount": 0, "winCount": 0,
             "lossCount": 0, "winRate": 0.0, "maxDrawdown": 0.0, "maxProfit": 0.0, "maxLoss": 0.0}

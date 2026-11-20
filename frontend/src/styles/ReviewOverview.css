@@ -1,0 +1,599 @@
+/* 交易复盘 · 账户总览（参考期货通「账户分析」）：单列卡片流 */
+
+.ov-container {
+  min-height: 100vh;
+  background: var(--bg-page-alt);
+}
+
+/* 顶部导航栏（与其它模块一致） */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--bg-navbar);
+  border-bottom: 1px solid var(--border-navbar);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-btn {
+  padding: 6px 14px;
+  background: var(--nav-btn-bg);
+  border: 1px solid var(--nav-btn-border);
+  border-radius: 6px;
+  color: var(--nav-btn-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.back-btn:hover {
+  background: var(--nav-btn-bg-hover);
+  border-color: var(--nav-btn-border-hover);
+}
+
+.back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ov-nav-title {
+  color: var(--accent2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 主体 */
+.ov-body {
+  position: relative;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+/* 涨跌色：红涨绿跌（盈利红、亏损绿） */
+.up {
+  color: var(--up);
+}
+
+.down {
+  color: var(--down);
+}
+
+.neutral {
+  color: var(--text-body);
+}
+
+.amber {
+  color: #fbbf24;
+}
+
+/* 时间范围 */
+.ov-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(var(--accent2-rgb), 0.18);
+}
+
+.ov-range-btn {
+  position: relative;
+  padding: 8px 18px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.ov-range-btn:hover {
+  color: var(--text-body);
+}
+
+.ov-range-btn.active {
+  color: var(--accent2);
+  font-weight: 600;
+}
+
+.ov-range-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent2);
+}
+
+.ov-range-picker {
+  max-width: 280px;
+  margin-left: 8px;
+}
+
+.ov-spacer {
+  flex: 1;
+}
+
+.ov-link {
+  color: var(--primary);
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+  margin-left: 12px;
+}
+
+.ov-link:hover {
+  text-decoration: underline;
+}
+
+.ov-link.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 提示 */
+.ov-error,
+.ov-warning {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ov-error {
+  background: rgba(var(--up-rgb), 0.12);
+  color: var(--up-text);
+}
+
+.ov-warning {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+
+/* 空状态 */
+.ov-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 80px 0;
+  text-align: center;
+}
+
+.ov-empty .empty-icon {
+  font-size: 48px;
+}
+
+.ov-empty .empty-title {
+  color: var(--text-body);
+  font-size: 18px;
+}
+
+.ov-empty .empty-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ov-empty-btn {
+  margin-top: 8px;
+  padding: 8px 22px;
+  border-radius: 6px;
+  background: var(--accent2);
+  color: #fff;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+/* 顶部总盈亏 */
+.ov-hero {
+  margin-bottom: 16px;
+  padding: 28px 16px 24px;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(var(--accent2-rgb), 0.16), rgba(var(--accent2-rgb), 0.03));
+  text-align: center;
+}
+
+.ov-hero-label {
+  color: var(--text-body);
+  font-size: 16px;
+}
+
+.ov-hero-range {
+  display: inline-block;
+  margin: 10px 0 6px;
+  padding: 3px 16px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.15);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ov-hero-value {
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-hero-sub {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* 卡片 */
+.ov-card {
+  margin-bottom: 16px;
+  padding: 18px 20px 16px;
+  border-radius: 12px;
+  background: var(--bg-chart);
+  border: 1px solid rgba(var(--accent2-rgb), 0.1);
+}
+
+.ov-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ov-card-title {
+  margin: 0 0 12px;
+  color: var(--text-body);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.ov-card-head .ov-card-title {
+  margin-bottom: 0;
+}
+
+.ov-card-title small {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* 交易统计：3 列网格 */
+.ov-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px 24px;
+}
+
+.ov-stat-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ov-stat-value {
+  margin-top: 4px;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-stat-value.small {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+/* 分段按钮（累计盈亏 / 当日盈亏） */
+.ov-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 6px;
+  background: var(--tab-bg);
+}
+
+.ov-seg button {
+  padding: 6px 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ov-seg button.active {
+  background: rgba(var(--accent2-rgb), 0.18);
+  color: var(--accent2);
+  font-weight: 600;
+}
+
+/* 图表提示条 */
+.ov-trend-tip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 12px 0 4px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--tab-bg);
+  color: var(--text-body);
+  font-size: 14px;
+}
+
+.ov-trend-tip b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-trend-date {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ov-chart {
+  width: 100%;
+}
+
+.ov-chart-trend {
+  height: 300px;
+}
+
+.ov-chart-pie {
+  flex: 0 0 260px;
+  height: 260px;
+}
+
+.ov-chart-prod {
+  height: 280px;
+}
+
+.ov-hint {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 品种结构：左环形图 + 右表格 */
+.ov-struct {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.ov-legend {
+  flex: 1;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ov-legend th {
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.ov-legend td {
+  padding: 8px 10px;
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* 每月盈亏日历 */
+.ov-month-nav {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--nav-btn-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ov-nav-btn {
+  width: 36px;
+  height: 34px;
+  border: none;
+  background: var(--nav-btn-bg);
+  color: var(--accent2);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.ov-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ov-month-select {
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-left: 1px solid var(--nav-btn-border);
+  border-right: 1px solid var(--nav-btn-border);
+  background: transparent;
+  color: var(--text-body);
+  font-size: 14px;
+  cursor: pointer;
+  text-align-last: center;
+}
+
+.ov-month-select option {
+  background: var(--bg-dropdown);
+  color: var(--text-body);
+}
+
+.ov-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-top: 14px;
+}
+
+.ov-cal-week {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(var(--accent2-rgb), 0.12);
+  color: var(--text-body);
+  font-size: 14px;
+  text-align: center;
+}
+
+.ov-cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 62px;
+  border: 1px solid transparent;
+  color: var(--text-body);
+}
+
+.ov-cal-day {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.ov-cal-pnl {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-cal-cell.weekend .ov-cal-day {
+  color: var(--accent2);
+  opacity: 0.7;
+}
+
+.ov-cal-cell.idle .ov-cal-day {
+  color: var(--text-secondary);
+}
+
+.ov-cal-cell.win {
+  background: rgba(var(--up-rgb), 0.18);
+}
+
+.ov-cal-cell.win .ov-cal-pnl {
+  color: var(--up);
+}
+
+.ov-cal-cell.loss {
+  background: rgba(var(--down-rgb), 0.18);
+}
+
+.ov-cal-cell.loss .ov-cal-pnl {
+  color: var(--down);
+}
+
+.ov-cal-cell.flat {
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.ov-cal-cell.clickable {
+  cursor: pointer;
+  transition: filter 0.15s, border-color 0.15s;
+}
+
+.ov-cal-cell.clickable:hover {
+  filter: brightness(1.25);
+  border-color: var(--accent2);
+}
+
+.ov-month-total {
+  margin-top: 16px;
+  color: var(--text-body);
+  font-size: 18px;
+  text-align: center;
+}
+
+.ov-month-total b {
+  margin-left: 8px;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-month-total .ov-trend-date {
+  margin-left: 14px;
+  font-size: 13px;
+}
+
+.ov-foot {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 加载遮罩 */
+.ov-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(1px);
+}
+
+.ov-loading .loading-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(var(--accent2-rgb), 0.25);
+  border-top-color: var(--accent2);
+  border-radius: 50%;
+  animation: ov-spin 0.9s linear infinite;
+}
+
+.ov-loading .loading-text {
+  color: var(--text-body);
+  font-size: 13px;
+}
+
+@keyframes ov-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .ov-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ov-struct {
+    flex-direction: column;
+  }
+
+  .ov-chart-pie {
+    flex-basis: auto;
+  }
+}

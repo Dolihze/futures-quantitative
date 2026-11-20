@@ -11,6 +11,8 @@ import sys
 import uuid
 from collections import OrderedDict
 
+import pandas as pd
+
 # 直接以脚本运行（python backend/app.py）时，把项目根目录加入 sys.path，
 # 这样 `from backend import ...` 在开发、测试、PyInstaller 打包三种场景下都能工作。
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -556,6 +558,84 @@ def review_open():
     except OSError as e:
         return jsonify({"success": False, "message": f"读取文件失败：{e}"}), 400
     return analyze_to_response(content, name)
+
+
+_REVIEW_ALL_CACHE = {"sig": None, "id": None, "warnings": [], "skipped": [], "fileCount": 0}
+
+
+def _review_all_records():
+    """合并 review_files 里所有能解析的文件 -> (reviewId, warnings, skipped, fileCount)。
+
+    文件集合（名字 + 大小 + 修改时间）没变就复用上次的合并结果；变了（导入 / 删除 / 覆盖）才重新解析。
+    合并结果放进 REVIEW_CACHE，所以 reviewId 可以直接给 /api/review/curve、/day-trades 用。
+    """
+    root = review_files_dir()
+    entries = []
+    if os.path.isdir(root):
+        for name in sorted(os.listdir(root)):
+            path = os.path.join(root, name)
+            if name.startswith(('~$', '.')) or not os.path.isfile(path) or not name.lower().endswith(REVIEW_EXTS):
+                continue
+            st = os.stat(path)
+            entries.append((name, path, st.st_size, st.st_mtime_ns))
+    sig = tuple((n, s, m) for n, _p, s, m in entries)
+    c = _REVIEW_ALL_CACHE
+    if c["sig"] == sig and c["id"] in REVIEW_CACHE:
+        REVIEW_CACHE.move_to_end(c["id"])
+        return c["id"], c["warnings"], c["skipped"], c["fileCount"]
+
+    parts, warnings, skipped = [], [], []
+    for name, path, _s, _m in entries:
+        try:
+            with open(path, 'rb') as fh:
+                r = review.analyze(fh.read(), name)
+            parts.append(r.records)
+            warnings += [f"{name}：{w}" for w in r.warnings]
+        except review.ReviewParseError as e:
+            skipped.append({"name": name, "error": str(e)})
+        except Exception as e:
+            skipped.append({"name": name, "error": f"读取失败：{e}"})
+    merged = review.merge_records(parts)
+    review_id = uuid.uuid4().hex
+    REVIEW_CACHE[review_id] = merged
+    while len(REVIEW_CACHE) > REVIEW_CACHE_MAX:
+        REVIEW_CACHE.popitem(last=False)
+    _REVIEW_ALL_CACHE.update(sig=sig, id=review_id, warnings=warnings, skipped=skipped, fileCount=len(parts))
+    return review_id, warnings, skipped, len(parts)
+
+
+@app.route('/api/review/overview')
+def review_overview():
+    """账户整体概览：合并 review_files 里全部交易记录，按交易日 / 品种聚合。
+
+    参数：fee（1=扣除手续费，0=不扣，默认 1）。start / end（YYYY-MM-DD，可选）：只统计这段交易日。
+    返回的 reviewId 对应合并后的全部记录，可直接用于 /api/review/curve、/day-trades（单日详情）。
+    """
+    review_id, warnings, skipped, file_count = _review_all_records()
+    records = REVIEW_CACHE.get(review_id)
+    include_fee = request.args.get('fee', '1') != '0'
+    start = request.args.get('start') or None
+    end = request.args.get('end') or None
+    if records is None or records.empty:
+        data = review.build_overview(None)
+        data.update(success=True, reviewId=review_id, fileCount=file_count, skipped=skipped, warnings=warnings,
+                    allStart="", allEnd="", hasFee=False)
+        return jsonify(data)
+    all_days = records["time"].map(review.trading_day)
+    all_start, all_end = all_days.min().strftime('%Y-%m-%d'), all_days.max().strftime('%Y-%m-%d')
+    df = records
+    try:
+        if start:
+            df = df[all_days >= pd.to_datetime(start).normalize()]
+            all_days = all_days.loc[df.index]
+        if end:
+            df = df[all_days <= pd.to_datetime(end).normalize()]
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "message": f"参数错误：{e}"}), 400
+    data = review.build_overview(df, include_fee)
+    data.update(success=True, reviewId=review_id, fileCount=file_count, skipped=skipped, warnings=warnings,
+                allStart=all_start, allEnd=all_end, hasFee=bool((records["fee"] != 0).any()))
+    return jsonify(data)
 
 
 @app.route('/api/review/curve')

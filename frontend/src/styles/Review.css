@@ -514,3 +514,74 @@
   background: rgba(var(--up-rgb), 0.2);
   border-color: rgba(var(--up-rgb), 0.5);
 }
+
+/* 单日复盘：导航栏里的 上一日 / 下一日 */
+.day-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+}
+
+.day-title {
+  min-width: 96px;
+  text-align: center;
+  color: var(--accent2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.day-btn {
+  padding: 6px 12px;
+  background: var(--nav-btn-bg);
+  border: 1px solid var(--nav-btn-border);
+  border-radius: 6px;
+  color: var(--nav-btn-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.day-btn:hover:not(:disabled) {
+  background: var(--nav-btn-bg-hover);
+  border-color: var(--nav-btn-border-hover);
+}
+
+.day-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 单日复盘：这一天没有成交时的空状态 */
+.day-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 420px;
+}
+
+.day-empty .empty-icon {
+  font-size: 44px;
+}
+
+.day-empty .empty-title {
+  color: var(--text-body);
+  font-size: 18px;
+}
+
+.day-empty .empty-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.day-empty-btn {
+  margin-top: 8px;
+  padding: 8px 22px;
+  border-radius: 6px;
+  background: var(--accent2);
+  color: #fff;
+  font-size: 13px;
+  text-decoration: none;
+}
