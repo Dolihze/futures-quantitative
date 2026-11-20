@@ -7,41 +7,42 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+.pytest_cache/
+.venv/
+venv/
 *.egg-info/
-.installed.cfg
 *.egg
 
-# PyInstaller
-*.manifest
-*.spec
+# 构建产物
+# 根目录 /build、/dist 由 PyInstaller 旧用法产生；现在中间产物统一放 .build/
+/build/
+/dist/
+.build/
 
-# Sidecar (淇濈暀鐩綍锛屾帓闄ゅ彲鎵ц鏂囦欢)
-src-tauri/sidecar/*.exe
-src-tauri/sidecar/python-backend
-!src-tauri/sidecar/README.md
+# PyInstaller：spec 是打包定义，要入库（packaging/python-backend.spec），只忽略生成的 manifest
+*.manifest
+
+# 打包后的 Python 后端（onedir，由 `npm run backend:build` 生成）
+src-tauri/backend-dist/*
+# 保留占位文件：Tauri 编译期要求 resources 目录存在，否则全新克隆后 cargo check 就会失败
+!src-tauri/backend-dist/.gitkeep
+
+# 依赖
+/node_modules/
+frontend/node_modules/
 
 # CTP 真实期货公司接入参数（含认证码，不提交）
 data/ctp_brokers.local.json
 
-# 交易复盘：导入过的交易记录文件（个人交易数据，不提交）
+# 用户导入的个人数据（不提交）
 review_files/
+depth_files/
 
 # Frontend
-frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+# 由 unplugin-auto-import / unplugin-vue-components 生成
+frontend/types/generated/
 
 # Logs
 *.log
@@ -61,6 +62,3 @@ lerna-debug.log*
 # OS
 .DS_Store
 Thumbs.db
-
-# Depth market: imported tick CSV (personal data, do not commit)
-depth_files/

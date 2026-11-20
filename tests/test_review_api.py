@@ -16,6 +16,7 @@ _TMP_REVIEW_DIR = tempfile.mkdtemp(prefix="review_files_test_")
 os.environ["REVIEW_FILES_DIR"] = _TMP_REVIEW_DIR
 
 from backend import app as backend  # noqa: E402
+from backend.services import review_service  # noqa: E402
 from test_review import HEADER_A, ROWS_A, make_xlsx  # noqa: E402
 
 client = backend.app.test_client()
@@ -82,7 +83,7 @@ def test_detail_sheet_upload_merge_fee_and_flags():
     assert net["segments"][0]["start"] == "2026-10-21 21:00:00" and net["segments"][3]["end"] == "2026-10-22 15:00:00"
     # 休息时间不画：整条轴 = 左边留白 + 345 分钟的交易时间 + 3 个段间隔，远小于真实跨度（约 18 小时）。
     # 精确值，不用宽松上限：之前一个按“第一个点”平移的 bug（夜盘起点跑到负坐标）就是被宽松上限漏过去的
-    from backend import review
+    from backend.core import review
     assert net["segments"][0]["x0"] == review.AXIS_PAD, "整条轴从 AXIS_PAD 开始，不能是负数"
     assert net["segments"][-1]["x1"] == review.AXIS_PAD + 345 + 3 * review.SESSION_GAP_WIDTH
     # 第一笔（21:30:05）在夜盘内，比夜盘开盘晚 30.0833 分钟；起点在它左边 START_POINT_OFFSET
@@ -130,9 +131,9 @@ def test_curve_errors():
 def test_cache_is_bounded():
     data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
     first = upload(data, "a.xlsx").get_json()["reviewId"]
-    for _ in range(backend.REVIEW_CACHE_MAX):
+    for _ in range(review_service.REVIEW_CACHE_MAX):
         upload(data, "a.xlsx")
-    assert len(backend.REVIEW_CACHE) == backend.REVIEW_CACHE_MAX
+    assert len(review_service.REVIEW_CACHE) == review_service.REVIEW_CACHE_MAX
     assert client.get(f"/api/review/curve?reviewId={first}").status_code == 404        # 最早的已被淘汰
 
 
@@ -174,13 +175,13 @@ def test_upload_same_name_needs_confirmation_then_overwrites():
     path = os.path.join(_TMP_REVIEW_DIR, "records.xlsx")
 
     # 同名且没有确认：409 + exists，什么都不做（不保存、不解析进缓存）
-    cache_before = len(backend.REVIEW_CACHE)
+    cache_before = len(review_service.REVIEW_CACHE)
     r = upload_raw(second, "records.xlsx")
     j = r.get_json()
     assert r.status_code == 409 and j["exists"] is True and j["name"] == "records.xlsx" and "已存在" in j["message"]
     with open(path, "rb") as fh:
         assert fh.read() == first
-    assert len(backend.REVIEW_CACHE) == cache_before
+    assert len(review_service.REVIEW_CACHE) == cache_before
     # Windows 文件系统不区分大小写：RECORDS.XLSX 和 records.xlsx 是同一个文件，也要确认
     if os.path.exists(os.path.join(_TMP_REVIEW_DIR, "RECORDS.XLSX")):
         assert upload_raw(second, "RECORDS.XLSX").status_code == 409

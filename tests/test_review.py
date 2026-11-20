@@ -12,7 +12,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from backend import review  # noqa: E402
+from backend.core import review  # noqa: E402
 
 
 def make_xlsx(rows, header, title_rows=0, ext="xlsx") -> bytes:

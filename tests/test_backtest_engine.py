@@ -6,7 +6,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from backend import backtest_engine as be  # noqa: E402
+from backend.core import backtest_engine as be  # noqa: E402
 
 
 def bar(time, o, h, l, c):
@@ -148,11 +148,12 @@ def test_product_catalog():
 def test_backtest_api_selects_product_main_contract():
     """product 参数选择品种主连：默认燃料油 FU0；未知品种返回 400；每个品种用自己的合约乘数结算。"""
     from backend import app as backend
+    from backend.services import backtest_service
 
     asked = []
     bars = [bar("2026-10-20 09:05:00", 100, 100, 100, 100), bar("2026-10-20 09:10:00", 100, 101, 99, 100)]
-    orig = backend.fetch_backtest_bars
-    backend.fetch_backtest_bars = lambda symbol, period: (asked.append(symbol), bars)[1]
+    orig = backtest_service.fetch_backtest_bars
+    backtest_service.fetch_backtest_bars = lambda symbol, period: (asked.append(symbol), bars)[1]
     try:
         client = backend.app.test_client()
         d = client.get("/api/backtest/overview?days=30").get_json()                       # 默认品种
@@ -163,7 +164,7 @@ def test_backtest_api_selects_product_main_contract():
         bad_k = client.get("/api/backtest/kline?product=XX&period=5")
         prods = client.get("/api/backtest/products").get_json()
     finally:
-        backend.fetch_backtest_bars = orig
+        backtest_service.fetch_backtest_bars = orig
     assert d["product"] == "FU" and d["symbol"] == "FU0" and d["symbolName"] == "燃料油主连"
     assert o["product"] == "RB" and o["symbol"] == "RB0" and o["symbolName"] == "螺纹钢主连"
     assert r["success"] and r["symbol"] == "AU0" and r["symbolName"] == "沪金主连"
@@ -187,11 +188,12 @@ def test_data_coverage_reports_truncation():
 
 def test_api_returns_coverage_so_60_and_90_are_not_silently_identical():
     from backend import app as backend
+    from backend.services import backtest_service
 
     # 5 分钟线只有约 3 周：构造 21 天数据，每天 1 根
     bars = [bar(f"2026-10-{d:02d} 09:05:00", 100, 100, 100, 100) for d in range(1, 22)]
-    orig = backend.fetch_backtest_bars
-    backend.fetch_backtest_bars = lambda symbol, period: bars
+    orig = backtest_service.fetch_backtest_bars
+    backtest_service.fetch_backtest_bars = lambda symbol, period: bars
     try:
         client = backend.app.test_client()
         o30 = client.get("/api/backtest/overview?days=30").get_json()
@@ -199,7 +201,7 @@ def test_api_returns_coverage_so_60_and_90_are_not_silently_identical():
         r90 = client.get("/api/backtest/run?strategy=reversal&days=90").get_json()
         r7 = client.get("/api/backtest/run?strategy=reversal&days=7").get_json()
     finally:
-        backend.fetch_backtest_bars = orig
+        backtest_service.fetch_backtest_bars = orig
     assert o30["availableDays"] == 21 and o90["availableDays"] == 21
     cov = o90["data"][0]["coverage"]
     assert cov["truncated"] and cov["requestedDays"] == 90 and cov["usedDays"] == 21

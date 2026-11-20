@@ -12,7 +12,7 @@
   - 盈利曲线：每笔交易平仓后的累计盈亏；
   - 成交明细表：每笔的开平仓时间/价格、手数、止盈止损价、平仓原因、持仓 K 线数、盈亏、账户权益；点击一行会把 K 线定位到该笔交易。
 
-回测在 Python 后端（`backend/backtest_engine.py`）里执行，前端只负责展示。
+回测在 Python 后端（`backend/core/backtest_engine.py`）里执行，前端只负责展示。
 
 ## 统计口径
 
@@ -31,7 +31,7 @@
 
 ## 新增策略
 
-在 `backend/backtest_engine.py` 里写一个函数并用 `@register` 注册，首页会自动出现新卡片，无需改前端：
+在 `backend/core/backtest_engine.py` 里写一个函数并用 `@register` 注册，首页会自动出现新卡片，无需改前端：
 
 ```python
 @register(id="my_strategy", name="我的策略", description="一句话说明", category="趋势", period="5")
@@ -44,7 +44,7 @@ def strategy_my(bars, ctx):
     return signals
 ```
 
-`backend/backtest_engine.py` 里已提供 `sma / ema / ma / hhv / llv / ref / rsi` 等指标函数。修改后请运行 `python -m pytest tests/test_backtest_engine.py -q`，并执行 `npm run backend:build` 重新打包 sidecar。
+`backend/core/backtest_engine.py` 里已提供 `sma / ema / ma / hhv / llv / ref / rsi` 等指标函数。修改后请运行 `python -m pytest tests/test_backtest_engine.py -q`，并执行 `npm run backend:build` 重新打包后端。
 
 ## 接口
 
@@ -64,12 +64,12 @@ npm install
 npm run dev
 ```
 
-首次运行或修改 `backend/app.py` / `backend/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包 sidecar。登录后在首页点击"量化回测"即可进入策略总览。
+首次运行或修改 `backend/routes/backtest.py` / `backend/core/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包后端。登录后在首页点击"量化回测"即可进入策略总览。
 
 ## 注意事项
 
 1. 确保网络连接正常；首页首次加载要取 K 线并回测所有策略，可能需要几秒钟（后端对 K 线缓存 5 分钟）。
-2. 品种目录、最小变动价位和合约乘数维护在 `backend/backtest_engine.py` 的 `_CATALOG` 里（新浪主连代码 = 品种代码 + `0`，如 `FU0`、`RB0`，已逐个核对能取到数据；最小变动价位已用价格数据交叉校验）。要增删品种改这一处即可，下拉框和接口自动跟随。动力煤 ZC 已停止交易，不收录。
+2. 品种目录、最小变动价位和合约乘数维护在 `backend/core/backtest_engine.py` 的 `_CATALOG` 里（新浪主连代码 = 品种代码 + `0`，如 `FU0`、`RB0`，已逐个核对能取到数据；最小变动价位已用价格数据交叉校验）。要增删品种改这一处即可，下拉框和接口自动跟随。动力煤 ZC 已停止交易，不收录。
 3. 主连是新浪拼接的连续行情，换月处价格可能有跳空，回测时会被当作一次正常的价格变动。
 4. 策略和品种要匹配：例如「反转信号」只在 09:00-09:15 / 21:00-21:15 开仓，股指、国债期货 09:30 开盘且没有夜盘，所以在这些品种上不会产生交易，卡片上会提示。
 

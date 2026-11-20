@@ -58,9 +58,9 @@ import { chartColors, onThemeChange } from '@/utils/chartTheme'
 
 const props = defineProps({
   // 后端 footprint 的 bars：[{ time, open, high, low, close, volume, levels: [{price, buy, sell, neutral}] }]
-  bars: { type: Array, default: () => [] },
+  bars: { type: /** @type {import('vue').PropType<import('@/api/types').DepthFootprintBar[]>} */ (Array), default: () => [] },
   // 大单列表：[{ bar, index, price, volume, side, bs }]。阈值过滤在前端做，调阈值不用重新请求
-  bigOrders: { type: Array, default: () => [] },
+  bigOrders: { type: /** @type {import('vue').PropType<import('@/api/types').DepthBigOrder[]>} */ (Array), default: () => [] },
   bigOrder: { type: Number, default: 100 },     // 大单阈值（手）
   tickSize: { type: Number, default: 1 },       // 最小价位间隔
   loading: { type: Boolean, default: false },

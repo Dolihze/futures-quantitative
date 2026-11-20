@@ -11,7 +11,7 @@ import datetime
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from backend import copy_trading as ct  # noqa: E402
+from backend.core import copy_trading as ct  # noqa: E402
 
 
 # ----------------------------------------------------------------------------

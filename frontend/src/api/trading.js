@@ -2,7 +2,7 @@
  * 交易页使用的接口入口：真实账号走后端 CTP 接口；调试模式（broker === 'debug'）走前端假数据。
  *
  * 每次调用时才判断模式（而不是模块加载时），因为同一个窗口里可能先后用调试模式和真实账号登录。
- * 调试模式的假数据实现见 @/mock/tradingDebug.js。
+ * 调试模式的假数据实现见 src/mock/tradingDebug.js。
  */
 import * as real from '@/api'
 import * as mock from '@/mock/tradingDebug'

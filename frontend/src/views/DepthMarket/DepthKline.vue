@@ -38,7 +38,7 @@ import * as echarts from 'echarts'
 import { chartColors, onThemeChange } from '@/utils/chartTheme'
 
 const props = defineProps({
-  bars: { type: Array, default: () => [] },         // [{time, open, high, low, close, volume, position, ticks, ti0, ti1, ...}]
+  bars: { type: /** @type {import('vue').PropType<import('@/api/types').DepthKlineBar[]>} */ (Array), default: () => [] },         // [{time, open, high, low, close, volume, position, ticks, ti0, ti1, ...}]
   loading: { type: Boolean, default: false },
   selectedIndex: { type: Number, default: -1 },     // 当前选中（点击/回放所在）的 K 线序号，图上高亮
   emptyTitle: { type: String, default: '还没有数据' },
@@ -182,7 +182,7 @@ function render() {
       if (p.componentType === 'series' && p.dataIndex != null) emit('select', p.dataIndex)
     })
     // 鼠标移动：axisPointer 的 dataIndex 即当前十字线所在 K 线
-    chart.on('updateAxisPointer', (e) => {
+    chart.on('updateAxisPointer', (/** @type {any} */ e) => {
       const idx = e?.axesInfo?.[0]?.value
       const n = typeof idx === 'number' ? idx : -1
       if (n !== hoverIndex.value) {

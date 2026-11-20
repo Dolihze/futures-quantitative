@@ -1,0 +1,4037 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "期货量化交易系统 后端接口",
+    "version": "1.0.0",
+    "description": "由 scripts/gen_openapi.py 生成，勿手改。字段以 backend/schemas.py 为准。"
+  },
+  "paths": {
+    "/api/account": {
+      "get": {
+        "operationId": "get_account_get_account",
+        "summary": "当前登录账号的资金、持仓快照（来自 CTP 会话）",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/kline": {
+      "get": {
+        "operationId": "get_backtest_get_kline_data",
+        "summary": "获取某品种主连的 K 线数据。参数：product（默认 FU）、period、days",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestKline"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/overview": {
+      "get": {
+        "operationId": "get_backtest_backtest_overview",
+        "summary": "首页：对所有策略在最近 days 天内回测，返回每个策略的胜率、盈亏比、总盈亏和缩略净值曲线。",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/products": {
+      "get": {
+        "operationId": "get_backtest_backtest_products",
+        "summary": "可回测的品种（主连）列表，默认燃料油主连",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestProducts"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/run": {
+      "get": {
+        "operationId": "get_backtest_backtest_run",
+        "summary": "详情页：回测单个策略，返回 K 线、成交明细（含买卖点）、净值曲线和完整统计。",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestRun"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/strategies": {
+      "get": {
+        "operationId": "get_backtest_backtest_strategies",
+        "summary": "已注册的量化策略列表（不含回测结果）",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/brokers": {
+      "get": {
+        "operationId": "get_account_get_brokers",
+        "summary": "提供期货公司列表数据",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BrokerGroup"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts": {
+      "get": {
+        "operationId": "get_trading_get_contracts",
+        "summary": "可交易的期货合约列表（登录后由 CTP 异步查询，刚登录时可能还没就绪）",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credentials": {
+      "get": {
+        "operationId": "get_account_get_credentials",
+        "summary": "读取「记住账号」保存的凭据，用于登录页预填；没有记录返回 saved=false",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedCredentials"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_account_delete_credentials",
+        "summary": "清除已保存的凭据",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/book": {
+      "get": {
+        "operationId": "get_depth_depth_book",
+        "summary": "某一时刻的历史盘口。参数：depthId，ts（毫秒时间戳，取不晚于它的最近一笔）或 index（tick 序号）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/contracts": {
+      "get": {
+        "operationId": "get_depth_depth_contracts",
+        "summary": "已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthContracts"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_depth_depth_contract_delete",
+        "summary": "删除一个合约：删掉它名下的全部文件。返回删除了哪些、哪些失败。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/files": {
+      "get": {
+        "operationId": "get_depth_depth_files",
+        "summary": "列出 depth_files 文件夹里的 tick CSV（最近修改的在前）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthFiles"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_depth_depth_file_delete",
+        "summary": "depth.depth_file_delete",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/footprint": {
+      "get": {
+        "operationId": "get_depth_depth_footprint",
+        "summary": "足迹图数据：每根 K 线每个价位的买 / 卖 / 中性成交量 + 大单列表。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/kline": {
+      "get": {
+        "operationId": "get_depth_depth_kline",
+        "summary": "由 tick 聚合 K 线。参数：depthId、period（1/5/15/30/60/1440，默认 1）、day（交易日，可空=全部）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/open": {
+      "post": {
+        "operationId": "post_depth_depth_open",
+        "summary": "选择 depth_files 里已有的文件，返回结构和上传接口一致。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/open-contract": {
+      "post": {
+        "operationId": "post_depth_depth_open_contract",
+        "summary": "打开一个合约：把它的所有文件解析后按时间合并成一条时间线，返回结构同 /api/depth/open。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/ticks": {
+      "get": {
+        "operationId": "get_depth_depth_ticks",
+        "summary": "一段连续的 tick（含盘口），用于回放预取。参数：depthId、start（起始序号）、count（默认 200，最多 1000）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/upload": {
+      "post": {
+        "operationId": "post_depth_depth_upload",
+        "summary": "上传 tick CSV：解析成功后保存到 depth_files。同名文件未带 overwrite=1 时返回 409 + exists:true（同复盘）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "operationId": "post_account_login",
+        "summary": "期货账号登录：通过 CTP 完成终端认证 + 登录，成功后保存会话",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "operationId": "post_account_logout",
+        "summary": "退出登录：先停止跟单，再关闭 CTP 会话（含被监控账号）",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/account": {
+      "get": {
+        "operationId": "get_monitor_monitor_account",
+        "summary": "被监控账号的权益与持仓",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/config": {
+      "post": {
+        "operationId": "post_monitor_monitor_config",
+        "summary": "运行中更新跟单配置（仅对之后的信号生效）",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/config/save": {
+      "post": {
+        "operationId": "post_monitor_monitor_config_save",
+        "summary": "只保存跟单配置到本地（不启动跟单），下次打开软件时恢复",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/credentials": {
+      "get": {
+        "operationId": "get_monitor_monitor_credentials",
+        "summary": "读取量化监控「记住账号密码」保存的被监控账号，用于表单预填；没有记录返回 saved=false",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/login": {
+      "post": {
+        "operationId": "post_monitor_monitor_login",
+        "summary": "登录被监控账号（只读，不会用它下单）：{broker, username, password}",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/logout": {
+      "post": {
+        "operationId": "post_monitor_monitor_logout",
+        "summary": "断开被监控账号（同时停止跟单）",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/records": {
+      "get": {
+        "operationId": "get_monitor_monitor_records",
+        "summary": "跟单记录与运行日志",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/resume": {
+      "post": {
+        "operationId": "post_monitor_monitor_resume",
+        "summary": "人工解除断连造成的自动暂停",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/start": {
+      "post": {
+        "operationId": "post_monitor_monitor_start",
+        "summary": "启动跟单：{config: {...}}。必须由前端二次确认后调用",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/status": {
+      "get": {
+        "operationId": "get_monitor_monitor_status",
+        "summary": "跟单引擎状态（含配置、连接状态、权益）",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor/stop": {
+      "post": {
+        "operationId": "post_monitor_monitor_stop",
+        "summary": "monitor.monitor_stop",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/order": {
+      "post": {
+        "operationId": "post_trading_place_order",
+        "summary": "限价下单：{symbol: \"ag2612.SHFE\", action: open_long|open_short|close_long|close_short, price, volume}",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/order/cancel": {
+      "post": {
+        "operationId": "post_trading_cancel_order",
+        "summary": "撤单：{orderId: \"CTP.1_2_3\"}",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders": {
+      "get": {
+        "operationId": "get_trading_get_orders",
+        "summary": "当前会话的委托列表（最新的在前）",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/positions": {
+      "get": {
+        "operationId": "get_trading_get_positions",
+        "summary": "当前会话的持仓列表（含今昨仓、开仓均价、按最新价算的浮动盈亏）",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quant-login": {
+      "post": {
+        "operationId": "post_account_quant_login",
+        "summary": "交易页「连接量化账号」：复用登录页建立的 CTP 会话，返回真实资金、持仓。",
+        "tags": [
+          "account"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quote": {
+      "get": {
+        "operationId": "get_trading_get_quote",
+        "summary": "订阅并返回合约最新行情：?symbol=ag2612.SHFE",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reverse": {
+      "post": {
+        "operationId": "post_trading_start_reverse",
+        "summary": "反手：{symbol, fromSide: \"多\"|\"空\", closePrice, openPrice, volume}。先平仓，平仓全部成交后再反向开仓",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reverse/cancel": {
+      "post": {
+        "operationId": "post_trading_cancel_reverse",
+        "summary": "取消等待中的反手任务：{taskId}",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reverse/tasks": {
+      "get": {
+        "operationId": "get_trading_get_reverse_tasks",
+        "summary": "反手任务列表（含等待 / 已开仓 / 已取消 / 开仓失败）",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/curve": {
+      "get": {
+        "operationId": "get_review_review_curve",
+        "summary": "按品种 / 时间范围筛选，返回累计平仓盈亏曲线和统计。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/day-kline": {
+      "get": {
+        "operationId": "get_review_review_day_kline",
+        "summary": "某个合约在某个交易日的 K 线（夜盘 + 日盘），尽量用最细的周期。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDayKline"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/day-trades": {
+      "get": {
+        "operationId": "get_review_review_day_trades",
+        "summary": "某个交易日的所有交易（开仓、平仓配好对），按合约分组。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDayTrades"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/files": {
+      "get": {
+        "operationId": "get_review_review_files",
+        "summary": "列出 review_files 文件夹里的交易记录文件（最近修改的在前）。文件夹不存在时返回空列表。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewFiles"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_review_review_file_delete",
+        "summary": "删除 review_files 文件夹里的一个文件。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/files/detail": {
+      "get": {
+        "operationId": "get_review_review_files_detail",
+        "summary": "交易记录文件列表 + 每个文件的元信息（数据库管理用）。解析不了的文件带 error 字段。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewFilesDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/open": {
+      "post": {
+        "operationId": "post_review_review_open",
+        "summary": "选择 review_files 文件夹里已有的文件进行分析，返回结构和上传接口完全一致。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/overview": {
+      "get": {
+        "operationId": "get_review_review_overview",
+        "summary": "账户整体概览：合并 review_files 里全部交易记录，按交易日 / 品种聚合。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/upload": {
+      "post": {
+        "operationId": "post_review_review_upload",
+        "summary": "上传交易记录 Excel：先解析，解析成功后保存到 review_files 文件夹，返回可选品种和数据时间范围。",
+        "tags": [
+          "review"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trades": {
+      "get": {
+        "operationId": "get_trading_get_trades",
+        "summary": "当前会话的成交明细（最新的在前）",
+        "tags": [
+          "trading"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResult": {
+        "description": "业务接口统一外壳。失败时 success=false + message；部分接口还带下面的标志。",
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "ApiResult",
+        "type": "object"
+      },
+      "BacktestCoverage": {
+        "properties": {
+          "availableDays": {
+            "title": "Availabledays",
+            "type": "integer"
+          },
+          "requestedDays": {
+            "title": "Requesteddays",
+            "type": "integer"
+          },
+          "usedDays": {
+            "title": "Useddays",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "dataFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Datafrom"
+          },
+          "dataTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Datato"
+          }
+        },
+        "required": [
+          "availableDays",
+          "requestedDays",
+          "usedDays",
+          "truncated"
+        ],
+        "title": "BacktestCoverage",
+        "type": "object"
+      },
+      "BacktestKline": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/KlineBar"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "symbolName": {
+            "title": "Symbolname",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "product",
+          "symbol",
+          "symbolName",
+          "count"
+        ],
+        "title": "BacktestKline",
+        "type": "object"
+      },
+      "BacktestOverview": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "symbolName": {
+            "title": "Symbolname",
+            "type": "string"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "integer"
+          },
+          "availableDays": {
+            "title": "Availabledays",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestOverviewItem"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "product",
+          "symbol",
+          "symbolName",
+          "days",
+          "lots",
+          "availableDays",
+          "data"
+        ],
+        "title": "BacktestOverview",
+        "type": "object"
+      },
+      "BacktestOverviewItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stats"
+          },
+          "equity": {
+            "items": {
+              "$ref": "#/components/schemas/EquityPoint"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BacktestCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "category",
+          "period",
+          "equity"
+        ],
+        "title": "BacktestOverviewItem",
+        "type": "object"
+      },
+      "BacktestProduct": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "exchange": {
+            "title": "Exchange",
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "symbol",
+          "exchange",
+          "default"
+        ],
+        "title": "BacktestProduct",
+        "type": "object"
+      },
+      "BacktestProducts": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "default": {
+            "type": "string",
+            "title": "Default"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestProduct"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "default",
+          "data"
+        ],
+        "title": "BacktestProducts",
+        "type": "object"
+      },
+      "BacktestRun": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/StrategyInfo"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "symbolName": {
+            "title": "Symbolname",
+            "type": "string"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "integer"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "initialCapital": {
+            "title": "Initialcapital",
+            "type": "number"
+          },
+          "stats": {
+            "additionalProperties": true,
+            "title": "Stats",
+            "type": "object"
+          },
+          "trades": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Trades",
+            "type": "array"
+          },
+          "equity": {
+            "items": {
+              "$ref": "#/components/schemas/EquityPoint"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "kline": {
+            "items": {
+              "$ref": "#/components/schemas/KlineBar"
+            },
+            "title": "Kline",
+            "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/BacktestCoverage"
+          }
+        },
+        "required": [
+          "success",
+          "strategy",
+          "symbol",
+          "symbolName",
+          "product",
+          "lots",
+          "days",
+          "period",
+          "initialCapital",
+          "stats",
+          "trades",
+          "equity",
+          "kline",
+          "coverage"
+        ],
+        "title": "BacktestRun",
+        "type": "object"
+      },
+      "BrokerGroup": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BrokerItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "items"
+        ],
+        "title": "BrokerGroup",
+        "type": "object"
+      },
+      "BrokerItem": {
+        "properties": {
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tag"
+          }
+        },
+        "required": [
+          "value",
+          "name"
+        ],
+        "title": "BrokerItem",
+        "type": "object"
+      },
+      "DepthContract": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "fileCount": {
+            "title": "Filecount",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DepthContractFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "tickCount": {
+            "title": "Tickcount",
+            "type": "integer"
+          },
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "dayCount": {
+            "title": "Daycount",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "hasBs": {
+            "title": "Hasbs",
+            "type": "boolean"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "symbol",
+          "name",
+          "fileCount",
+          "files",
+          "tickCount",
+          "days",
+          "dayCount",
+          "start",
+          "end",
+          "hasBs",
+          "mtime",
+          "size"
+        ],
+        "title": "DepthContract",
+        "type": "object"
+      },
+      "DepthContractFile": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          },
+          "tickCount": {
+            "title": "Tickcount",
+            "type": "integer"
+          },
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "hasBs": {
+            "title": "Hasbs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mtime",
+          "tickCount",
+          "days",
+          "start",
+          "end",
+          "hasBs"
+        ],
+        "title": "DepthContractFile",
+        "type": "object"
+      },
+      "DepthContracts": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "dir": {
+            "title": "Dir",
+            "type": "string"
+          },
+          "contracts": {
+            "items": {
+              "$ref": "#/components/schemas/DepthContract"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "unrecognized": {
+            "items": {
+              "$ref": "#/components/schemas/DepthUnrecognized"
+            },
+            "title": "Unrecognized",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "dir",
+          "contracts",
+          "unrecognized"
+        ],
+        "title": "DepthContracts",
+        "type": "object"
+      },
+      "DepthFiles": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "dir": {
+            "title": "Dir",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFile"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "dir",
+          "files"
+        ],
+        "title": "DepthFiles",
+        "type": "object"
+      },
+      "DepthOpenResult": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "depthId": {
+            "title": "Depthid",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tickCount": {
+            "title": "Tickcount",
+            "type": "integer"
+          },
+          "levels": {
+            "title": "Levels",
+            "type": "integer"
+          },
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "hasBs": {
+            "title": "Hasbs",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "fileCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filecount"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Saved"
+          },
+          "overwritten": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Overwritten"
+          },
+          "savedName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Savedname"
+          },
+          "originalName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Originalname"
+          }
+        },
+        "required": [
+          "success",
+          "depthId",
+          "filename",
+          "symbol",
+          "name",
+          "tickCount",
+          "levels",
+          "days",
+          "start",
+          "end",
+          "hasBs",
+          "warnings"
+        ],
+        "title": "DepthOpenResult",
+        "type": "object"
+      },
+      "DepthUnrecognized": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mtime",
+          "error"
+        ],
+        "title": "DepthUnrecognized",
+        "type": "object"
+      },
+      "EquityPoint": {
+        "properties": {
+          "time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "equity": {
+            "title": "Equity",
+            "type": "number"
+          },
+          "tradeNo": {
+            "title": "Tradeno",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "time",
+          "equity",
+          "tradeNo"
+        ],
+        "title": "EquityPoint",
+        "type": "object"
+      },
+      "KlineBar": {
+        "properties": {
+          "time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "number"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "KlineBar",
+        "type": "object"
+      },
+      "LoginResult": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "data": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "password_saved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Password Saved"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "LoginResult",
+        "type": "object"
+      },
+      "ReviewDayKline": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/KlineBar"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Symbol"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Day"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Period"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Count"
+          },
+          "partial": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Partial"
+          }
+        },
+        "required": [
+          "success",
+          "available",
+          "data"
+        ],
+        "title": "ReviewDayKline",
+        "type": "object"
+      },
+      "ReviewDayTrades": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "symbols": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Symbols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "day",
+          "days",
+          "symbols"
+        ],
+        "title": "ReviewDayTrades",
+        "type": "object"
+      },
+      "ReviewFile": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mtime"
+        ],
+        "title": "ReviewFile",
+        "type": "object"
+      },
+      "ReviewFileDetail": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          },
+          "products": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Products"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Days"
+          },
+          "tradeCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tradecount"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End"
+          },
+          "hasFee": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hasfee"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mtime"
+        ],
+        "title": "ReviewFileDetail",
+        "type": "object"
+      },
+      "ReviewFiles": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "dir": {
+            "title": "Dir",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFile"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "dir",
+          "files"
+        ],
+        "title": "ReviewFiles",
+        "type": "object"
+      },
+      "ReviewFilesDetail": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "dir": {
+            "title": "Dir",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFileDetail"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "dir",
+          "files"
+        ],
+        "title": "ReviewFilesDetail",
+        "type": "object"
+      },
+      "ReviewOpenResult": {
+        "description": "上传 / 打开交易记录文件的响应（两者结构一致）。",
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "reviewId": {
+            "title": "Reviewid",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "tradeCount": {
+            "title": "Tradecount",
+            "type": "integer"
+          },
+          "hasFee": {
+            "title": "Hasfee",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Saved"
+          },
+          "overwritten": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Overwritten"
+          }
+        },
+        "required": [
+          "success",
+          "reviewId",
+          "filename",
+          "products",
+          "start",
+          "end",
+          "tradeCount",
+          "hasFee",
+          "days",
+          "warnings"
+        ],
+        "title": "ReviewOpenResult",
+        "type": "object"
+      },
+      "ReviewOverview": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "reviewId": {
+            "title": "Reviewid",
+            "type": "string"
+          },
+          "fileCount": {
+            "title": "Filecount",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedFile"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "allStart": {
+            "title": "Allstart",
+            "type": "string"
+          },
+          "allEnd": {
+            "title": "Allend",
+            "type": "string"
+          },
+          "hasFee": {
+            "title": "Hasfee",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewOverviewDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewOverviewProduct"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ReviewOverviewStats"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "reviewId",
+          "fileCount",
+          "skipped",
+          "warnings",
+          "allStart",
+          "allEnd",
+          "hasFee",
+          "days",
+          "products",
+          "stats",
+          "start",
+          "end"
+        ],
+        "title": "ReviewOverview",
+        "type": "object"
+      },
+      "ReviewOverviewDay": {
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "grossPnl": {
+            "title": "Grosspnl",
+            "type": "number"
+          },
+          "fee": {
+            "title": "Fee",
+            "type": "number"
+          },
+          "closeCount": {
+            "title": "Closecount",
+            "type": "integer"
+          },
+          "winCount": {
+            "title": "Wincount",
+            "type": "integer"
+          },
+          "lossCount": {
+            "title": "Losscount",
+            "type": "integer"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          },
+          "cumPnl": {
+            "title": "Cumpnl",
+            "type": "number"
+          }
+        },
+        "required": [
+          "day",
+          "pnl",
+          "grossPnl",
+          "fee",
+          "closeCount",
+          "winCount",
+          "lossCount",
+          "volume",
+          "cumPnl"
+        ],
+        "title": "ReviewOverviewDay",
+        "type": "object"
+      },
+      "ReviewOverviewProduct": {
+        "properties": {
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          },
+          "turnover": {
+            "title": "Turnover",
+            "type": "number"
+          },
+          "turnoverRatio": {
+            "title": "Turnoverratio",
+            "type": "number"
+          },
+          "closeCount": {
+            "title": "Closecount",
+            "type": "integer"
+          },
+          "winCount": {
+            "title": "Wincount",
+            "type": "integer"
+          },
+          "lossCount": {
+            "title": "Losscount",
+            "type": "integer"
+          },
+          "winRate": {
+            "title": "Winrate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "product",
+          "pnl",
+          "volume",
+          "turnover",
+          "turnoverRatio",
+          "closeCount",
+          "winCount",
+          "lossCount",
+          "winRate"
+        ],
+        "title": "ReviewOverviewProduct",
+        "type": "object"
+      },
+      "ReviewOverviewStats": {
+        "properties": {
+          "totalPnl": {
+            "title": "Totalpnl",
+            "type": "number"
+          },
+          "grossPnl": {
+            "title": "Grosspnl",
+            "type": "number"
+          },
+          "totalFee": {
+            "title": "Totalfee",
+            "type": "number"
+          },
+          "closeCount": {
+            "title": "Closecount",
+            "type": "integer"
+          },
+          "winCount": {
+            "title": "Wincount",
+            "type": "integer"
+          },
+          "lossCount": {
+            "title": "Losscount",
+            "type": "integer"
+          },
+          "winRate": {
+            "title": "Winrate",
+            "type": "number"
+          },
+          "maxDrawdown": {
+            "title": "Maxdrawdown",
+            "type": "number"
+          },
+          "maxProfit": {
+            "title": "Maxprofit",
+            "type": "number"
+          },
+          "maxLoss": {
+            "title": "Maxloss",
+            "type": "number"
+          },
+          "profitLossRatio": {
+            "title": "Profitlossratio",
+            "type": "number"
+          },
+          "tradingDays": {
+            "title": "Tradingdays",
+            "type": "integer"
+          },
+          "winDays": {
+            "title": "Windays",
+            "type": "integer"
+          },
+          "lossDays": {
+            "title": "Lossdays",
+            "type": "integer"
+          },
+          "dayWinRate": {
+            "title": "Daywinrate",
+            "type": "number"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          },
+          "turnover": {
+            "title": "Turnover",
+            "type": "number"
+          }
+        },
+        "required": [
+          "totalPnl",
+          "grossPnl",
+          "totalFee",
+          "closeCount",
+          "winCount",
+          "lossCount",
+          "winRate",
+          "maxDrawdown",
+          "maxProfit",
+          "maxLoss",
+          "profitLossRatio",
+          "tradingDays",
+          "winDays",
+          "lossDays",
+          "dayWinRate",
+          "volume",
+          "turnover"
+        ],
+        "title": "ReviewOverviewStats",
+        "type": "object"
+      },
+      "SavedCredentials": {
+        "properties": {
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          },
+          "broker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Broker"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Password"
+          }
+        },
+        "required": [
+          "saved"
+        ],
+        "title": "SavedCredentials",
+        "type": "object"
+      },
+      "SkippedFile": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "error"
+        ],
+        "title": "SkippedFile",
+        "type": "object"
+      },
+      "StrategyInfo": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "category",
+          "period",
+          "params"
+        ],
+        "title": "StrategyInfo",
+        "type": "object"
+      }
+    }
+  }
+}

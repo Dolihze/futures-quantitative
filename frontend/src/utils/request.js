@@ -3,10 +3,19 @@ import { ElMessage } from 'element-plus'
 import router from '@/router'
 
 const request = axios.create({
-  baseURL: '',  // 使用相对路径，通过 Vite 代理转发
+  // 开发时为空（相对路径，走 Vite 代理）；Tauri 打包后由 main.js 启动时设置为 http://127.0.0.1:<随机端口>
+  baseURL: '',
   timeout: 30000,
   withCredentials: true
 })
+
+/**
+ * 设置后端根地址（Tauri 打包后端口是运行时决定的）。
+ * @param {string} base 形如 http://127.0.0.1:53211，空串表示相对路径
+ */
+export function setBackendBase(base) {
+  request.defaults.baseURL = base
+}
 
 // 请求拦截器
 request.interceptors.request.use(
@@ -46,5 +55,16 @@ request.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+/**
+ * 响应拦截器已把 AxiosResponse 解包成 response.data，所以对调用方来说返回的是业务 JSON，
+ * 而不是 axios 声明的 AxiosResponse。这里给出准确的类型，api/*.js 用它声明返回值。
+ * @template [T=import('@/api/types').ApiResult]
+ * @param {import('axios').AxiosRequestConfig & { silent?: boolean }} config
+ * @returns {Promise<T>}
+ */
+export function http(config) {
+  return /** @type {Promise<any>} */ (request(config))
+}
 
 export default request

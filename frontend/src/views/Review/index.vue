@@ -294,7 +294,7 @@ async function fetchCurve(isFirst = false) {
     curve.value = res
     errorMsg.value = ''
     // 新版后端一定会返回 openMarks（没有开仓时是空数组）；字段缺失说明运行的是旧版后端，画不出开仓点。
-    // 打包版的后端（src-tauri/sidecar）需要重新构建（npm run backend:build）才会更新。
+    // 打包版的后端（src-tauri/backend-dist）需要重新构建（npm run backend:build）才会更新。
     const staleMsg = '后端版本过旧，没有返回开仓数据，图上不会显示开仓点；请重启后端（打包版需重新执行 npm run backend:build）'
     warnings.value = warnings.value.filter((w) => w !== staleMsg)
     if (!Array.isArray(res.openMarks)) warnings.value.push(staleMsg)

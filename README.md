@@ -13,13 +13,14 @@
 ┌──────────────────────────────────────────────┐
 │ Tauri 主进程（Rust）  src-tauri/src/main.rs   │
 │   ├─ WebView2 窗口 ── Vue 前端 (dev: :5173)   │
-│   └─ Python sidecar（独立进程）               │
-│        └─ Flask 后端 (127.0.0.1:5000)         │
+│   └─ Python 后端（独立进程，onedir）          │
+│        └─ Flask (127.0.0.1:<动态端口>)        │
 └──────────────────────────────────────────────┘
 ```
 
-- 开发模式下，前端的 `/api/*` 请求由 Vite 代理到 `http://127.0.0.1:5000`。
-- 应用启动时 Rust 会先拉起 sidecar，并**等待 5000 端口就绪后再加载页面**，避免启动瞬间的 `ECONNREFUSED`。
+- **端口**：打包版由 Rust 向系统申请空闲端口，通过环境变量 `BACKEND_PORT` 传给后端，再通过 `get_backend_url` 命令告诉前端，不会和其它软件抢 5000。开发模式（`npm run dev`）固定用 5000，Vite 把 `/api/*` 代理过去；要换端口，设置环境变量 `BACKEND_PORT` 即可（Rust、Vite、后端都读它）。
+- **启动**：Rust 拉起后端后在后台线程等端口就绪，就绪后发 `backend-ready` 事件；前端等到事件才挂载页面，避免启动瞬间的 `ECONNREFUSED`，窗口本身不被阻塞。
+- **onedir**：后端以目录形式打包（`src-tauri/backend-dist/`），随安装包展开，启动不再需要每次解压到临时目录（实测约 3 秒就绪；原 onefile 每次启动都要先解压几百 MB）。
 - 应用进程被放进 Windows Job Object：无论正常退出、被 `tauri dev` 重编译杀掉还是崩溃，系统都会一并结束 sidecar，不会残留 `python-backend.exe`。
 
 ## 项目结构
@@ -28,31 +29,44 @@
 futures-quantitative/
 ├── frontend/                 # Vue 3 前端（入口 index.html → src/main.js）
 │   ├── src/{views,api,router,stores,utils,styles}
+│   │   └── api/types.js      # 前后端接口契约：响应类型引用生成的 types/generated/api.d.ts，请求类型手写
+│   ├── types/                # env.d.ts（手写）+ generated/（插件生成，已 gitignore）
+│   ├── jsconfig.json         # checkJs + @ 别名；npm run typecheck 做类型检查
 │   ├── public/favicon.ico
 │   └── vite.config.js        # 端口 5173（strictPort）+ /api 代理
 ├── src-tauri/                # Tauri 客户端
-│   ├── src/main.rs           # 启动 sidecar、devtools 命令、Job Object
-│   ├── tauri.conf.json       # Tauri 配置
-│   ├── capabilities/         # Tauri 2 权限（shell / sidecar）
+│   ├── src/main.rs           # 选端口、启动后端、就绪事件、devtools 命令、Job Object
+│   ├── tauri.conf.json       # Tauri 配置（安装包只构建 NSIS）
+│   ├── capabilities/         # Tauri 2 权限
 │   ├── icons/                # 应用图标（由 scripts/gen-icon.py 生成）
-│   └── sidecar/              # PyInstaller 打包出的后端（构建产物）
-├── backend/                  # Python 后端包
-│   ├── app.py                # Flask 后端源码（sidecar 入口，原 backend.py）
-│   ├── review.py             # 交易复盘：Excel 解析与盈亏曲线计算（不依赖 Flask，可单独测试）
-│   ├── depth_market.py       # 深度行情：tick CSV 解析、多文件合并、K 线 / 足迹图聚合、历史盘口查询（不依赖 Flask）
-│   ├── backtest_engine.py    # 量化回测：策略注册表、回测引擎与统计
-│   ├── copy_trading.py       # 量化监控：监控账号成交 -> 自动跟单
-│   ├── ctp_service.py        # CTP 实盘 / 仿真登录、资金持仓
-│   └── credential_store.py   # 「记住账号」凭据存储（DPAPI 加密）
+│   └── backend-dist/         # PyInstaller onedir 输出（构建产物，作为 resources 打进安装包）
+├── backend/                  # Python 后端包（分层：routes -> services -> core）
+│   ├── app.py                # 应用工厂与入口（CORS、错误处理、注册 Blueprint、监听端口）；导入它没有副作用
+│   ├── config.py             # 基础目录、数据文件查找、端口（BACKEND_PORT）
+│   ├── errors.py             # ApiError + wrap_errors：路由里 raise 统一错误，不再逐个路由写 try/except
+│   ├── schemas.py            # 接口响应契约（pydantic），OpenAPI 和前端类型的来源
+│   ├── routes/               # HTTP 层（Blueprint）：account / trading / backtest / review / monitor / depth
+│   ├── services/             # 文件夹管理与内存缓存：review_service / depth_service / backtest_service
+│   └── core/                 # 与 Flask 无关的领域逻辑，可单独测试
+│       ├── review.py         #   交易复盘：Excel 解析与盈亏曲线计算
+│       ├── depth_market.py   #   深度行情：tick CSV 解析、K 线 / 足迹图聚合、历史盘口
+│       ├── backtest_engine.py#   量化回测：策略注册表、回测引擎与统计
+│       ├── copy_trading.py   #   量化监控：监控账号成交 -> 自动跟单
+│       ├── ctp_service.py    #   CTP 实盘 / 仿真登录、资金持仓
+│       └── credential_store.py#  「记住账号」凭据存储（DPAPI 加密）
 ├── tests/                    # 各模块的单元测试与 API 测试（python tests/test_review.py）
 ├── docs/                     # 补充文档
-│   ├── README_BACKTEST.md    # 量化回测使用说明
-│   └── archive/              # 早期开发与 Vue 迁移记录（历史文档，仅供追溯）
-├── data/brokers.json         # 期货公司数据
+│   └── README_BACKTEST.md    # 量化回测使用说明
+├── data/
+│   ├── brokers.json          # 期货公司列表
+│   ├── ctp_brokers.json      # CTP 接入参数（仅公开的 SimNow，入库）
+│   └── examples/             # 示例：复制为 data/ctp_brokers.local.json 后填真实参数（不入库）
+├── packaging/
+│   └── python-backend.spec   # PyInstaller 打包定义（onedir，入库）
 ├── scripts/
-│   ├── setup.mjs             # 首次准备：装前端依赖、装 Python 依赖、打包 sidecar
+│   ├── setup.mjs             # 首次准备：装前端依赖、装 Python 依赖、打包后端
 │   ├── dev-frontend.mjs      # beforeDevCommand：清理残留 Vite 后启动前端
-│   ├── copy-sidecar.mjs      # 生成带目标三元组后缀的 sidecar 副本
+│   ├── build-backend.mjs     # 调 PyInstaller 打包后端 -> src-tauri/backend-dist/
 │   └── gen-icon.py           # 生成应用图标
 ├── requirements.txt          # Python 依赖
 └── package.json              # npm 脚本
@@ -86,7 +100,7 @@ python -m pip install -r requirements.txt
 npm run backend:build
 ```
 
-`npm run dev` 会依次：启动 Vue 前端（5173）→ 编译并运行 Tauri → Tauri 拉起 Python sidecar（5000）→ 打开桌面窗口。
+`npm run dev` 会依次：启动 Vue 前端（5173）→ 编译并运行 Tauri → Tauri 拉起 Python 后端（开发模式固定 5000）→ 打开桌面窗口。
 首次编译 Rust 依赖需要几分钟，之后增量编译很快。
 
 之后每次修改 `backend/` 下的 Python 代码，需要单独重新执行 `npm run backend:build`。
@@ -98,7 +112,10 @@ npm run backend:build
 | `npm run setup` | 首次准备：安装前端、Python 依赖并打包 sidecar |
 | `npm run dev` | 启动完整开发环境（Tauri + 前端 + sidecar） |
 | `npm run build` | 构建安装包 |
-| `npm run backend:build` | 用 PyInstaller 打包 `backend/app.py` 并生成 sidecar |
+| `npm run backend:build` | 用 PyInstaller（onedir）打包后端到 `src-tauri/backend-dist/` |
+| `npm run typecheck --prefix frontend` | 前端 JSDoc 类型检查（vue-tsc），会先重新生成接口类型 |
+| `npm run api:types` | 由 `backend/schemas.py` 生成 `openapi.json`，再生成 `frontend/types/generated/api.d.ts` |
+| `npm run api:check` | 校验入库的 `openapi.json` 与后端代码一致（改了响应模型却没重新生成会失败） |
 | `npm run backend:dev` | 仅运行 Flask（调试 API，端口 5000，不打开窗口） |
 | `npm run frontend:dev` | 仅运行 Vite（浏览器访问 http://localhost:5173） |
 | `npx tauri info` | 查看 Tauri 环境信息 |
@@ -108,6 +125,14 @@ npm run backend:build
 - **前端**：改动自动热更新，无需重启。
 - **Python 后端**：改动 `backend/` 下的代码后需重新执行 `npm run backend:build`，再重启 `npm run dev`（sidecar 是打包后的 exe，不会读取源码）。
 - **Rust**：改动 `src-tauri/` 会自动重新编译。
+- **改接口响应字段**：
+  1. 改后端路由 / 业务代码，同步 `backend/schemas.py` 里对应的 pydantic 模型；
+  2. 运行 `python -m pytest tests/test_contract.py`，它用真实响应校验模型，没同步会失败；
+  3. 运行 `npm run api:types` 重新生成 `openapi.json`（入库）和前端类型（`frontend/types/generated/`，不入库，`dev` / `build` / `typecheck` 会自动生成）；
+  4. 运行 `npm run typecheck --prefix frontend`，前端还在用旧字段的地方会在这里报错。
+
+  `schemas.py` 里没登记的接口（实盘交易、跟单等字段由 CTP 决定的接口）响应按通用 `ApiResult` 处理，不在契约保护范围内。
+- **后端报错**：路由里直接 `raise bad_request("...")` / `raise not_found("...", fileMissing=True)`（见 `backend/errors.py`），响应仍是 `{"success": false, "message": ...}`。要把未预期异常统一转成 500 提示，用 `@wrap_errors(...)` 装饰路由，不要每个路由各写一遍 try/except。
 - **开发者工具**：debug 模式下按 **F12**（或右键 → 检查）。`main.rs` 另外提供 `open_devtools` / `close_devtools` / `toggle_devtools` 命令。
 - **登录态**：保存在 `sessionStorage`，关闭窗口即失效，每次启动都从登录页开始。登录页的「记住账号」使用 `localStorage`。
 - **后端日志**：Python 输出会以 `[Backend STDOUT]` / `[Backend STDERR]` 前缀显示在 `tauri dev` 的终端里。
@@ -208,7 +233,7 @@ npm run backend:build
 - **段与段首尾相接，休息时间不画**（夜盘到 09:00、10:15 到 10:30、11:30 到 13:30 都去掉）。**段宽与真实时长成正比**（夜盘 120 分钟、早盘一 75、早盘二 60、午盘 90），所以横轴仍然是时间。
 - **每个有成交的交易日都画完整的四段**，哪怕某一段没有成交（例如早盘二）。没有任何成交的交易日不画。
 - **段内的位置与真实时间成正比**：09:15 的成交在早盘一起点右边 15 分钟处。
-- **落在四个时段之外的成交不会丢**，归入距离最近的时段、贴在该段的边界上，悬停里显示的仍是真实成交时间：集合竞价（08:59）归早盘一，两场之间的休息（10:19）归早盘一，收盘后的撮合延迟（11:31、15:05）归所在场次，午休正中间两边一样远时归午盘。**夜盘延续到凌晨的成交（23:20、00:30 等）也归夜盘、贴在 23:00 处**，这些成交在轴上分不出先后（会叠在同一个位置，悬停时一起列出）。如果你交易的品种夜盘晚于 23:00 收盘，需要调整 `backend/review.py` 里 `SESSIONS` 的夜盘结束时间。
+- **落在四个时段之外的成交不会丢**，归入距离最近的时段、贴在该段的边界上，悬停里显示的仍是真实成交时间：集合竞价（08:59）归早盘一，两场之间的休息（10:19）归早盘一，收盘后的撮合延迟（11:31、15:05）归所在场次，午休正中间两边一样远时归午盘。**夜盘延续到凌晨的成交（23:20、00:30 等）也归夜盘、贴在 23:00 处**，这些成交在轴上分不出先后（会叠在同一个位置，悬停时一起列出）。如果你交易的品种夜盘晚于 23:00 收盘，需要调整 `backend/core/review.py` 里 `SESSIONS` 的夜盘结束时间。
 - **不画背景色块**。交易日与交易日之间用一条竖向虚线分隔；一个交易日内部四段之间的虚线，只在放大到一两个交易日、每段够宽时才出现，避免多天视图里密密麻麻像一张网格。
 
 **X 轴标签**
@@ -276,7 +301,7 @@ npm run backend:build
 - **保存位置**：导入的文件保存在项目根目录 `depth_files/`（已加入 `.gitignore`），也可以直接把 CSV 放进去后在数据库管理里点「刷新」。环境变量 `DEPTH_FILES_DIR` 可改位置。
 - **性能**：50 万笔（约 36MB）解析约 4 秒；解析结果只在后端内存缓存（最近 3 份），重启后需重新选择文件。
 - 红涨绿跌：盘口里买盘（多方）为红、卖盘（空方）为绿，与全站一致。
-- 测试：`python tests/test_depth_market.py`。改动 `backend/depth_market.py` / `backend/app.py` 后需重新执行 `npm run backend:build`。
+- 测试：`python tests/test_depth_market.py`。改动 `backend/core/depth_market.py` / `backend/routes/depth.py` 后需重新执行 `npm run backend:build`。
 
 ## 构建发布
 
@@ -285,34 +310,35 @@ npm run backend:build   # 1. 打包后端（已内置 data/ 与 akshare 数据�
 npm run build           # 2. 构建前端并生成安装包
 ```
 
-产物位于 `src-tauri/target/release/`（可执行文件）和 `src-tauri/target/release/bundle/`（MSI / NSIS 安装包）。
+产物位于 `src-tauri/target/release/`（可执行文件）和 `src-tauri/target/release/bundle/nsis/`（NSIS 安装包）。只构建 NSIS 一种格式；需要 MSI 等其它格式时，把 `tauri.conf.json` 的 `bundle.targets` 改成对应值（如 `["nsis", "msi"]`）。
 
-### 关于 sidecar 打包
+### 关于后端打包
 
-`npm run backend:build` 做了这些事，修改时请注意保持：
+`npm run backend:build`（`scripts/build-backend.mjs`）按 **`packaging/python-backend.spec`** 打包，该 spec 入库，是打包配置的唯一来源，修改时请注意保持：
 
-- 入口是 **`backend/app.py`**（不是其它文件）；`--paths .` 让 PyInstaller 把项目根目录加入搜索路径，才能解析 `from backend import ...`。
-- `--add-data "data;data"`：把 `data/brokers.json` 打进 exe；`backend/app.py` 会在 PyInstaller 临时目录、exe 同级目录和项目目录中依次查找数据文件。
-- `--collect-data akshare`：akshare 自带的 `file_fold/calendar.json` 等数据文件必须打包，否则 `/api/backtest/kline` 会 500。
-- `scripts/copy-sidecar.mjs`：Tauri 要求 sidecar 文件名带目标三元组后缀（如 `python-backend-x86_64-pc-windows-msvc.exe`），脚本会自动生成。
-- 构建产物 `src-tauri/sidecar/*.exe` 已在 `.gitignore` 中，不会提交。
+- 入口是 **`backend/app.py`**；`pathex` 指向项目根目录，才能解析 `from backend import ...`。
+- **onedir**：输出 `src-tauri/backend-dist/python-backend.exe` + `_internal/`，由 `tauri.conf.json` 的 `bundle.resources` 打进安装包，Rust 在运行时从资源目录启动它。不再使用 `externalBin`，所以也不需要带目标三元组后缀的副本。
+- `data/` 整体打进包内；`backend/config.py` 的 `find_data_file` 会依次在 PyInstaller 资源目录、exe 同级目录和项目目录中查找。
+- `collect_data_files('akshare')`：akshare 自带的 `file_fold/calendar.json` 等数据文件必须打包，否则 `/api/backtest/kline` 会 500。
+- 中间产物放在 `.build/`，构建完成后自动删除；最终输出 `src-tauri/backend-dist/` 已在 `.gitignore` 中，不会提交（仅保留 `.gitkeep`，让全新克隆也能通过 Tauri 的编译期检查）。
 
 ## 故障排除
 
 | 现象 | 原因与处理 |
 |---|---|
 | `Port 5173 is already in use` | 上次 `tauri dev` 异常结束，残留 Vite 占着端口。`npm run dev` 的 `beforeDevCommand` 会自动清理本项目的残留 Vite；若被其它程序占用会提示 pid，手动结束即可。 |
-| 编译报 `PermissionDenied` / `拒绝访问`（tauri-build） | 有残留的 `python-backend.exe` 锁住了 `src-tauri/target/debug/python-backend.exe`。结束进程后重试：`Stop-Process -Name python-backend -Force`。应用内已用 Job Object 避免此问题。 |
-| 前端报 `ECONNREFUSED 127.0.0.1:5000` | sidecar 没起来或崩溃。看终端里的 `[Backend STDERR]`；单独运行 `src-tauri\sidecar\python-backend.exe` 验证；或 `npm run backend:dev` 排查源码。 |
+| 编译报 `PermissionDenied` / `拒绝访问`（tauri-build） | 有残留的 `python-backend.exe` 锁住了文件。结束进程后重试：`Stop-Process -Name python-backend -Force`。应用内已用 Job Object 避免此问题。 |
+| 前端报 `ECONNREFUSED 127.0.0.1:5000`（开发模式） | 后端没起来或崩溃，或 5000 被其它程序占用。看终端里的 `[Backend STDERR]`；单独运行 `src-tauri\backend-dist\python-backend.exe` 验证；或 `npm run backend:dev` 排查源码。5000 被占用时可设置环境变量 `BACKEND_PORT` 换端口（Rust、Vite、后端都读它）。 |
+| 窗口显示「后端服务启动超时」 | 后端 60 秒内没监听端口。看终端的 `[Backend STDERR]`；确认已执行 `npm run backend:build` 且 `src-tauri/backend-dist/python-backend.exe` 存在。 |
 | `/api/backtest/kline` 返回 500 | 通常是 sidecar 缺 akshare 数据文件，确认用最新的 `npm run backend:build` 打包。 |
 | 交易复盘提示“没有识别到必需的列” | 导出文件的列名不在识别范围内。提示里会列出已识别的列（有多张工作表时会说明是哪一张）；把表头改成上面表格里的常见叫法，或把文件发给开发者适配。 |
 | 交易复盘提示“文件里只有日期，没有具体的成交时间” | 导入的是只有日期的表（例如结算单里的「平仓明细」）。同一天的成交分不出先后，无法按成交时间聚合。请导入带「成交时间」列的「成交明细」工作表。 |
 | 交易复盘提示“当前筛选下只有开仓，没有平仓” | 曲线只统计「平」的成交。这个筛选范围里的成交都还没有平仓，把时间范围拉长，或换一个有平仓的品种。 |
 | 交易复盘打开后，X 轴只有几个日期、没有时间 | 正常：多个交易日同时显示时每段只有几十个像素，放不下时间标签。用滚轮或下方滑块放大到一两个交易日，边界时间和段名就会出现。 |
-| 交易复盘里有几笔成交叠在同一个位置（夜盘 23:00 处、或某段的边界上） | 这些成交落在四个固定时段之外（夜盘延续到凌晨、集合竞价、撮合延迟），被归入最近的时段、贴在该段边界上，悬停时一起列出，各自显示真实时间。夜盘晚于 23:00 收盘的品种，需调整 `backend/review.py` 里 `SESSIONS` 的夜盘结束时间。 |
+| 交易复盘里有几笔成交叠在同一个位置（夜盘 23:00 处、或某段的边界上） | 这些成交落在四个固定时段之外（夜盘延续到凌晨、集合竞价、撮合延迟），被归入最近的时段、贴在该段边界上，悬停时一起列出，各自显示真实时间。夜盘晚于 23:00 收盘的品种，需调整 `backend/core/review.py` 里 `SESSIONS` 的夜盘结束时间。 |
 | 交易复盘提示“交易记录已失效” | sidecar 重启过（内存里的记录已清空），重新导入文件即可。 |
-| 修改了 `backend/review.py` 但没有效果 | 同 `backend/app.py`：sidecar 是打包后的 exe，需要重新执行 `npm run backend:build`。 |
-| sidecar 找不到 | 确认 `src-tauri/sidecar/` 下同时有 `python-backend.exe` 和 `python-backend-<triple>.exe`，没有则重新执行 `npm run backend:build`。 |
+| 修改了 `backend/core/review.py` 但没有效果 | 开发模式下后端是打包后的 exe，改 Python 代码后需要重新执行 `npm run backend:build`。 |
+| 提示「未找到后端可执行文件」 | 确认 `src-tauri/backend-dist/python-backend.exe` 存在，没有则执行 `npm run backend:build`。 |
 | Rust 编译失败 | `rustup update`，必要时 `cd src-tauri && cargo clean`。 |
 | 前端白屏 | 先 `npm run frontend:dev`，浏览器访问 http://localhost:5173 确认前端本身正常。 |
 | 每次启动直接进入主页 | 登录态应在 `sessionStorage`，若仍出现，清理应用的 WebView 缓存目录后重试。 |
@@ -321,5 +347,4 @@ npm run build           # 2. 构建前端并生成安装包
 
 - [`docs/README_BACKTEST.md`](docs/README_BACKTEST.md)：回测功能使用说明
 - [`frontend/README.md`](frontend/README.md)：前端说明
-- [`src-tauri/sidecar/README.md`](src-tauri/sidecar/README.md)：sidecar 打包说明
-- [`docs/archive/DEVELOPMENT_REPORT.md`](docs/archive/DEVELOPMENT_REPORT.md)、[`docs/archive/MIGRATION_COMPLETE.md`](docs/archive/MIGRATION_COMPLETE.md)、[`docs/archive/HTML_MIGRATION_CLEANUP.md`](docs/archive/HTML_MIGRATION_CLEANUP.md)：早期开发与 Vue 迁移记录（历史文档）
+- `packaging/python-backend.spec`：后端打包定义

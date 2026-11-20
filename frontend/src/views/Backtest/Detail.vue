@@ -299,7 +299,7 @@ async function load() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await runBacktest({ strategy: route.params.strategyId, ...params })
+    const res = await runBacktest({ strategy: String(route.params.strategyId), ...params })
     if (my !== seq) return
     if (!res.success) {
       errorMsg.value = res.message || '回测失败'

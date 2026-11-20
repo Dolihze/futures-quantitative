@@ -514,6 +514,7 @@ function buildSeriesData(points, xs, details, openMarks, axisMin, axisMax) {
   // 文件结束时还没平掉的开仓：没有对应的平仓，只能停在当前累计值上
   for (const k of pendingOpens) ys[k] = cum
 
+  /** @type {any[]} */
   const data = [{ value: [axisMin, 0], symbolSize: 0 }]
   events.forEach((e, idx) => {
     if (e.kind === 1) {

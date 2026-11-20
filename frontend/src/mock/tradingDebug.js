@@ -19,7 +19,8 @@ const fail = (message) => ({ success: false, message })
 // 每个合约都给了和代码不同的中文名，下拉里统一显示成“名称（代码）”。
 // 注意：真实 SimNow 返回的合约名称就是代码本身（页面上只显示代码），这里是为了调试“有中文名”时的界面刻意不同。
 // ---------------------------------------------------------------------------
-const SPECS = [
+/** @type {[string, string, string, number, number, number][]} */
+const SPECS_RAW = [
   ['ag2612', 'SHFE', '白银2612', 15, 1, 8050],
   ['ag2701', 'SHFE', '白银2701', 15, 1, 8090],
   ['au2612', 'SHFE', '黄金2612', 1000, 0.02, 760.5],
@@ -38,7 +39,9 @@ const SPECS = [
   ['IF2612', 'CFFEX', '沪深300股指2612', 300, 0.2, 4100.0],
   ['IC2612', 'CFFEX', '中证500股指2612', 200, 0.2, 6180.4],
   ['lc2701', 'GFEX', '碳酸锂2701', 1, 50, 120000]
-].map(([symbol, exchange, name, size, pricetick, base]) => ({
+]
+
+const SPECS = SPECS_RAW.map(([symbol, exchange, name, size, pricetick, base]) => ({
   vt_symbol: `${symbol}.${exchange}`,
   symbol,
   exchange,
@@ -165,6 +168,7 @@ let trades = [
 // 持仓：价格 / 方向 / 今昨仓 / 被挂单冻结（frozen > 0 时前端会拦截反手）各种情况都有
 // ---------------------------------------------------------------------------
 // [symbol, 方向, 总手数, 昨仓, 开仓均价, 冻结手数]
+/** @type {[string, string, number, number, number, number][]} */
 const POSITION_SEEDS = [
   ['ag2612', '多', 5, 3, 8031, 0],
   ['ag2612', '空', 2, 0, 8070, 0],

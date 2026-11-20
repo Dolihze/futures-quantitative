@@ -104,7 +104,8 @@ frontend/
 
 ## 🔌 API 配置
 
-开发环境下，API 请求会自动代理到后端 Flask 服务器 `http://127.0.0.1:5000`
+开发环境下，API 请求会自动代理到后端 Flask 服务器 `http://127.0.0.1:5000`（可用环境变量 `BACKEND_PORT` 改端口）。打包后端口是运行时随机选的，由 `src/utils/backend.js` 通过 Tauri 命令取得并设置到 axios 的 `baseURL`。
+接口返回结构的类型定义在 `src/api/types.js`（JSDoc），运行 `npm run typecheck` 做类型检查；`types/generated/` 下的声明文件由插件生成，不入库。
 
 详见 `vite.config.js` 中的 proxy 配置。
 

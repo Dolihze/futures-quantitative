@@ -14,8 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 _TMP_DIR = tempfile.mkdtemp(prefix="depth_files_test_")
 os.environ["DEPTH_FILES_DIR"] = _TMP_DIR
 
-from backend import depth_market as dm  # noqa: E402
+from backend.core import depth_market as dm  # noqa: E402
 from backend import app as backend  # noqa: E402
+from backend.services import depth_service  # noqa: E402
 
 client = backend.app.test_client()
 
@@ -323,7 +324,7 @@ def test_peek_meta_matches_parse():
 def _clear_depth_files():
     for n in os.listdir(_TMP_DIR):
         os.remove(os.path.join(_TMP_DIR, n))
-    backend._DEPTH_META_CACHE.clear()
+    depth_service._DEPTH_META_CACHE.clear()
 
 
 def test_contracts_index_open_and_delete():
@@ -346,9 +347,9 @@ def test_contracts_index_open_and_delete():
     assert [x["name"] for x in j["unrecognized"]] == ["junk.csv"]
 
     # 索引缓存：文件没变不会重复读（缓存条目的签名保持不变）
-    sig = backend._DEPTH_META_CACHE["fu_0917.csv"][0]
+    sig = depth_service._DEPTH_META_CACHE["fu_0917.csv"][0]
     client.get("/api/depth/contracts")
-    assert backend._DEPTH_META_CACHE["fu_0917.csv"][0] == sig
+    assert depth_service._DEPTH_META_CACHE["fu_0917.csv"][0] == sig
 
     # 按合约打开：两个文件合并，增量不被错误相减
     o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()

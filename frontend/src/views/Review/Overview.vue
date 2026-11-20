@@ -218,6 +218,7 @@ const warnings = ref([])
 const skipped = ref([])
 const fileCount = ref(0)
 const hasFee = ref(false)
+/** @type {import('vue').Ref<Record<string, any>>} */
 const overview = ref({ days: [], products: [], stats: {}, start: '', end: '' })
 const allStart = ref('')
 const allEnd = ref('')

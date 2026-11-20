@@ -289,7 +289,7 @@ function handleFileChange(uploadFile) {
   if (!file) return
   // 同复盘：清掉组件内部列表和原生 input，否则再选同一个文件不会触发 change
   uploadRef.value?.clearFiles()
-  const nativeInput = document.querySelector('.db-upload input[type=file]')
+  const nativeInput = /** @type {HTMLInputElement | null} */ (document.querySelector('.db-upload input[type=file]'))
   if (nativeInput) nativeInput.value = ''
 
   const task = { id: ++taskSeq, name: file.name, status: 'wait', message: '等待导入...' }
@@ -396,7 +396,7 @@ function handleReviewFileChange(uploadFile) {
   const file = uploadFile.raw
   if (!file) return
   reviewUploadRef.value?.clearFiles()
-  const nativeInput = document.querySelector('.review-db-upload input[type=file]')
+  const nativeInput = /** @type {HTMLInputElement | null} */ (document.querySelector('.review-db-upload input[type=file]'))
   if (nativeInput) nativeInput.value = ''
 
   const task = { id: ++reviewTaskSeq, name: file.name, status: 'wait', message: '等待导入...' }
