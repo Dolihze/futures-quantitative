@@ -19,21 +19,7 @@
       <!-- 左侧：导入与统计 -->
       <aside class="sidebar">
         <div class="control-panel">
-          <h3>📂 导入交易记录</h3>
-          <el-upload
-            ref="uploadRef"
-            drag
-            :auto-upload="false"
-            :show-file-list="false"
-            accept=".xlsx,.xls,.csv"
-            :on-change="handleFileChange"
-            class="review-upload"
-          >
-            <div class="upload-text">
-              <div class="upload-main">拖拽文件到此处，或 <em>点击选择</em></div>
-              <div class="upload-tip">支持 .xlsx / .xls / .csv，20MB 以内</div>
-            </div>
-          </el-upload>
+          <h3>📂 历史交易记录</h3>
 
           <div v-if="fileInfo" class="file-info">
             <div class="file-name" :title="fileInfo.filename">📄 {{ fileInfo.filename }}</div>
@@ -46,11 +32,14 @@
           <!-- 已导入的文件：保存在项目的 review_files 文件夹里，点一下就能直接切换分析 -->
           <div class="saved-files">
             <div class="saved-files-head">
-              <span>已导入的文件</span>
-              <a class="saved-files-refresh" :class="{ disabled: filesLoading }" @click="loadFileList">刷新</a>
+              <span>点击文件切换分析</span>
+              <span>
+                <router-link to="/database" class="saved-files-refresh">去导入 / 管理</router-link>
+                <a class="saved-files-refresh" :class="{ disabled: filesLoading }" @click="loadFileList">刷新</a>
+              </span>
             </div>
             <div v-if="!reviewFiles.length" class="saved-files-empty">
-              {{ filesLoading ? '加载中...' : `还没有文件。导入的文件会保存到项目根目录的 ${filesDir} 文件夹，也可以直接把 Excel 放进去后点“刷新”` }}
+              {{ filesLoading ? '加载中...' : '还没有交易记录。请先到「数据库管理 → 历史交易记录管理」导入文件' }}
             </div>
             <ul v-else class="saved-files-list">
               <li
@@ -65,7 +54,6 @@
                   <div class="saved-file-name">{{ f.name }}</div>
                   <div class="saved-file-meta">{{ formatMtime(f.mtime) }} · {{ formatSize(f.size) }}</div>
                 </div>
-                <a class="saved-file-delete" title="删除这个文件" @click.stop="handleDeleteFile(f.name)">删除</a>
               </li>
             </ul>
           </div>
@@ -185,13 +173,14 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadReviewFile, getReviewFiles, openReviewFile, deleteReviewFile, getReviewCurve } from '@/api'
+import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { getReviewFiles, openReviewFile, getReviewCurve } from '@/api'
 import ReviewKline from './ReviewKline.vue'
 import ReviewFunding from './ReviewFunding.vue'
 
 // ---------- 状态 ----------
-const uploadRef = ref(null)
+const route = useRoute()
 const loading = ref(false)
 const loadingText = ref('')
 const errorMsg = ref('')
@@ -273,53 +262,6 @@ function errorText(error, fallback) {
   return error?.message ? `${fallback}：${error.message}` : fallback
 }
 
-async function handleFileChange(uploadFile) {
-  const file = uploadFile.raw
-  if (!file) return
-  // 文件列表不展示，也不需要保留：每次选择后立刻清掉，否则组件会把第一个文件留在内部列表里，
-  // 之后再选文件（比如第一次选错了换一个）不会再触发 on-change，界面像是“没反应”。
-  uploadRef.value?.clearFiles()
-  // 浏览器对“和上次相同的文件”不会再触发 change，所以改完文件想重新选同一个路径会毫无反应。
-  // 把原生 input 的值也清掉，下次选同一个文件才会再次触发。
-  const nativeInput = document.querySelector('.review-upload input[type=file]')
-  if (nativeInput) nativeInput.value = ''
-  errorMsg.value = ''
-  warnings.value = []
-  loading.value = true
-  loadingText.value = '正在解析交易记录...'
-  try {
-    let res
-    try {
-      res = await uploadReviewFile(file)
-    } catch (error) {
-      // 文件夹里已有同名文件：后端没有解析也没有保存，弹窗让用户确认是否覆盖
-      if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
-      loading.value = false      // 确认框期间不要一直转圈，也不要挡住别的操作
-      const name = error.response.data.name || file.name
-      try {
-        await ElMessageBox.confirm(`文件夹中已存在「${name}」，是否覆盖？`, '文件已存在', {
-          confirmButtonText: '覆盖',
-          cancelButtonText: '取消',
-          type: 'warning'
-        })
-      } catch {
-        return                   // 用户取消：什么都不改，保留当前正在分析的数据
-      }
-      loading.value = true
-      res = await uploadReviewFile(file, true)
-    }
-    await applyReviewResult(res)
-    ElMessage.success(res.overwritten ? `已覆盖并导入 ${res.tradeCount} 手成交` : `已导入 ${res.tradeCount} 手成交`)
-    // 上传的文件会保存到 review_files 文件夹，刷新“已导入文件”列表
-    loadFileList()
-  } catch (error) {
-    // 解析失败时保留上一份已成功导入的数据，只显示错误
-    errorMsg.value = errorText(error, '文件解析失败')
-  } finally {
-    loading.value = false
-  }
-}
-
 // 把一份解析结果（上传或从文件夹选择，返回结构相同）设为当前数据，并取一次曲线
 async function applyReviewResult(res) {
   fileInfo.value = res
@@ -371,34 +313,6 @@ async function handleOpenFile(name) {
   }
 }
 
-// 删除列表里的文件：确认后只删磁盘上的文件。已经解析进内存、正在分析的数据不受影响（图表照常），
-// 只是之后不能再从列表里选它
-async function handleDeleteFile(name) {
-  if (loading.value) return
-  try {
-    await ElMessageBox.confirm(
-      name === currentFileName.value
-        ? `确定要删除「${name}」吗？这是当前正在分析的文件，删除后当前图表不受影响，但之后无法再从列表中选择它。`
-        : `确定要删除「${name}」吗？`,
-      '删除文件',
-      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return
-  }
-  try {
-    await deleteReviewFile(name)
-    ElMessage.success(`已删除 ${name}`)
-  } catch (error) {
-    // 后端明确说“文件不存在”（fileMissing）：文件已经被别的程序删了，目的达到，不报错，只刷新列表。
-    // 不能只看 404 状态码：旧版后端没有这个接口时也会回 404 / 405，那是接口问题，必须报错
-    if (!error?.response?.data?.fileMissing) {
-      ElMessage.error(errorText(error, '删除失败'))
-    }
-  }
-  loadFileList()
-}
-
 const formatSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 const formatMtime = (s) => {
   const d = new Date(s * 1000)
@@ -406,7 +320,12 @@ const formatMtime = (s) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-loadFileList()
+// 进入页面：先取文件列表，再自动打开「?file= 指定的文件」，没指定就打开最近导入的一个，进来就能看
+loadFileList().then(() => {
+  const want = String(route.query.file || '')
+  const target = reviewFiles.value.find((f) => f.name === want) || reviewFiles.value[0]
+  if (target) handleOpenFile(target.name)
+})
 
 let requestSeq = 0
 async function fetchCurve(isFirst = false) {

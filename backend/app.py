@@ -474,6 +474,51 @@ def review_files():
     return jsonify({"success": True, "dir": REVIEW_FILES_DIRNAME, "files": files})
 
 
+_REVIEW_META_CACHE = {}   # name -> ((size, mtime_ns), meta | {"error": str})
+
+
+def _review_file_meta(name, path):
+    """交易记录文件的元信息（品种 / 交易日 / 成交手数），按 (大小, 修改时间) 缓存，文件没变不再重读。"""
+    st = os.stat(path)
+    sig = (st.st_size, st.st_mtime_ns)
+    hit = _REVIEW_META_CACHE.get(name)
+    if hit and hit[0] == sig:
+        return hit[1]
+    try:
+        with open(path, 'rb') as fh:
+            r = review.analyze(fh.read(), name)
+        meta = {"products": r.products, "days": r.days, "tradeCount": int(len(r.records)),
+                "start": r.start, "end": r.end, "hasFee": r.has_fee}
+    except review.ReviewParseError as e:
+        meta = {"error": str(e)}
+    except Exception as e:
+        meta = {"error": f"读取失败：{e}"}
+    _REVIEW_META_CACHE[name] = (sig, meta)
+    return meta
+
+
+@app.route('/api/review/files/detail')
+def review_files_detail():
+    """交易记录文件列表 + 每个文件的元信息（数据库管理用）。解析不了的文件带 error 字段。"""
+    root = review_files_dir()
+    files = []
+    if os.path.isdir(root):
+        alive = set()
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if name.startswith(('~$', '.')) or not os.path.isfile(path) or not name.lower().endswith(REVIEW_EXTS):
+                continue
+            alive.add(name)
+            st = os.stat(path)
+            item = {"name": name, "size": st.st_size, "mtime": int(st.st_mtime)}
+            item.update(_review_file_meta(name, path))
+            files.append(item)
+        for gone in set(_REVIEW_META_CACHE) - alive:
+            _REVIEW_META_CACHE.pop(gone, None)
+    files.sort(key=lambda x: (-x["mtime"], x["name"]))
+    return jsonify({"success": True, "dir": REVIEW_FILES_DIRNAME, "files": files})
+
+
 @app.route('/api/review/files', methods=['DELETE'])
 def review_file_delete():
     """删除 review_files 文件夹里的一个文件。

@@ -20,15 +20,95 @@
       <div class="db-head">
         <div>
           <h2>数据库管理</h2>
-          <p class="db-sub">
+          <p v-if="tab === 'market'" class="db-sub">
             管理深度行情用的历史 tick 数据。文件保存在项目根目录的 <code>{{ dir }}</code> 文件夹，
             导入时会读取文件内的交易日并自动改名为「合约名_YYYYMMDD」，重名时提示是否覆盖；
             同一合约的多个文件（如每个交易日一个）会自动合并成一条时间线。
           </p>
+          <p v-else class="db-sub">
+            管理交易复盘用的历史交易记录（成交明细 Excel / CSV）。文件保存在项目根目录的 <code>{{ reviewDir }}</code> 文件夹，
+            保持原文件名，重名时提示是否覆盖。在「交易复盘」页左侧可直接点击切换这里的文件。
+          </p>
         </div>
-        <router-link to="/depth" class="db-goto">去深度行情看图 →</router-link>
+        <router-link v-if="tab === 'market'" to="/depth" class="db-goto">去深度行情看图 →</router-link>
+        <router-link v-else to="/review" class="db-goto">去交易复盘 →</router-link>
       </div>
 
+      <div class="db-tabs" role="tablist">
+        <button type="button" role="tab" class="db-tab" :class="{ active: tab === 'trades' }"
+                :aria-selected="tab === 'trades'" @click="tab = 'trades'">历史交易记录管理</button>
+        <button type="button" role="tab" class="db-tab" :class="{ active: tab === 'market' }"
+                :aria-selected="tab === 'market'" @click="tab = 'market'">历史行情数据管理</button>
+      </div>
+
+      <!-- ============ 历史交易记录管理 ============ -->
+      <template v-if="tab === 'trades'">
+        <el-upload
+          ref="reviewUploadRef"
+          drag
+          multiple
+          :auto-upload="false"
+          :show-file-list="false"
+          accept=".xlsx,.xls,.csv"
+          :on-change="handleReviewFileChange"
+          class="db-upload review-db-upload"
+        >
+          <div class="db-upload-text">
+            <div class="db-upload-main">拖拽交易记录到此处，或 <em>点击选择</em>（可一次选多个）</div>
+            <div class="db-upload-tip">支持 .xlsx / .xls / .csv，单个 20MB 以内。</div>
+          </div>
+        </el-upload>
+
+        <div v-if="reviewTasks.length" class="db-tasks">
+          <div v-for="t in reviewTasks" :key="t.id" class="db-task" :class="t.status">
+            <span class="task-icon">{{ t.status === 'ok' ? '✓' : t.status === 'error' ? '✕' : t.status === 'skip' ? '–' : '…' }}</span>
+            <span class="task-name" :title="t.name">{{ t.name }}</span>
+            <span class="task-msg">{{ t.message }}</span>
+          </div>
+        </div>
+
+        <div class="db-panel">
+          <div class="db-panel-head">
+            <span>已导入的交易记录（{{ reviewFiles.length }}）</span>
+            <span class="db-total" v-if="reviewFiles.length">
+              共 {{ reviewTradeTotal.toLocaleString() }} 手成交 · {{ formatSize(reviewSizeTotal) }}
+            </span>
+            <a class="db-link" :class="{ disabled: reviewLoading }" @click="loadReviewFiles">刷新</a>
+          </div>
+
+          <div v-if="!reviewFiles.length" class="db-empty">
+            {{ reviewLoading ? '加载中...' : `还没有数据。导入交易记录后会出现在这里；也可以直接把 Excel 放进 ${reviewDir} 文件夹后点“刷新”。` }}
+          </div>
+
+          <div v-else class="db-table">
+            <div class="db-row db-row-head review-row">
+              <span class="c-symbol">文件</span>
+              <span class="c-days">交易日</span>
+              <span class="c-products">品种</span>
+              <span class="c-num">成交手数</span>
+              <span class="c-num">大小</span>
+              <span class="c-op">操作</span>
+            </div>
+            <div v-for="f in reviewFiles" :key="f.name" class="db-row db-row-item review-row">
+              <span class="c-symbol"><b :title="f.name">📄 {{ f.name }}</b></span>
+              <template v-if="!f.error">
+                <span class="c-days">{{ dayRange(f.days) }}</span>
+                <span class="c-products" :title="f.products.join('、')">{{ f.products.join('、') }}</span>
+                <span class="c-num">{{ f.tradeCount.toLocaleString() }}</span>
+              </template>
+              <span v-else class="c-err" :title="f.error">⚠ {{ f.error }}</span>
+              <span class="c-num">{{ formatSize(f.size) }}</span>
+              <span class="c-op">
+                <router-link v-if="!f.error" :to="{ path: '/review', query: { file: f.name } }" class="op-link">查看</router-link>
+                <a class="op-link danger" @click.stop="removeReviewFile(f.name)">删除</a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ============ 历史行情数据管理 ============ -->
+      <template v-else>
       <el-upload
         ref="uploadRef"
         drag
@@ -129,6 +209,7 @@
           </div>
         </div>
       </div>
+      </template>
     </div>
   </div>
 </template>
@@ -136,8 +217,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadDepthFile, getDepthContracts, deleteDepthContract, deleteDepthFile } from '@/api'
+import { useRoute } from 'vue-router'
+import {
+  uploadDepthFile, getDepthContracts, deleteDepthContract, deleteDepthFile,
+  uploadReviewFile, getReviewFilesDetail, deleteReviewFile
+} from '@/api'
 
+const route = useRoute()
+// 当前 Tab：trades = 历史交易记录管理，market = 历史行情数据管理（可用 ?tab=market 直达）
+const tab = ref(route.query.tab === 'market' ? 'market' : 'trades')
 const uploadRef = ref(null)
 const loading = ref(false)
 const dir = ref('depth_files')
@@ -277,7 +365,95 @@ async function removeFile(name) {
   loadContracts()
 }
 
-onMounted(loadContracts)
+// ==================== 历史交易记录管理（交易复盘的文件） ====================
+const reviewUploadRef = ref(null)
+const reviewLoading = ref(false)
+const reviewDir = ref('review_files')
+const reviewFiles = ref([])
+const reviewTasks = ref([])
+
+const reviewTradeTotal = computed(() => reviewFiles.value.reduce((s, f) => s + (f.tradeCount || 0), 0))
+const reviewSizeTotal = computed(() => reviewFiles.value.reduce((s, f) => s + f.size, 0))
+
+async function loadReviewFiles() {
+  reviewLoading.value = true
+  try {
+    const res = await getReviewFilesDetail()
+    reviewFiles.value = res.files || []
+    reviewDir.value = res.dir || reviewDir.value
+  } catch (error) {
+    reviewFiles.value = []
+    ElMessage.error(errorText(error, '读取交易记录列表失败'))
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+let reviewQueue = Promise.resolve()
+let reviewTaskSeq = 0
+
+function handleReviewFileChange(uploadFile) {
+  const file = uploadFile.raw
+  if (!file) return
+  reviewUploadRef.value?.clearFiles()
+  const nativeInput = document.querySelector('.review-db-upload input[type=file]')
+  if (nativeInput) nativeInput.value = ''
+
+  const task = { id: ++reviewTaskSeq, name: file.name, status: 'wait', message: '等待导入...' }
+  reviewTasks.value = [task, ...reviewTasks.value].slice(0, 12)
+  reviewQueue = reviewQueue.then(() => importReviewOne(file, task)).catch(() => {})
+}
+
+async function importReviewOne(file, task) {
+  const upd = (status, message) => { task.status = status; task.message = message }
+  upd('wait', '正在解析并保存...')
+  try {
+    let res
+    try {
+      res = await uploadReviewFile(file)
+    } catch (error) {
+      if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
+      const name = error.response.data.name || file.name
+      try {
+        await ElMessageBox.confirm(`文件重复：文件夹中已存在「${name}」，是否覆盖？`, '文件重复', {
+          confirmButtonText: '覆盖', cancelButtonText: '跳过', type: 'warning'
+        })
+      } catch {
+        upd('skip', '已存在，已跳过')
+        return
+      }
+      upd('wait', '正在覆盖...')
+      res = await uploadReviewFile(file, true)
+    }
+    const extra = res.warnings?.length ? `（${res.warnings[0]}）` : ''
+    upd('ok', `${res.tradeCount} 手成交 · ${res.days.length} 个交易日 · ${res.products.length} 个品种${extra}`)
+    await loadReviewFiles()
+  } catch (error) {
+    upd('error', errorText(error, '导入失败'))
+  }
+}
+
+async function removeReviewFile(name) {
+  try {
+    await ElMessageBox.confirm(`确定要删除交易记录文件「${name}」吗？此操作不可恢复。`, '删除文件', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await deleteReviewFile(name)
+    ElMessage.success(`已删除 ${name}`)
+  } catch (error) {
+    if (!error?.response?.data?.fileMissing) ElMessage.error(errorText(error, '删除失败'))
+  }
+  loadReviewFiles()
+}
+
+onMounted(() => {
+  loadReviewFiles()
+  loadContracts()
+})
 </script>
 
 <style scoped>

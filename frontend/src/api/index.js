@@ -249,6 +249,11 @@ export function cancelOrder(orderId) {
   })
 }
 
+// 交易记录文件列表 + 每个文件的元信息（品种 / 交易日 / 成交手数），数据库管理用
+export function getReviewFilesDetail() {
+  return request({ url: '/api/review/files/detail', method: 'get', silent: true })
+}
+
 // ===== 深度行情：历史 tick CSV -> K 线 + 历史盘口 =====
 // 上传 tick CSV（multipart）。文件可能很大（几十 MB），超时放宽到 10 分钟；
 // 同名文件 409 + exists 的处理同交易复盘（overwrite=true 覆盖）。
