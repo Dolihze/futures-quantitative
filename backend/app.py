@@ -104,7 +104,44 @@ def init_runtime():
     copy_trading.engine.load_saved_config()   # 恢复上次保存的跟单配置
 
 
+class _SafeStream:
+    """包一层 stdout / stderr：写失败（读端已关闭）时吞掉异常，而不是让进程崩溃。
+
+    后端由 Tauri 拉起，stdout / stderr 是管道，Rust 侧的读取线程只要退出（应用被 `tauri dev` 重新编译时杀掉、
+    窗口关闭、管道读端被回收），管道就变成「没人读」，之后任何一次 print / click.echo 都会抛
+    `OSError: [Errno 22] Invalid argument`。Flask 的启动横幅（show_server_banner）就是这样把后端带崩的，
+    表现为 `npm run dev` 里后端刚起来就退出、前端一直连不上。
+    日志只是辅助信息，输出失败不应该影响服务本身，所以统一吞掉。
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, text):
+        try:
+            return self._stream.write(text)
+        except (OSError, ValueError):   # ValueError: I/O operation on closed file
+            return len(text)
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except (OSError, ValueError):
+            pass
+
+    def __getattr__(self, name):        # isatty / encoding / fileno 等其余属性原样转发
+        return getattr(self._stream, name)
+
+
+def _protect_stdio():
+    for name in ('stdout', 'stderr'):
+        stream = getattr(sys, name, None)
+        if stream is not None and not isinstance(stream, _SafeStream):
+            setattr(sys, name, _SafeStream(stream))
+
+
 def main():
+    _protect_stdio()           # 必须在第一次 print 之前（init_runtime 里就会打印）
     port = config.get_port()   # 先校验端口，配置错误时尽早退出
     init_runtime()
     print("[Backend] Flask 后端启动中...")

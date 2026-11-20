@@ -9,7 +9,6 @@
           </svg>
           返回首页
         </router-link>
-        <span class="ov-nav-title">交易复盘 · 账户分析</span>
       </div>
       <div class="nav-right">
         <UserMenu />
@@ -61,138 +60,121 @@
         <router-link v-if="!fileCount" to="/database" class="ov-empty-btn">去导入</router-link>
       </div>
 
-      <template v-if="hasData">
-        <!-- 总盈亏头部 -->
-        <section class="ov-hero">
-          <div class="ov-hero-label">全部盈亏{{ hasFee ? '（已扣手续费）' : '' }}</div>
-          <div class="ov-hero-range">{{ overview.start }} 至 {{ overview.end }}</div>
-          <div class="ov-hero-value" :class="pnlClass(stats.totalPnl)">{{ plain(stats.totalPnl) }}</div>
-          <div class="ov-hero-sub">
-            共 {{ fileCount }} 个文件 · {{ stats.tradingDays }} 个交易日 · 手续费合计 {{ plain(stats.totalFee) }}
-          </div>
-        </section>
+      <!-- 三列卡片，整体占满窗口剩余高度。
+           左侧两列合成一个区块（ov-left）：上行「全部盈亏 | 交易统计」，下行「收益走势」横跨两列；
+           右列（ov-col）是品种盈亏 + 月历。 -->
+      <div v-if="hasData" class="ov-grid">
+        <div class="ov-left">
+          <section class="ov-card ov-hero">
+            <div class="ov-hero-label">全部盈亏{{ hasFee ? '（已扣手续费）' : '' }}</div>
+            <div class="ov-hero-range">{{ overview.start }} 至 {{ overview.end }}</div>
+            <div class="ov-hero-value" :class="pnlClass(stats.totalPnl)">{{ plain(stats.totalPnl) }}</div>
+            <div class="ov-hero-sub">
+              共 {{ fileCount }} 个文件 · {{ stats.tradingDays }} 个交易日 · 手续费合计 {{ plain(stats.totalFee) }}
+            </div>
+          </section>
 
-        <!-- 交易统计 -->
-        <section class="ov-card">
-          <h3 class="ov-card-title">交易统计 <small>（{{ rangeLabel }}）</small></h3>
-          <div class="ov-stats">
-            <div class="ov-stat">
-              <div class="ov-stat-label">胜率</div>
-              <div class="ov-stat-value" :class="stats.winRate >= 50 ? 'up' : 'down'">{{ stats.winRate.toFixed(2) }}%</div>
-            </div>
-            <div class="ov-stat">
-              <div class="ov-stat-label">盈亏比</div>
-              <div class="ov-stat-value neutral">{{ stats.profitLossRatio.toFixed(2) }}%</div>
-            </div>
-            <div class="ov-stat">
-              <div class="ov-stat-label">最大回撤</div>
-              <div class="ov-stat-value neutral">{{ plain(stats.maxDrawdown) }}</div>
-            </div>
-            <div class="ov-stat">
-              <div class="ov-stat-label">交易笔数</div>
-              <div class="ov-stat-value neutral">{{ stats.closeCount }}</div>
-            </div>
-            <div class="ov-stat">
-              <div class="ov-stat-label">盈利天数 / 亏损天数</div>
-              <div class="ov-stat-value neutral">{{ stats.winDays }} / {{ stats.lossDays }}</div>
-            </div>
-            <div class="ov-stat">
-              <div class="ov-stat-label">单笔最大盈利 / 亏损</div>
-              <div class="ov-stat-value neutral small">
-                <span class="up">{{ plain(stats.maxProfit) }}</span> / <span class="down">{{ plain(stats.maxLoss) }}</span>
+          <section class="ov-card">
+            <h3 class="ov-card-title">交易统计 <small>（{{ rangeLabel }}）</small></h3>
+            <div class="ov-stats">
+              <div class="ov-stat">
+                <div class="ov-stat-label">胜率</div>
+                <div class="ov-stat-value" :class="stats.winRate >= 50 ? 'up' : 'down'">{{ stats.winRate.toFixed(2) }}%</div>
+              </div>
+              <div class="ov-stat">
+                <div class="ov-stat-label">盈亏比</div>
+                <div class="ov-stat-value neutral">{{ stats.profitLossRatio.toFixed(2) }}%</div>
+              </div>
+              <div class="ov-stat">
+                <div class="ov-stat-label">最大回撤</div>
+                <div class="ov-stat-value neutral">{{ plain(stats.maxDrawdown) }}</div>
+              </div>
+              <div class="ov-stat">
+                <div class="ov-stat-label">交易笔数</div>
+                <div class="ov-stat-value neutral">{{ stats.closeCount }}</div>
+              </div>
+              <div class="ov-stat">
+                <div class="ov-stat-label">盈利天数 / 亏损天数</div>
+                <div class="ov-stat-value neutral">{{ stats.winDays }} / {{ stats.lossDays }}</div>
+              </div>
+              <div class="ov-stat">
+                <div class="ov-stat-label">单笔最大盈利 / 亏损</div>
+                <div class="ov-stat-value neutral small">
+                  <span class="up">{{ plain(stats.maxProfit) }}</span> / <span class="down">{{ plain(stats.maxLoss) }}</span>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <!-- 收益走势 -->
-        <section class="ov-card">
-          <div class="ov-card-head">
-            <h3 class="ov-card-title">收益走势 <small>（{{ rangeLabel }}）</small></h3>
-            <div class="ov-seg">
-              <button type="button" :class="{ active: trendMode === 'cum' }" @click="trendMode = 'cum'">累计盈亏</button>
-              <button type="button" :class="{ active: trendMode === 'day' }" @click="trendMode = 'day'">当日盈亏</button>
+          <!-- 收益走势：横跨左侧两列，占满下行剩余高度 -->
+          <section class="ov-card ov-trend-card">
+            <div class="ov-card-head">
+              <h3 class="ov-card-title">收益走势 <small>（{{ rangeLabel }}）</small></h3>
+              <div class="ov-seg">
+                <button type="button" :class="{ active: trendMode === 'cum' }" @click="trendMode = 'cum'">累计盈亏</button>
+                <button type="button" :class="{ active: trendMode === 'day' }" @click="trendMode = 'day'">当日盈亏</button>
+              </div>
             </div>
-          </div>
-          <div class="ov-trend-tip" v-if="trendTip">
-            {{ trendMode === 'cum' ? '累计盈亏' : '当日盈亏' }}：
-            <b :class="pnlClass(trendTip.value)">{{ plain(trendTip.value) }}</b>
-            <span class="ov-trend-date">{{ trendTip.day.replaceAll('-', '/') }}</span>
-          </div>
-          <div ref="trendRef" class="ov-chart ov-chart-trend"></div>
-          <div class="ov-hint">点击图上的某一天，可进入当天的盈亏曲线和交易回放</div>
-        </section>
-
-        <!-- 品种结构 -->
-        <section class="ov-card">
-          <h3 class="ov-card-title">品种结构 <small>（{{ rangeLabel }}）</small></h3>
-          <div class="ov-struct">
-            <div ref="pieRef" class="ov-chart ov-chart-pie"></div>
-            <table class="ov-legend">
-              <thead>
-                <tr><th></th><th>品种</th><th>成交额占比</th><th>盈亏</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(p, i) in products" :key="p.product">
-                  <td><i class="ov-dot" :style="{ background: pieColor(i) }"></i></td>
-                  <td>{{ p.product }}</td>
-                  <td>{{ p.turnoverRatio.toFixed(2) }}%</td>
-                  <td :class="pnlClass(p.pnl)">{{ plain(p.pnl) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- 品种盈亏与胜率 -->
-        <section class="ov-card">
-          <h3 class="ov-card-title">品种盈亏与胜率 <small>（{{ rangeLabel }}）</small></h3>
-          <div class="ov-trend-tip" v-if="prodTip">
-            {{ prodTip.product }}
-            <span>盈亏 <b :class="pnlClass(prodTip.pnl)">{{ plain(prodTip.pnl) }}</b></span>
-            <span>胜率 <b class="amber">{{ prodTip.winRate.toFixed(2) }}%</b></span>
-            <span class="ov-trend-date">{{ prodTip.closeCount }} 笔</span>
-          </div>
-          <div ref="prodRef" class="ov-chart ov-chart-prod"></div>
-        </section>
-
-        <!-- 每月盈亏日历 -->
-        <section class="ov-card">
-          <div class="ov-card-head">
-            <h3 class="ov-card-title">每月盈亏</h3>
-            <div class="ov-month-nav">
-              <button type="button" class="ov-nav-btn" :disabled="!canPrevMonth" @click="shiftMonth(-1)">‹</button>
-              <select v-model="monthKey" class="ov-month-select">
-                <option v-for="m in monthList" :key="m" :value="m">{{ m.slice(0, 4) }}年{{ Number(m.slice(5)) }}月</option>
-              </select>
-              <button type="button" class="ov-nav-btn" :disabled="!canNextMonth" @click="shiftMonth(1)">›</button>
+            <div class="ov-trend-tip" v-if="trendTip">
+              {{ trendMode === 'cum' ? '累计盈亏' : '当日盈亏' }}：
+              <b :class="pnlClass(trendTip.value)">{{ plain(trendTip.value) }}</b>
+              <span class="ov-trend-date">{{ trendTip.day.replaceAll('-', '/') }}</span>
             </div>
-          </div>
+            <div ref="trendRef" class="ov-chart ov-chart-fill"></div>
+            <div class="ov-hint">点击图上的某一天，可进入当天的盈亏曲线和交易回放</div>
+          </section>
+        </div>
 
-          <div class="ov-cal">
-            <div class="ov-cal-week" v-for="w in weekNames" :key="w">{{ w }}</div>
-            <div
-              v-for="(cell, i) in calendarCells"
-              :key="i"
-              class="ov-cal-cell"
-              :class="[cell.cls, { clickable: cell.traded }]"
-              @click="cell.traded && openDay(cell.date)"
-            >
-              <template v-if="cell.day">
-                <div class="ov-cal-day">{{ cell.day }}</div>
-                <div class="ov-cal-pnl" v-if="cell.traded">{{ cell.pnlText }}</div>
-              </template>
+        <!-- 右列：品种盈亏 + 月历 -->
+        <div class="ov-col">
+          <section class="ov-card ov-grow">
+            <h3 class="ov-card-title">品种盈亏与胜率 <small>（{{ rangeLabel }}）</small></h3>
+            <div class="ov-trend-tip" v-if="prodTip">
+              {{ prodTip.product }}
+              <span>盈亏 <b :class="pnlClass(prodTip.pnl)">{{ plain(prodTip.pnl) }}</b></span>
+              <span>胜率 <b class="amber">{{ prodTip.winRate.toFixed(2) }}%</b></span>
+              <span class="ov-trend-date">{{ prodTip.closeCount }} 笔</span>
             </div>
-          </div>
-          <div class="ov-month-total">
-            {{ Number(monthKey.slice(5)) }}月累计收益：
-            <b :class="pnlClass(monthPnl)">{{ plain(monthPnl) }}</b>
-            <span class="ov-trend-date">{{ monthTradingDays }} 个交易日</span>
-          </div>
-        </section>
+            <div ref="prodRef" class="ov-chart ov-chart-fill"></div>
+          </section>
 
-        <div class="ov-foot">以上数据仅供参考，盈亏 = 平仓盈亏 − 手续费，请以期货公司结算单为准。没有入金 / 权益数据，不提供收益率。</div>
-      </template>
+          <section class="ov-card">
+            <div class="ov-card-head">
+              <h3 class="ov-card-title">每月盈亏</h3>
+              <div class="ov-month-nav">
+                <button type="button" class="ov-nav-btn" :disabled="!canPrevMonth" @click="shiftMonth(-1)">‹</button>
+                <select v-model="monthKey" class="ov-month-select">
+                  <option v-for="m in monthList" :key="m" :value="m">{{ m.slice(0, 4) }}年{{ Number(m.slice(5)) }}月</option>
+                </select>
+                <button type="button" class="ov-nav-btn" :disabled="!canNextMonth" @click="shiftMonth(1)">›</button>
+              </div>
+            </div>
+
+            <div class="ov-cal">
+              <div class="ov-cal-week" v-for="w in weekNames" :key="w">{{ w }}</div>
+              <div
+                v-for="(cell, i) in calendarCells"
+                :key="i"
+                class="ov-cal-cell"
+                :class="[cell.cls, { clickable: cell.traded }]"
+                @click="cell.traded && openDay(cell.date)"
+              >
+                <template v-if="cell.day">
+                  <div class="ov-cal-day">{{ cell.day }}</div>
+                  <div class="ov-cal-pnl" v-if="cell.traded">{{ cell.pnlText }}</div>
+                </template>
+              </div>
+            </div>
+            <div class="ov-month-total">
+              {{ Number(monthKey.slice(5)) }}月累计收益：
+              <b :class="pnlClass(monthPnl)">{{ plain(monthPnl) }}</b>
+              <span class="ov-trend-date">{{ monthTradingDays }} 个交易日</span>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div v-if="hasData" class="ov-foot">以上数据仅供参考，盈亏 = 平仓盈亏 − 手续费，请以期货公司结算单为准。没有入金 / 权益数据，不提供收益率。</div>
 
       <div v-if="loading" class="ov-loading">
         <div class="loading-spinner"></div>
@@ -312,18 +294,13 @@ const openDay = (day) => router.push({ name: 'ReviewDay', params: { day } })
 
 // ---------- 图表 ----------
 const trendRef = ref(null)
-const pieRef = ref(null)
 const prodRef = ref(null)
 let trendChart = null
-let pieChart = null
 let prodChart = null
 
 const trendMode = ref('cum')          // cum = 累计盈亏，day = 当日盈亏
 const trendTip = ref(null)            // { day, value }：悬停时显示在图表上方
 const prodTip = ref(null)             // 当前悬停（默认第一个）的品种
-
-const PIE_COLORS = ['#6685ff', '#3d6bff', '#4fd1c5', '#3b9dff', '#ffa94d', '#8e8e93', '#b197fc', '#f783ac']
-const pieColor = (i) => PIE_COLORS[i % PIE_COLORS.length]
 
 const upColor = () => getComputedStyle(document.documentElement).getPropertyValue('--up').trim() || '#ef4444'
 const downColor = () => getComputedStyle(document.documentElement).getPropertyValue('--down').trim() || '#22c55e'
@@ -394,30 +371,6 @@ function renderTrend() {
   }, true)
 }
 
-function renderPie() {
-  if (!pieChart) return
-  const c = chartColors()
-  pieChart.setOption({
-    animation: false,
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: c.tooltipBg,
-      borderWidth: 0,
-      textStyle: { color: c.tooltipText },
-      formatter: (p) => `${p.name}<br/>成交额占比 ${p.value.toFixed(2)}%`
-    },
-    series: [{
-      type: 'pie',
-      radius: ['58%', '88%'],
-      center: ['50%', '50%'],
-      avoidLabelOverlap: true,
-      label: { show: false },
-      itemStyle: { borderColor: c.bg, borderWidth: 2 },
-      data: products.value.map((p, i) => ({ name: p.product, value: p.turnoverRatio, itemStyle: { color: pieColor(i) } }))
-    }]
-  }, true)
-}
-
 function renderProd() {
   if (!prodChart) return
   const c = chartColors()
@@ -467,7 +420,6 @@ function renderProd() {
 
 function renderAll() {
   renderTrend()
-  renderPie()
   renderProd()
 }
 
@@ -484,13 +436,11 @@ function initCharts() {
       if (d) openDay(d.day)
     })
   }
-  if (pieRef.value && !pieChart) pieChart = echarts.init(pieRef.value)
   if (prodRef.value && !prodChart) prodChart = echarts.init(prodRef.value)
 }
 
 function resizeAll() {
   trendChart?.resize()
-  pieChart?.resize()
   prodChart?.resize()
 }
 
@@ -559,18 +509,26 @@ onMounted(() => {
   loadOverview()
   window.addEventListener('resize', resizeAll)
   // 容器宽度变化（侧边栏 / 窗口缩放）时重新量尺寸
+  // 图表高度由 flex 布局决定（不再是固定像素），所以直接观察每个图表容器自己的尺寸，
+  // 而不只是 .ov-body：窗口缩放、卡片之间重新分配高度时都会触发。
   if (typeof ResizeObserver !== 'undefined') {
     ro = new ResizeObserver(resizeAll)
     ro.observe(document.querySelector('.ov-body'))
   }
 })
+
+// 图表容器是 v-if 出来的，ResizeObserver 要等它们出现后再挂上去
+watch(hasData, async (v) => {
+  if (!v || !ro) return
+  await nextTick()
+  for (const el of [trendRef.value, prodRef.value]) if (el) ro.observe(el)
+})
 onUnmounted(() => {
   window.removeEventListener('resize', resizeAll)
   ro?.disconnect()
   trendChart?.dispose()
-  pieChart?.dispose()
   prodChart?.dispose()
-  trendChart = pieChart = prodChart = null
+  trendChart = prodChart = null
 })
 </script>
 

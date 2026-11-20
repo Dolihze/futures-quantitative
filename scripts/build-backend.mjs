@@ -30,7 +30,22 @@ if (!existsSync(built)) {
   console.error(`[backend:build] 未找到输出目录：${built}`)
   process.exit(1)
 }
-renameSync(built, out)
+// Windows 上刚生成的几千个文件会被杀毒软件（Defender 实时防护）、索引服务短暂占用，rename 目录时会偶发 EPERM / EBUSY，
+// 过几百毫秒就好（已遇到两次，手动再移动一次都成功）。所以重试几次，而不是让整个构建在最后一步失败。
+function renameWithRetry(from, to, attempts = 8, delayMs = 750) {
+  for (let i = 1; ; i++) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (e) {
+      const transient = e && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES')
+      if (!transient || i >= attempts) throw e
+      console.warn(`[backend:build] 移动输出目录被占用（${e.code}），${delayMs}ms 后重试 ${i}/${attempts - 1}…`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs)   // 同步 sleep，不引入依赖
+    }
+  }
+}
+renameWithRetry(built, out)
 // Tauri 编译期要求 resources 目录存在；上面清空时连占位文件一起删了，这里补回，避免它在 git 里显示为已删除
 writeFileSync(join(out, '.gitkeep'), '')
 rmSync(join(root, '.build'), { recursive: true, force: true })
