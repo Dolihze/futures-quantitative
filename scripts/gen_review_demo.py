@@ -9,13 +9,14 @@
 
 文件名统一以 DEMO_ 开头（DEMO_交易明细_2026-07.xlsx），--clean 只删这个前缀，不会碰你真正导入的文件。
 
-写到哪里：后端的复盘文件夹跟「怎么运行」有关（打包后 = exe 所在目录，开发 = 项目根目录），所以默认会写入
-当前存在的所有位置，并逐个打印出来；每个目录里你自己导入的文件会列出来，确认它们是同一个文件夹：
-    python backend/app.py   -> <项目根>/review_files
+写到哪里：后端的复盘文件夹是「它的 exe 所在目录/review_files」。默认写入当前存在的这些位置，并逐个打印出来，
+每个目录里你自己导入的文件也会列出来，方便确认写对了地方：
     npm run dev             -> src-tauri/target/debug/backend-dist/review_files
     tauri build             -> src-tauri/target/release/backend-dist/review_files
+都找不到时（还没运行过 npm run dev），请先运行一次，或用 --out 指定目录。
 安装版不在仓库里，请用 --out 指定安装目录下的 backend-dist/review_files。
-这些目录都在 .gitignore 里（review_files/、src-tauri/target/），不会被提交。
+直接 `python backend/app.py` 读的是项目根目录的 review_files/，这里不会写它；需要的话用 --out review_files。
+这些目录都在 .gitignore 里（src-tauri/target/、review_files/），不会被提交。
 
 格式与期货公司结算单的「成交明细」一致（见 backend/core/review.py 的 COLUMN_ALIASES / DETAIL_SHEET_NAMES）：
   - 多个工作表：「资金状况」（无关，用来测试选表逻辑）+「成交明细」（真正被解析）
@@ -54,14 +55,13 @@ PRODUCTS = [
 MAX_LOTS = {"IF2612": 1, "cu2612": 3}
 
 
-# 不同运行方式下，后端的「复盘文件夹」位置不同（见 backend/config.py：打包后 = 可执行文件所在目录，开发 = 项目根目录）：
-#   python backend/app.py        -> <项目根>/review_files
-#   npm run dev（tauri dev）     -> src-tauri/target/debug/backend-dist/review_files   （Tauri 把 resources 复制到这里再启动 exe）
-#   安装版 / tauri build         -> 安装目录/backend-dist/review_files（不在本仓库里，需要手动指定 --out）
-# 所以不能只写一处：默认写到「当前存在的」所有位置，并打印出来，让你一眼看到文件去了哪。
+# 后端的「复盘文件夹」是它的 exe 所在目录下的 review_files（backend/config.py 的 BASE_DIR）。
+# `npm run dev` 时 Tauri 把 src-tauri/backend-dist 复制到 src-tauri/target/debug/backend-dist 再启动 exe，
+# 所以实际读写的是下面这个目录；`tauri build` 的 release 同理。
+# 不写项目根目录的 review_files/：只有直接 `python backend/app.py` 才会读它，日常用不到，写了只会多出一个没人读的目录
+# （要这样用，请自己指定 --out 或环境变量 REVIEW_FILES_DIR）。
 def candidate_dirs():
     return [
-        ("python backend/app.py", os.path.join(ROOT, "review_files")),
         ("npm run dev (debug)", os.path.join(ROOT, "src-tauri", "target", "debug", "backend-dist", "review_files")),
         ("tauri build (release)", os.path.join(ROOT, "src-tauri", "target", "release", "backend-dist", "review_files")),
     ]
@@ -70,25 +70,15 @@ def candidate_dirs():
 def target_dirs(out=None):
     """要写入的目录列表：--out > 环境变量 REVIEW_FILES_DIR > 自动探测。
 
-    自动探测的规则：项目根目录的 review_files 始终写（后端直接用 python 启动时用它）；
-    debug / release 的 backend-dist 只在它的上一级（backend-dist）已经存在时才写，
-    也就是说只写「你确实运行过的」那种后端，不会凭空创建一堆目录。
+    自动探测：只写「你确实运行过的」那种后端——它的 backend-dist 目录已经存在才写，不会凭空创建目录。
+    一个都找不到时返回空列表，由调用方提示先运行一次 `npm run dev`。
     """
     if out:
         return [("--out", out)]
     env = os.environ.get("REVIEW_FILES_DIR")
     if env:
         return [("REVIEW_FILES_DIR", env)]
-    result = []
-    for label, path in candidate_dirs():
-        if label.startswith("python") or os.path.isdir(os.path.dirname(path)):
-            result.append((label, path))
-    return result
-
-
-def review_dir(out=None):
-    """兼容旧调用：返回第一个目标目录。"""
-    return target_dirs(out)[0][1]
+    return [(label, path) for label, path in candidate_dirs() if os.path.isdir(os.path.dirname(path))]
 
 
 def trading_days(year, month):
@@ -262,11 +252,15 @@ def main(argv=None):
     ap.add_argument("--months", type=int, default=4, help="生成几个月（从上个月往前数），默认 4")
     ap.add_argument("--seed", type=int, default=2026, help="随机种子，相同种子生成相同数据，默认 2026")
     ap.add_argument("--out", default=None,
-                    help="输出目录（只写这一处）。不指定时自动写入当前存在的所有后端数据目录，见脚本顶部说明")
+                    help="输出目录（只写这一处）。不指定时自动写入 npm run dev / tauri build 的后端数据目录，见脚本顶部说明")
     ap.add_argument("--clean", action="store_true", help="只删除之前生成的 DEMO_ 文件，不生成")
     args = ap.parse_args(argv)
 
     targets = target_dirs(args.out)
+    if not targets:
+        print("[demo] 没找到后端的数据目录：src-tauri/target/{debug,release}/backend-dist 都还不存在。\n"
+              "[demo] 请先运行一次 `npm run dev`（会生成 debug 目录），或用 --out 指定目录。")
+        return 1
     if args.clean:
         for label, directory in targets:
             removed = clean(directory)
