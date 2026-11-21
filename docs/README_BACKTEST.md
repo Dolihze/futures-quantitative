@@ -1,8 +1,8 @@
-# 量化回测功能使用说明
+# 策略回测功能使用说明
 
 ## 功能概述
 
-量化回测由两个页面组成：
+策略回测由两个页面组成：
 
 - 回测对象是**各常见期货品种的主连**（上期所、能源中心、大商所、郑商所、中金所共约 65 个品种），在总览页右上角的下拉框选择，**默认燃料油主连**。选择会同步到地址栏，进入详情再返回不会丢。
 - **策略总览**（`/backtest`）：以卡片展示每个量化策略在所选时间范围（7/30/60/90 天）内的**胜率**、**盈亏比**、**模拟盈亏**、交易笔数、最大回撤和缩略净值曲线，点击卡片进入详情。
@@ -64,7 +64,7 @@ npm install
 npm run dev
 ```
 
-首次运行或修改 `backend/routes/backtest_routes.py` / `backend/core/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包后端。登录后在首页点击"量化回测"即可进入策略总览。
+首次运行或修改 `backend/routes/backtest_routes.py` / `backend/core/backtest_engine.py` 后，需先执行 `npm run backend:build` 重新打包后端。登录后在首页点击"策略回测"即可进入策略总览。
 
 ## 注意事项
 

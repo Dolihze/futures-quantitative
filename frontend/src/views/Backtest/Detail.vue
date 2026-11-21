@@ -34,14 +34,15 @@
       </div>
 
       <el-alert v-if="errorMsg" class="overview-alert" type="error" :title="errorMsg" show-icon :closable="false" />
-      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说 -->
+      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说。
+           宽度按内容自适应；可以手动关闭，下一次加载时重新出现 -->
       <el-alert
-        v-if="coverageNotice"
+        v-if="coverageNotice && !noticeClosed"
         class="overview-alert"
         type="info"
         :title="coverageNotice"
         show-icon
-        :closable="false"
+        @close="noticeClosed = true"
       />
 
       <div v-if="result" class="detail-body">
@@ -219,6 +220,7 @@ const backTo = computed(() => ({ path: '/backtest', query: { product: params.pro
 const availableDays = ref(0)
 const requestedDays = ref(0) // 最近一次请求时用户选的天数（收敛到「全部」之前）
 const dayOptions = computed(() => buildDayOptions(availableDays.value))
+const noticeClosed = ref(false) // 数据范围提示被手动关闭；每次重新加载数据时复位
 const coverageNotice = computed(() => {
   const c = result.value?.coverage
   if (!c || !c.truncated) return ''
@@ -298,6 +300,7 @@ async function load() {
   const my = ++seq
   loading.value = true
   errorMsg.value = ''
+  noticeClosed.value = false
   try {
     const res = await runBacktest({ strategy: String(route.params.strategyId), ...params })
     if (my !== seq) return
@@ -361,8 +364,10 @@ function ensureCharts() {
     equityChart.dispose()
     equityChart = null
   }
+  const created = (klineRef.value && !klineChart) || (equityRef.value && !equityChart)
   if (klineRef.value && !klineChart) klineChart = echarts.init(klineRef.value)
   if (equityRef.value && !equityChart) equityChart = echarts.init(equityRef.value)
+  if (created) observeCharts()   // 图表容器（重新）创建后，让它们的尺寸变化也能触发 resize
 }
 
 function renderAll() {
@@ -582,6 +587,17 @@ function handleResize() {
 
 onThemeChange(() => renderAll())
 
+// 弹性布局下图表容器的宽高随窗口变化（宽度跟随页面，高度按视口高度算）：
+// 监听容器本身的尺寸变化，比只监听 window.resize 更可靠（例如滚动条出现 / 消失也会改变宽度）
+let resizeObserver = null
+function observeCharts() {
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(handleResize)
+  if (klineRef.value) resizeObserver.observe(klineRef.value)
+  if (equityRef.value) resizeObserver.observe(equityRef.value)
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   load()
@@ -589,6 +605,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   seq++
+  resizeObserver?.disconnect()
   window.removeEventListener('resize', handleResize)
   klineChart?.dispose()
   equityChart?.dispose()

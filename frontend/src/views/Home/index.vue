@@ -111,7 +111,7 @@
           </div>
         </router-link>
 
-        <!-- 量化回测卡片 -->
+        <!-- 策略回测卡片 -->
         <router-link to="/backtest" class="feature-card" @click="handleBacktestClick">
           <div class="feature-icon backtest">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -120,7 +120,7 @@
               <line x1="12" y1="22.08" x2="12" y2="12"/>
             </svg>
           </div>
-          <div class="feature-title">量化回测</div>
+          <div class="feature-title">策略回测</div>
           <div class="feature-description">
             多策略历史回测，胜率与盈亏比总览，K线买卖点与盈利曲线详情
           </div>

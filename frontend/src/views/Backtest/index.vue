@@ -53,35 +53,16 @@
         :closable="false"
       />
 
-      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说 -->
+      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说。
+           宽度按内容自适应；可以手动关闭，关闭后到下一次加载（刷新 / 换品种 / 换时间范围）才会重新出现 -->
       <el-alert
-        v-if="coverageNotice"
+        v-if="coverageNotice && !noticeClosed"
         class="overview-alert"
         type="info"
         :title="coverageNotice"
         show-icon
-        :closable="false"
+        @close="noticeClosed = true"
       />
-
-      <!-- 汇总 -->
-      <div v-if="summary" class="summary-bar">
-        <div class="summary-item">
-          <div class="summary-label">策略数</div>
-          <div class="summary-value">{{ summary.count }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">合计交易笔数</div>
-          <div class="summary-value">{{ summary.trades }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">合计模拟盈亏</div>
-          <div class="summary-value" :class="pnlClass(summary.profit)">{{ fmtMoney(summary.profit) }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">盈利策略</div>
-          <div class="summary-value">{{ summary.winning }} / {{ summary.count }}</div>
-        </div>
-      </div>
 
       <!-- 策略卡片 -->
       <div v-if="loading && !strategies.length" class="overview-loading">
@@ -89,7 +70,7 @@
         <div class="loading-text">正在回测所有策略...</div>
       </div>
 
-      <div v-else class="strategy-grid">
+      <div v-else ref="gridRef" class="strategy-grid">
         <div
           v-for="s in strategies"
           :key="s.id"
@@ -146,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { getBacktestOverview, getBacktestProducts } from '@/api'
@@ -173,6 +154,7 @@ const availableDays = ref(0)
 const requestedDays = ref(0) // 最近一次请求时用户选的天数（收敛到「全部」之前）
 const dayOptions = computed(() => buildDayOptions(availableDays.value))
 // 每个策略用自己的周期，可得数据不同；只要有策略实际用的天数少于所选天数，就提示一下
+const noticeClosed = ref(false) // 数据范围提示被手动关闭；每次重新加载数据时复位
 const coverageNotice = computed(() => {
   const short = strategies.value.filter((s) => s.coverage && s.coverage.truncated)
   if (!short.length) return ''
@@ -212,6 +194,7 @@ async function load() {
   const my = ++seq
   loading.value = true
   errorMsg.value = ''
+  noticeClosed.value = false
   // 品种和时间范围同步到 URL：刷新页面、从详情页返回时保持选择
   router.replace({ query: { product: params.product, days: params.days } })
   try {
@@ -241,17 +224,6 @@ async function load() {
     renderSparks()
   }
 }
-
-const summary = computed(() => {
-  const ok = strategies.value.filter((s) => s.stats)
-  if (!ok.length) return null
-  return {
-    count: ok.length,
-    trades: ok.reduce((n, s) => n + s.stats.tradeCount, 0),
-    profit: ok.reduce((n, s) => n + s.stats.totalProfit, 0),
-    winning: ok.filter((s) => s.stats.totalProfit > 0).length
-  }
-})
 
 // 红涨绿跌：胜率 >= 50% 红，否则绿；没有交易时不着色
 function winRateClass(st) {
@@ -338,6 +310,19 @@ function handleResize() {
 
 onThemeChange(() => renderSparks())
 
+// 弹性布局下卡片列数和宽度随窗口变化：监听卡片网格本身的尺寸变化来重画迷你曲线，
+// 比只监听 window.resize 更可靠（滚动条出现 / 消失、列数变化都会改变卡片宽度）。
+// 网格是 v-if / v-else 渲染的，出现或重建时重新挂上观察者
+const gridRef = ref(null)
+let resizeObserver = null
+watch(gridRef, (el) => {
+  resizeObserver?.disconnect()
+  if (el && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(handleResize)
+    resizeObserver.observe(el)
+  }
+})
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   loadProducts()
@@ -346,6 +331,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   seq++
+  resizeObserver?.disconnect()
   window.removeEventListener('resize', handleResize)
   Object.values(sparkCharts).forEach((ch) => ch.dispose())
 })

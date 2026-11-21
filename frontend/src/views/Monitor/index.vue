@@ -189,7 +189,9 @@
             </el-table>
             <div class="pager">
               <el-pagination v-model:current-page="positionPage" :page-size="PAGE_SIZE" :total="positions.length"
-                             layout="total, prev, pager, next" size="small" background />
+                             layout="slot, prev, pager, next" size="small" background>
+                <span class="pager-total">共 {{ positions.length }} 条</span>
+              </el-pagination>
             </div>
           </section>
 
@@ -217,7 +219,9 @@
             </el-table>
             <div class="pager">
               <el-pagination v-model:current-page="recordPage" :page-size="PAGE_SIZE" :total="records.length"
-                             layout="total, prev, pager, next" size="small" background />
+                             layout="slot, prev, pager, next" size="small" background>
+                <span class="pager-total">共 {{ records.length }} 条</span>
+              </el-pagination>
             </div>
           </section>
         </div>

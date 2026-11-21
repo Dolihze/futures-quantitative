@@ -65,11 +65,12 @@
 }
 
 /* ==================== 通用：页面容器 / 工具条 ==================== */
+/* 页面容器：不设最大宽度，窗口拉宽 / 缩小时内容区跟着伸缩（弹性）。
+   左右内边距 48px（原来 24px 离窗口边太近），上下 32px。 */
 .overview-page,
 .detail-page {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 24px;
+  width: 100%;
+  padding: 32px 48px;
 }
 
 .overview-toolbar {
@@ -95,15 +96,39 @@
 .toolbar-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;   /* 窗口窄时控件换行，而不是把工具条撑出页面 */
   gap: 12px;
+  min-width: 0;
+}
+
+.toolbar-title {
+  min-width: 0;
 }
 
 .toolbar-select {
   width: 190px;
 }
 
+/* 页面顶部的提示条（数据范围说明 / 错误）：el-alert 默认 width: 100% 会铺满容器，
+   这里让宽度只包住内容、靠左；内容很长时最宽不超过容器，文字换行。 */
 .overview-alert {
+  width: fit-content;
+  max-width: 100%;
   margin-bottom: 16px;
+}
+
+/* 关闭按钮 × 是绝对定位的（不占宽度）：宽度按内容收缩后，文字会压到 ×。
+   给内容区右侧留出 ×（16px 字号 + 与边缘的间距）的位置，× 就永远不会盖住文字。 */
+.overview-alert :deep(.el-alert__content),
+.kline-notice :deep(.el-alert__content) {
+  padding-right: 28px;
+}
+
+/* × 和单行文字垂直居中对齐（默认 top: 12px 对 8px 内边距的单行提示偏低） */
+.overview-alert :deep(.el-alert__close-btn),
+.kline-notice :deep(.el-alert__close-btn) {
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 /* ==================== 涨跌色（总览与详情共用） ==================== */
@@ -119,46 +144,16 @@
   color: var(--neutral);
 }
 
-/* ==================== 总览：汇总条 ==================== */
-.summary-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.summary-item {
-  background: var(--bg-chart);
-  border: 1px solid var(--border-panel);
-  border-radius: 10px;
-  padding: 14px 16px;
-  box-shadow: var(--shadow-card);
-}
-
-.summary-label {
-  color: var(--text-muted2);
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-
-.summary-value {
-  font-size: 22px;
-  font-weight: bold;
-  color: var(--accent2);
-}
-
-.summary-value.positive {
-  color: var(--up);
-}
-
-.summary-value.negative {
-  color: var(--down);
-}
-
 /* ==================== 总览：策略卡片 ==================== */
+/* 策略卡片：宽度固定 432px，不随窗口拉伸；变的只是每行能放几张（页面越宽，一行放得越多）。
+   432px = 默认窗口 1440px 下刚好放下 3 张。要按「有纵向滚动条」的情况算（卡片多了页面一定会出滚动条，占约 15px）：
+   内容区宽 1440 - 15（滚动条）- 2 x 48（左右内边距）= 1329px，(1329 - 2 x 16（间距）) / 3 = 432.3px，向下取整。
+   改页面左右内边距或窗口默认宽度时要同步改这个值。
+   auto-fill：窗口拉宽时多出来的位置留空，不会把卡片拉长。
+   min(100%, 432px)：页面比 432px 还窄时（手机宽度）单列收缩到页面宽度，不会横向溢出。 */
 .strategy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(0, min(100%, 432px)));
   gap: 16px;
 }
 
@@ -169,6 +164,7 @@
   padding: 18px;
   box-shadow: var(--shadow-card);
   cursor: pointer;
+  min-width: 0;   /* 作为 grid 子项时允许收缩，里面的图表 / 长文本不会撑宽卡片 */
   transition: transform 0.2s, border-color 0.2s;
 }
 
@@ -195,7 +191,8 @@
 .card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;   /* 卡片窄时标签换到下一行，不挤压策略名 */
+  gap: 6px 8px;
   margin-bottom: 8px;
 }
 
@@ -204,6 +201,7 @@
   font-weight: bold;
   color: var(--text-primary);
   margin-right: auto;
+  min-width: 0;
 }
 
 .card-tag {
@@ -227,9 +225,11 @@
   margin-bottom: 14px;
 }
 
+/* 4 个指标小卡片：始终一行 4 个、等宽；每格宽度随卡片宽度伸缩，字号 / 内边距固定。
+   minmax(0, 1fr)：长数字（如 -126,250.74）不会把某一格撑宽。 */
 .card-metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -239,6 +239,7 @@
   border-radius: 8px;
   padding: 10px 6px;
   text-align: center;
+  min-width: 0;
 }
 
 .metric-label {
@@ -250,6 +251,9 @@
 .metric-value {
   font-size: 16px;
   font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* 六位数以上的亏损（如 -126,250.74）在窄卡片里放不下时显示省略号，不撑破小卡片 */
 }
 
 .card-spark {
@@ -274,6 +278,8 @@
 .card-foot {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   margin-top: 10px;
   font-size: 12px;
   color: var(--text-muted2);
@@ -312,9 +318,10 @@
   margin: 0 0 16px;
 }
 
+/* 核心指标：每格至少 150px，列数随窗口宽度自动增减（宽屏 5~6 列，窄屏 2~3 列），始终铺满整行 */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -325,6 +332,7 @@
   border-radius: 10px;
   padding: 12px 14px;
   box-shadow: var(--shadow-card);
+  min-width: 0;
 }
 
 .stat-label {
@@ -336,6 +344,7 @@
 .stat-value {
   font-size: 20px;
   font-weight: bold;
+  overflow-wrap: anywhere;
 }
 
 .stat-sub {
@@ -351,12 +360,14 @@
   padding: 16px;
   margin-bottom: 20px;
   box-shadow: var(--shadow-card);
+  min-width: 0;   /* 图表 / 表格不会把卡片撑出页面 */
 }
 
 .detail-card-head {
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;   /* 图例、下拉在窄屏下换行 */
+  gap: 8px 16px;
   margin-bottom: 12px;
 }
 
@@ -371,9 +382,10 @@
   color: var(--text-muted2);
 }
 
+/* 图表高度随窗口高度伸缩：K 线占约 58% 视口高度（900px 窗口 ≈ 520px），限制在 320 ~ 760px */
 .detail-kline {
   width: 100%;
-  height: 520px;
+  height: clamp(320px, 58vh, 760px);
 }
 
 /* K 线显示周期下拉：贴在卡片标题行最右边 */
@@ -388,7 +400,7 @@
 
 .detail-equity {
   width: 100%;
-  height: 280px;
+  height: clamp(200px, 31vh, 400px);   /* 900px 窗口 ≈ 280px */
 }
 
 /* 图例 */
@@ -506,12 +518,28 @@
   color: var(--text-muted2);
 }
 
-@media (max-width: 1100px) {
-  .stat-grid {
-    grid-template-columns: repeat(3, 1fr);
+/* ==================== 响应式断点 ==================== */
+/* 核心指标（.stat-grid）和策略卡片（.strategy-grid）用 auto-fit，列数自己随宽度变，不需要断点 */
+@media (max-width: 760px) {
+  .navbar {
+    padding: 0 12px;
   }
 
-  .summary-bar {
-    grid-template-columns: repeat(2, 1fr);
+  .overview-page,
+  .detail-page {
+    padding: 24px 16px;
+  }
+
+  .overview-toolbar {
+    align-items: flex-start;
+  }
+
+  .toolbar-controls {
+    width: 100%;
+  }
+
+  .toolbar-select {
+    flex: 1 1 160px;
+    width: auto;
   }
 }

@@ -58,7 +58,7 @@ futures-quantitative/
 │   #   routes/review_routes.py -> services/review_service.py -> core/review.py
 ├── tests/                    # 各模块的单元测试与 API 测试（python tests/test_review.py）
 ├── docs/                     # 补充文档
-│   └── README_BACKTEST.md    # 量化回测使用说明
+│   └── README_BACKTEST.md    # 策略回测使用说明
 ├── data/
 │   ├── brokers.json          # 期货公司列表
 │   ├── ctp_brokers.json      # CTP 接入参数（仅公开的 SimNow，入库）
@@ -262,7 +262,7 @@ npm run backend:build
 
 ## 深度行情
 
-项目共六个模块：量化监控、下单交易、交易复盘、深度行情、量化回测、数据库管理。
+项目共六个模块：量化监控、下单交易、交易复盘、深度行情、策略回测、数据库管理。
 
 **数据库管理**（首页「数据库管理」）负责 tick 数据的导入与管理；**深度行情**（首页「深度行情」）只负责选合约、看图。
 

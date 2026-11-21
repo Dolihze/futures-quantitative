@@ -301,6 +301,13 @@
   justify-content: flex-end;
   margin-top: 10px;
 }
+/* 「共 n 条」：Element Plus 自带的 Total 是英文且没有设置中文语言包，这里用 slot 自己写，样式对齐它原来的文字 */
+.pager-total {
+  margin-right: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
 
 /* 日志卡片：占满右侧内容区的剩余高度（.content 是纵向 flex），内部 .logs 超出时纵向滚动。
    min-height 防止上方内容很多时被压成一条线（此时整个 .content 出滚动条）。 */
