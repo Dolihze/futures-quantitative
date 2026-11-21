@@ -654,10 +654,22 @@ def monitor_snapshot():
         a = accounts[0]
         account = {"account": a.accountid, "balance": a.balance,
                    "available": a.available, "frozen": a.frozen}
-    positions = [{
-        "vt_symbol": p.vt_symbol, "symbol": p.symbol, "direction": p.direction.value,
-        "volume": p.volume, "price": p.price, "pnl": p.pnl,
-    } for p in s.engine.get_all_positions() if p.volume]
+    positions = []
+    for p in s.engine.get_all_positions():
+        if not p.volume:
+            continue
+        # 最新价用来算前端的「盈利价差」；持仓合约要先订阅行情才有 tick（首次为 None，下一次轮询即可拿到）
+        tick = s.engine.get_tick(p.vt_symbol)
+        contract = s.engine.get_contract(p.vt_symbol)
+        last = tick.last_price if tick and tick.last_price else None
+        if last and contract:
+            last = _round_to_tick(last, contract.pricetick)
+        if contract:
+            _subscribe(s, contract)
+        positions.append({
+            "vt_symbol": p.vt_symbol, "symbol": p.symbol, "direction": p.direction.value,
+            "volume": p.volume, "price": p.price, "pnl": p.pnl, "last_price": last,
+        })
     return {"broker": s.broker, "username": s.username, "account": account, "positions": positions}
 
 

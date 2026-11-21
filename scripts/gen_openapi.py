@@ -20,6 +20,7 @@ from backend import schemas  # noqa: E402
 from backend.app import app  # noqa: E402
 
 REF_PREFIX = "#/components/schemas/"
+XLSX_MIMETYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _strip_additional_properties(node):
@@ -58,6 +59,8 @@ def build():
     paths = {}
     # 实际返回数组而不是对象的接口
     returns_list = {("GET", "/api/brokers")}
+    # 返回文件流（不是 JSON）的接口：成功响应登记为 xlsx 二进制，失败仍是 ApiResult
+    downloads = {("GET", "/api/monitor/logs/export"): XLSX_MIMETYPE}
 
     for rule in sorted(app.url_map.iter_rules(), key=lambda r: r.rule):
         if rule.endpoint == "static" or not rule.rule.startswith("/api/"):
@@ -80,12 +83,15 @@ def build():
             elif "$ref" not in sch:
                 components.setdefault(model.__name__, sch)
                 sch = {"$ref": REF_PREFIX + model.__name__}
+            ok_content = {"application/json": {"schema": sch}}
+            if (method, rule.rule) in downloads:
+                ok_content = {downloads[(method, rule.rule)]: {"schema": {"type": "string", "format": "binary"}}}
             paths.setdefault(_flask_rule_to_openapi(rule.rule), {})[method.lower()] = {
                 "operationId": f"{method.lower()}_{rule.endpoint.replace('.', '_')}",
                 "summary": summary,
                 "tags": [rule.endpoint.split(".")[0]],
                 "responses": {
-                    "200": {"description": "成功", "content": {"application/json": {"schema": sch}}},
+                    "200": {"description": "成功", "content": ok_content},
                     "default": {
                         "description": "失败：success=false + message（HTTP 4xx/5xx）",
                         "content": {"application/json": {"schema": {"$ref": REF_PREFIX + "ApiResult"}}},

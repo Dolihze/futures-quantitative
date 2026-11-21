@@ -1,9 +1,18 @@
 """量化监控：登录被监控账号（只读会话）+ 跟单引擎。"""
-from flask import Blueprint, jsonify, request
+import io
+import time
+from urllib.parse import quote
+
+from flask import Blueprint, Response, jsonify, request
+from openpyxl import Workbook
+from openpyxl.styles import Font
 
 from backend.core import copy_trading, credential_store, ctp_service
 
 bp = Blueprint('monitor', __name__)
+
+XLSX_MIMETYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+LOG_LEVEL_TEXT = {"info": "信息", "warn": "警告", "error": "错误"}
 
 MONITOR_CRED_SLOT = "monitor"   # 被监控账号的凭据槽位（见 credential_store）
 
@@ -74,6 +83,37 @@ def monitor_records():
         "records": copy_trading.engine.get_records(),
         "logs": copy_trading.engine.get_logs(),
     }})
+
+
+def build_logs_xlsx(logs):
+    """把运行日志写成 Excel 字节流。引擎里的日志是「最新在前」，导出按时间正序（旧 -> 新），方便从头往下读。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "运行日志"
+    ws.append(["时间", "级别", "内容"])
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for entry in reversed(logs):
+        level = str(entry.get("level", ""))
+        ws.append([str(entry.get("time", "")), LOG_LEVEL_TEXT.get(level, level), str(entry.get("msg", ""))])
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 8
+    ws.column_dimensions["C"].width = 100
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@bp.route('/api/monitor/logs/export')
+def monitor_logs_export():
+    """导出运行日志为 Excel（.xlsx），时间正序"""
+    data = build_logs_xlsx(copy_trading.engine.get_logs())
+    filename = f"运行日志_{time.strftime('%Y%m%d_%H%M%S')}.xlsx"
+    # filename* 用 RFC 5987 编码，中文文件名在各浏览器 / WebView 里都不会乱码
+    return Response(data, mimetype=XLSX_MIMETYPE, headers={
+        "Content-Disposition": f"attachment; filename=monitor_logs.xlsx; filename*=UTF-8''{quote(filename)}",
+    })
 
 
 @bp.route('/api/monitor/start', methods=['POST'])

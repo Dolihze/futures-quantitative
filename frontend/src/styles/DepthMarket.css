@@ -285,7 +285,7 @@
 
 .chart-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;   /* 标题已移除，工具栏靠右 */
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
@@ -293,19 +293,6 @@
   padding-bottom: 10px;
   flex-shrink: 0;
   border-bottom: 1px solid rgba(var(--accent2-rgb), 0.18);
-}
-
-.toolbar-title {
-  color: var(--accent2);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.toolbar-symbol {
-  margin-left: 12px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 400;
 }
 
 .toolbar {

@@ -43,6 +43,12 @@ export function getMonitorRecords() {
   return http({ url: '/api/monitor/records', method: 'get', silent: true })
 }
 
+// 导出运行日志为 Excel：返回 xlsx 二进制（Blob），不是 JSON
+/** @returns {Promise<Blob>} */
+export function exportMonitorLogs() {
+  return http({ url: '/api/monitor/logs/export', method: 'get', responseType: 'blob', silent: true })
+}
+
 /**
  * @param {Record<string, any>} config
  * @returns {Promise<ApiResult>}

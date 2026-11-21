@@ -159,55 +159,77 @@
           </div>
         </div>
 
-        <!-- 被监控账号持仓 -->
-        <section class="card">
-          <div class="card-head">被监控账号当前持仓</div>
-          <el-table :data="account?.positions || []" size="small" empty-text="暂无持仓" max-height="200">
-            <el-table-column prop="symbol" label="合约" min-width="90" />
-            <el-table-column label="方向" width="70">
-              <template #default="{ row }">
-                <span :class="row.direction === '多' ? 'up' : 'down'">{{ row.direction }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="volume" label="手数" width="70" />
-            <el-table-column label="开仓均价" width="100">
-              <template #default="{ row }">{{ num(row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="持仓盈亏" width="110">
-              <template #default="{ row }">
-                <span :class="row.pnl >= 0 ? 'up' : 'down'">{{ num(row.pnl) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
+        <!-- 持仓 | 跟单记录：并排一行，各占一半宽度；都是每页 5 条、分页条始终显示、表格高度相同 -->
+        <div class="table-row">
+          <section class="card">
+            <div class="card-head">被监控账号当前持仓</div>
+            <el-table :data="pagedPositions" size="small" empty-text="暂无持仓" class="fixed-rows"
+                      :height="tableHeight(PAGE_SIZE)">
+              <!-- 每一列都只设 min-width：多出来的宽度按这些数值的比例分给各列，不会让某一列独占 -->
+              <el-table-column prop="symbol" label="合约" min-width="66" show-overflow-tooltip />
+              <el-table-column label="方向" min-width="48">
+                <template #default="{ row }">
+                  <span :class="row.direction === '多' ? 'up' : 'down'">{{ row.direction }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="volume" label="持仓量" min-width="60" />
+              <el-table-column label="开仓均价" min-width="82">
+                <template #default="{ row }">{{ num(row.price) }}</template>
+              </el-table-column>
+              <el-table-column label="盈利价差" min-width="82">
+                <template #default="{ row }">
+                  <span :class="priceDiffClass(row)">{{ fmtPriceDiff(row) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="持仓盈亏" min-width="88">
+                <template #default="{ row }">
+                  <span :class="row.pnl >= 0 ? 'up' : 'down'">{{ num(row.pnl) }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="pager">
+              <el-pagination v-model:current-page="positionPage" :page-size="PAGE_SIZE" :total="positions.length"
+                             layout="total, prev, pager, next" size="small" background />
+            </div>
+          </section>
 
-        <!-- 跟单记录 -->
-        <section class="card">
-          <div class="card-head">跟单记录</div>
-          <el-table :data="records" size="small" empty-text="暂无跟单记录" max-height="320">
-            <el-table-column prop="time" label="时间" width="80" />
-            <el-table-column prop="symbol" label="合约" width="90" />
-            <el-table-column label="对方操作" width="130">
-              <template #default="{ row }">{{ row.src_action }} {{ row.src_volume }}手 @{{ row.src_price }}</template>
-            </el-table-column>
-            <el-table-column label="我的操作" width="150">
-              <template #default="{ row }">
-                <template v-if="row.action">{{ actionText[row.action] }} {{ row.volume }}手<template v-if="row.price"> @{{ row.price }}</template></template>
-                <template v-else>-</template>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
-          </el-table>
-        </section>
+          <section class="card">
+            <div class="card-head">跟单记录</div>
+            <el-table :data="pagedRecords" size="small" empty-text="暂无跟单记录" class="fixed-rows"
+                      :height="tableHeight(PAGE_SIZE)">
+              <el-table-column prop="time" label="时间" width="64" />
+              <el-table-column prop="symbol" label="合约" width="68" show-overflow-tooltip />
+              <el-table-column label="对方操作" min-width="84" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.src_action }} {{ row.src_volume }}手 @{{ row.src_price }}</template>
+              </el-table-column>
+              <el-table-column label="我的操作" min-width="96" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <template v-if="row.action">{{ actionText[row.action] }} {{ row.volume }}手<template v-if="row.price"> @{{ row.price }}</template></template>
+                  <template v-else>-</template>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="78">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="message" label="说明" min-width="70" show-overflow-tooltip />
+            </el-table>
+            <div class="pager">
+              <el-pagination v-model:current-page="recordPage" :page-size="PAGE_SIZE" :total="records.length"
+                             layout="total, prev, pager, next" size="small" background />
+            </div>
+          </section>
+        </div>
 
-        <!-- 运行日志 -->
-        <section class="card">
-          <div class="card-head">运行日志</div>
+        <!-- 运行日志：不分页，占满右侧剩下的全部高度，超出时容器内纵向滚动 -->
+        <section class="card logs-card">
+          <div class="card-head logs-head">
+            <span>运行日志</span>
+            <el-button size="small" :disabled="!logs.length" :loading="exportingLogs" @click="handleExportLogs">
+              导出 Excel
+            </el-button>
+          </div>
           <div class="logs">
             <div v-if="!logs.length" class="empty">暂无日志</div>
             <div v-for="(l, i) in logs" :key="i" :class="['log-line', l.level]">
@@ -226,7 +248,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBrokers } from '@/api'
 import {
   monitorLogin, monitorLogout, getMonitorAccount, getMonitorStatus, getMonitorRecords,
-  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, saveCopyConfig, resumeCopy
+  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, saveCopyConfig, resumeCopy,
+  exportMonitorLogs
 } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
 import { FUTURES_PRODUCTS } from '@/constants/futuresProducts'
@@ -275,6 +298,68 @@ const runClass = computed(() => {
   if (status.value?.paused_reason) return 'paused'
   return 'live'
 })
+
+// ---- 分页（持仓、跟单记录相同；运行日志不分页，容器内滚动）----
+// 表格高度固定 = 表头 + 每页条数 x 行高（行高见 Monitor.css 的 .fixed-rows）：
+// 不足一页时下方留空、分页条始终显示，数据来去不会让卡片高度跳动
+const PAGE_SIZE = 5
+const TABLE_ROW_HEIGHT = 36
+const tableHeight = (rows) => TABLE_ROW_HEIGHT * (rows + 1)
+const positions = computed(() => account.value?.positions || [])
+const positionPage = ref(1)
+const recordPage = ref(1)
+const slicePage = (list, page) => list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+const pagedPositions = computed(() => slicePage(positions.value, positionPage.value))
+const pagedRecords = computed(() => slicePage(records.value, recordPage.value))
+// 数据每 2 秒刷新一次，条数会变少（如平仓、重新登录）：当前页超出总页数时回到最后一页
+const clampPage = (pageRef, total) => {
+  const last = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  if (pageRef.value > last) pageRef.value = last
+}
+watch(() => positions.value.length, (n) => clampPage(positionPage, n))
+watch(() => records.value.length, (n) => clampPage(recordPage, n))
+
+// ---- 导出运行日志为 Excel ----
+const exportingLogs = ref(false)
+const handleExportLogs = async () => {
+  exportingLogs.value = true
+  try {
+    const blob = await exportMonitorLogs()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const d = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    a.href = url
+    a.download = `运行日志_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+    ElMessage.success('运行日志已导出')
+  } catch (e) {
+    ElMessage.error('导出运行日志失败')
+  } finally {
+    exportingLogs.value = false
+  }
+}
+
+// 盈利价差 = 每手赚（亏）了多少个价格点：多头 = 最新价 − 开仓均价，空头 = 开仓均价 − 最新价（与下单交易页一致）。
+// 盈利为正、亏损为负；拿不到最新价或开仓均价时显示 --
+const priceDiff = (p) => {
+  if (!p.last_price || !p.price) return null
+  return p.direction === '多' ? p.last_price - p.price : p.price - p.last_price
+}
+const fmtPriceDiff = (p) => {
+  const d = priceDiff(p)
+  if (d === null) return '--'
+  const s = String(Number(d.toFixed(6)))   // 最多 6 位小数、去掉末尾的 0，吞掉浮点误差（如 760.5600000000001）
+  return d > 0 ? '+' + s : s
+}
+// 颜色：盈利红、亏损绿、持平不变色
+const priceDiffClass = (p) => {
+  const d = priceDiff(p)
+  return d > 0 ? 'up' : d < 0 ? 'down' : ''
+}
 
 const money = (v) => (v === null || v === undefined ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const num = (v) => (v === null || v === undefined ? '-' : Number(v).toFixed(2))

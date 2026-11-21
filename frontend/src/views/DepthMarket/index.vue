@@ -72,9 +72,8 @@
 
       <!-- 右侧：工具栏 + K 线 + 盘口 -->
       <div class="chart-container">
-        <div class="chart-header">
-          <div class="toolbar-title">深度行情<span v-if="fileInfo" class="toolbar-symbol">{{ fileInfo.symbol }}</span></div>
-          <div v-if="fileInfo" class="toolbar">
+        <div v-if="fileInfo" class="chart-header">
+          <div class="toolbar">
             <div class="info-item">
               <el-radio-group v-model="viewMode" size="small" @change="onViewModeChange">
                 <el-radio-button value="kline">K 线</el-radio-button>

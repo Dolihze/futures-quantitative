@@ -902,6 +902,38 @@
         }
       }
     },
+    "/api/monitor/logs/export": {
+      "get": {
+        "operationId": "get_monitor_monitor_logs_export",
+        "summary": "导出运行日志为 Excel（.xlsx），时间正序",
+        "tags": [
+          "monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/monitor/records": {
       "get": {
         "operationId": "get_monitor_monitor_records",

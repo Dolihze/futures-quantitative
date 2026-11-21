@@ -80,7 +80,7 @@
   gap: 16px;
   padding: 20px;
   background: var(--bg-page-alt);
-  overflow-y: auto;
+  overflow: hidden;   /* 右侧内容区自己不滚动：日志卡片撑满剩余高度，日志在卡片内滚动 */
 }
 
 .control-panel {
@@ -270,9 +270,61 @@
 .up   { color: var(--up); }
 .down { color: var(--down); }
 
+/* 持仓 | 跟单记录：并排两列，各占一半宽度。minmax(0, 1fr)：表格列再宽也不会把某一列撑开 */
+.table-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* 固定行高的表格：表头和每一行都是 36px（与 index.vue 里的 TABLE_ROW_HEIGHT 一致）。
+   表格高度 = 36 x (每页条数 + 1)，所以满页时刚好放下、不出滚动条；不足一页时下方留空，高度不变。
+   单元格内容（状态标签、较长文字）不允许撑高行。 */
+.fixed-rows :deep(.el-table__header th.el-table__cell),
+.fixed-rows :deep(.el-table__body td.el-table__cell) {
+  height: 36px;
+  padding: 0;
+  box-sizing: border-box;
+}
+.fixed-rows :deep(.el-table__cell .cell) {
+  line-height: 20px;
+  white-space: nowrap;
+}
+/* 表头和数据一律居左（持仓、跟单记录两张表） */
+.fixed-rows :deep(.el-table__cell) {
+  text-align: left;
+}
+
+/* 分页条：靠右，和表格之间留一点间距 */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* 日志卡片：占满右侧内容区的剩余高度（.content 是纵向 flex），内部 .logs 超出时纵向滚动。
+   min-height 防止上方内容很多时被压成一条线（此时整个 .content 出滚动条）。 */
+.logs-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;   /* 不设最小高度：只占上方内容之外剩下的高度，放不下的日志在 .logs 内部滚动 */
+}
+/* 上方的提示 / 概览 / 持仓 / 记录按内容定高，不被日志卡片挤压 */
+.content > :not(.logs-card) {
+  flex: none;
+}
+.logs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+
 /* 日志 */
 .logs {
-  max-height: 240px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
@@ -295,6 +347,11 @@
 
 @media (max-width: 1100px) {
   .main-container { flex-direction: column; height: auto; }
+  /* 单列时整页自然增高，没有“剩余高度”可撑：日志给固定高度，超出滚动 */
+  .content { overflow: visible; }
+  .logs-card { flex: none; }
+  .logs { flex: none; height: 240px; }
+  .table-row { grid-template-columns: minmax(0, 1fr); }
   .sidebar { width: 100%; border-right: none; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
