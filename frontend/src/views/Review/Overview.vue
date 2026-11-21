@@ -69,9 +69,7 @@
             <div class="ov-hero-label">全部盈亏{{ hasFee ? '（已扣手续费）' : '' }}</div>
             <div class="ov-hero-range">{{ overview.start }} 至 {{ overview.end }}</div>
             <div class="ov-hero-value" :class="pnlClass(stats.totalPnl)">{{ plain(stats.totalPnl) }}</div>
-            <div class="ov-hero-sub">
-              共 {{ fileCount }} 个文件 · {{ stats.tradingDays }} 个交易日 · 手续费合计 {{ plain(stats.totalFee) }}
-            </div>
+            <div class="ov-hero-sub">手续费合计 {{ plain(stats.totalFee) }}</div>
           </section>
 
           <section class="ov-card">
@@ -112,11 +110,11 @@
               <h3 class="ov-card-title">收益走势 <small>（{{ rangeLabel }}）</small></h3>
               <div class="ov-seg">
                 <button type="button" :class="{ active: trendMode === 'cum' }" @click="trendMode = 'cum'">累计盈亏</button>
-                <button type="button" :class="{ active: trendMode === 'day' }" @click="trendMode = 'day'">当日盈亏</button>
+                <button type="button" :class="{ active: trendMode === 'day' }" @click="trendMode = 'day'">每日盈亏</button>
               </div>
             </div>
             <div class="ov-trend-tip" v-if="trendTip">
-              {{ trendMode === 'cum' ? '累计盈亏' : '当日盈亏' }}：
+              {{ trendMode === 'cum' ? '累计盈亏' : '每日盈亏' }}：
               <b :class="pnlClass(trendTip.value)">{{ plain(trendTip.value) }}</b>
               <span class="ov-trend-date">{{ trendTip.day.replaceAll('-', '/') }}</span>
             </div>
@@ -132,25 +130,63 @@
             <div class="ov-trend-tip" v-if="prodTip">
               {{ prodTip.product }}
               <span>盈亏 <b :class="pnlClass(prodTip.pnl)">{{ plain(prodTip.pnl) }}</b></span>
-              <span>胜率 <b class="amber">{{ prodTip.winRate.toFixed(2) }}%</b></span>
+              <span>胜率 <b :class="prodTip.winRate >= 50 ? 'up' : 'down'">{{ prodTip.winRate.toFixed(2) }}%</b></span>
               <span class="ov-trend-date">{{ prodTip.closeCount }} 笔</span>
             </div>
             <div ref="prodRef" class="ov-chart ov-chart-fill"></div>
           </section>
 
-          <section class="ov-card">
+          <section class="ov-card ov-cal-card">
             <div class="ov-card-head">
-              <h3 class="ov-card-title">每月盈亏</h3>
-              <div class="ov-month-nav">
-                <button type="button" class="ov-nav-btn" :disabled="!canPrevMonth" @click="shiftMonth(-1)">‹</button>
-                <select v-model="monthKey" class="ov-month-select">
-                  <option v-for="m in monthList" :key="m" :value="m">{{ m.slice(0, 4) }}年{{ Number(m.slice(5)) }}月</option>
-                </select>
-                <button type="button" class="ov-nav-btn" :disabled="!canNextMonth" @click="shiftMonth(1)">›</button>
+              <!-- 维度：年收益 / 月收益 / 日收益（在左侧，替代原来的标题） -->
+              <div class="ov-seg ov-seg-sm">
+                <button
+                  v-for="v in calViews"
+                  :key="v.key"
+                  type="button"
+                  :class="{ active: calView === v.key }"
+                  @click="selectCalView(v.key)"
+                >{{ v.label }}</button>
+              </div>
+
+              <div class="ov-cal-tools">
+                <!-- 下拉选择（固定宽度）：日 = 月份，月 = 年份；年维度没有下拉 -->
+                <div v-if="calView !== 'year'" class="ov-picker-wrap" ref="pickerRef">
+                  <div class="ov-month-nav">
+                    <button
+                      type="button"
+                      class="ov-picker-btn"
+                      :class="{ open: pickerOpen }"
+                      aria-haspopup="listbox"
+                      :aria-expanded="pickerOpen"
+                      @click="togglePicker"
+                    >
+                      <span>{{ pickerText }}</span>
+                      <svg class="ov-picker-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                  </div>
+                  <transition name="ov-pop">
+                    <ul v-if="pickerOpen" class="ov-picker-list" role="listbox">
+                      <li
+                        v-for="o in pickerOptions"
+                        :key="o.value"
+                        class="ov-picker-item"
+                        :class="{ active: o.value === pickerValue }"
+                        role="option"
+                        :aria-selected="o.value === pickerValue"
+                        @click="choose(o.value)"
+                      >
+                        <span>{{ o.label }}</span>
+                        <svg v-if="o.value === pickerValue" class="ov-picker-check" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 6.3 2.4 2.4 4.6-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </li>
+                    </ul>
+                  </transition>
+                </div>
               </div>
             </div>
 
-            <div class="ov-cal">
+            <!-- 日：当月日历（补满 6 行，和月 / 年视图同高） -->
+            <div v-if="calView === 'day'" class="ov-cal ov-cal-body" :style="{ '--cal-rows': calendarCells.length / 7 }">
               <div class="ov-cal-week" v-for="w in weekNames" :key="w">{{ w }}</div>
               <div
                 v-for="(cell, i) in calendarCells"
@@ -165,10 +201,26 @@
                 </template>
               </div>
             </div>
+
+            <!-- 月 / 年：大格子，点击钻取到下一级 -->
+            <div v-else class="ov-period ov-cal-body" :class="calView === 'year' ? 'is-year' : 'is-month'">
+              <div
+                v-for="cell in (calView === 'month' ? monthCells : yearCells)"
+                :key="cell.key"
+                class="ov-period-cell"
+                :class="[cell.cls, { clickable: cell.traded }]"
+                :title="cell.traded ? `${cell.days} 个交易日，点击查看${calView === 'year' ? '各月' : '每日'}` : ''"
+                @click="drillDown(cell)"
+              >
+                <div class="ov-period-name">{{ cell.name }}</div>
+                <div class="ov-period-pnl" v-if="cell.traded">{{ cell.text }}</div>
+              </div>
+
+            </div>
+
             <div class="ov-month-total">
-              {{ Number(monthKey.slice(5)) }}月累计收益：
-              <b :class="pnlClass(monthPnl)">{{ plain(monthPnl) }}</b>
-              <span class="ov-trend-date">{{ monthTradingDays }} 个交易日</span>
+              {{ calTotal.label }}：
+              <b :class="pnlClass(calTotal.pnl)">{{ plain(calTotal.pnl) }}</b>
             </div>
           </section>
         </div>
@@ -219,7 +271,7 @@ const ranges = [
   { key: 'all', label: '全部' },
   { key: 'custom', label: '指定' }
 ]
-const rangeKey = ref('all')
+const rangeKey = ref('month')         // 默认近 1 月
 const customRange = ref(null)
 const rangeLabel = computed(() => ranges.find((r) => r.key === rangeKey.value)?.label || '全部')
 
@@ -275,10 +327,12 @@ async function loadOverview() {
     hasFee.value = !!res.hasFee
     warnings.value = res.warnings || []
     skipped.value = res.skipped || []
+    const firstLoad = !allEnd.value
     allStart.value = res.allStart || ''
     allEnd.value = res.allEnd || ''
-    const months = monthList.value
-    if (!months.includes(monthKey.value)) monthKey.value = months[months.length - 1] || ''
+    // 默认「近N」但还不知道数据的最后一个交易日：这次拿到的是全部数据，用 allEnd 算出范围后再请求一次
+    if (firstLoad && allEnd.value && Object.keys(rangeParams()).length) return loadOverview()
+    syncCalendarKeys()
     await nextTick()
     renderAll()
   } catch (error) {
@@ -298,7 +352,7 @@ const prodRef = ref(null)
 let trendChart = null
 let prodChart = null
 
-const trendMode = ref('cum')          // cum = 累计盈亏，day = 当日盈亏
+const trendMode = ref('cum')          // cum = 累计盈亏，day = 每日盈亏
 const trendTip = ref(null)            // { day, value }：悬停时显示在图表上方
 const prodTip = ref(null)             // 当前悬停（默认第一个）的品种
 
@@ -329,7 +383,7 @@ function renderTrend() {
         const p = ps[0]
         const d = days[p.dataIndex]
         trendTip.value = { day: d.day, value: values[p.dataIndex] }
-        return `${d.day}<br/>当日盈亏：${plain(d.pnl)}<br/>累计盈亏：${plain(d.cumPnl)}<br/>平仓 ${d.closeCount} 笔`
+        return `${d.day}<br/>每日盈亏：${plain(d.pnl)}<br/>累计盈亏：${plain(d.cumPnl)}<br/>平仓 ${d.closeCount} 笔`
       }
     },
     xAxis: {
@@ -454,27 +508,150 @@ watch(hasData, async (v) => {
 watch(trendMode, renderTrend)
 onThemeChange(() => renderAll())
 
-// ---------- 月历 ----------
+// ---------- 每月盈亏：日 / 月 / 年 三个维度 ----------
+// 日：当月日历（点格子进单日复盘）；月：某一年的 12 个月；年：所有有数据的年份。
+// 月 / 年的盈亏 = 期间内各交易日 pnl（已是平仓盈亏 − 手续费）之和，和「当月累计收益」同一口径。
+// 点月格 -> 钻取到该月的日视图；点年格 -> 钻取到该年的月视图。
+const calView = ref('day')            // 'day' | 'month' | 'year'
+const calViews = [
+  { key: 'year', label: '年收益' },
+  { key: 'month', label: '月收益' },
+  { key: 'day', label: '日收益' }
+]
 const weekNames = ['日', '一', '二', '三', '四', '五', '六']
-const monthKey = ref('')   // 'YYYY-MM'
+const monthKey = ref('')              // 'YYYY-MM'：日视图当前看的月份
+const yearKey = ref('')               // 'YYYY'：月视图当前看的年份
 
 const monthList = computed(() => {
   const set = new Set(daysList.value.map((d) => d.day.slice(0, 7)))
   return [...set].sort()
 })
-const monthIdx = computed(() => monthList.value.indexOf(monthKey.value))
-const canPrevMonth = computed(() => monthIdx.value > 0)
-const canNextMonth = computed(() => monthIdx.value >= 0 && monthIdx.value < monthList.value.length - 1)
-const shiftMonth = (n) => {
-  const m = monthList.value[monthIdx.value + n]
-  if (m) monthKey.value = m
+const yearList = computed(() => {
+  const set = new Set(daysList.value.map((d) => d.day.slice(0, 4)))
+  return [...set].sort()
+})
+
+// 当前维度下，下拉里可选的项 / 当前选中项 / 显示文字（年维度没有下拉，整个控件隐藏）
+const monthLabel = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`
+const pickerOptions = computed(() => {
+  if (calView.value === 'day') return monthList.value.map((m) => ({ value: m, label: monthLabel(m) }))
+  if (calView.value === 'month') return yearList.value.map((y) => ({ value: y, label: `${y}年` }))
+  return []
+})
+const pickerValue = computed(() => (calView.value === 'day' ? monthKey.value : yearKey.value))
+const pickerText = computed(() => pickerOptions.value.find((o) => o.value === pickerValue.value)?.label || '—')
+function pickOption(value) {
+  if (calView.value === 'day') monthKey.value = value
+  else yearKey.value = value
 }
 
 const dayMap = computed(() => new Map(daysList.value.map((d) => [d.day, d])))
+const round2 = (v) => Math.round(v * 100) / 100
 
-const monthDays = computed(() => daysList.value.filter((d) => d.day.startsWith(monthKey.value)))
-const monthPnl = computed(() => Math.round(monthDays.value.reduce((s, d) => s + d.pnl, 0) * 100) / 100)
-const monthTradingDays = computed(() => monthDays.value.length)
+// 按前缀（'YYYY-MM' / 'YYYY'）汇总：{ pnl, days }
+function sumBy(prefix) {
+  let pnl = 0
+  let days = 0
+  for (const d of daysList.value) {
+    if (d.day.startsWith(prefix)) {
+      pnl += d.pnl
+      days++
+    }
+  }
+  return { pnl: round2(pnl), days }
+}
+
+// 底部汇总：随维度变化（日 = 当月累计；月 = 当年累计；年 = 全部累计）
+const calTotal = computed(() => {
+  if (calView.value === 'day') {
+    const s = sumBy(monthKey.value)
+    return { label: `${Number(monthKey.value.slice(5))}月累计收益`, ...s }
+  }
+  if (calView.value === 'month') {
+    const s = sumBy(yearKey.value)
+    return { label: `${yearKey.value}年累计收益`, ...s }
+  }
+  const s = sumBy('')
+  return { label: '全部累计收益', ...s }
+})
+
+const cellClass = (pnl) => (pnl > 0 ? 'win' : pnl < 0 ? 'loss' : 'flat')
+const cellText = (pnl) => (Math.abs(pnl) >= 10000 ? `${(pnl / 10000).toFixed(1)}万` : String(Math.round(pnl)))
+
+// 月视图：当年 12 个月；没有成交的月份只显示月份名
+const monthCells = computed(() => {
+  if (!yearKey.value) return []
+  return Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1
+    const key = `${yearKey.value}-${String(m).padStart(2, '0')}`
+    const s = sumBy(key)
+    return s.days
+      ? { key, name: `${m}月`, traded: true, cls: cellClass(s.pnl), text: cellText(s.pnl), days: s.days }
+      : { key, name: `${m}月`, traded: false, cls: 'idle' }
+  })
+})
+
+// 年视图：所有有数据的年份
+const yearCells = computed(() =>
+  yearList.value.map((y) => {
+    const s = sumBy(y)
+    return { key: y, name: `${y}年`, traded: true, cls: cellClass(s.pnl), text: cellText(s.pnl), days: s.days }
+  })
+)
+
+// 钻取：年 -> 月视图（定位到该年），月 -> 日视图（定位到该月）
+function drillDown(cell) {
+  if (!cell.traded) return
+  if (calView.value === 'year') {
+    yearKey.value = cell.key
+    calView.value = 'month'
+  } else if (calView.value === 'month') {
+    monthKey.value = cell.key
+    calView.value = 'day'
+  }
+}
+
+// 切换维度时让「当前位置」保持连贯：日 -> 月，用当前月份所在的年；月 -> 日，选该年里最后一个有数据的月
+function selectCalView(key) {
+  if (key === calView.value) return
+  if (key === 'month' && monthKey.value) yearKey.value = monthKey.value.slice(0, 4)
+  if (key === 'day' && yearKey.value) {
+    const inYear = monthList.value.filter((m) => m.startsWith(yearKey.value))
+    if (inYear.length && !monthKey.value.startsWith(yearKey.value)) monthKey.value = inYear[inYear.length - 1]
+  }
+  calView.value = key
+  pickerOpen.value = false
+}
+
+// ---------- 自绘下拉（替代原生 <select>：原生下拉的弹层样式浏览器说了算，没法和主题统一） ----------
+const pickerOpen = ref(false)
+const pickerRef = ref(null)
+function togglePicker() {
+  if (!pickerOptions.value.length) return
+  pickerOpen.value = !pickerOpen.value
+  if (pickerOpen.value) {
+    // 展开后把选中项滚动到可视区（月份很多时，选中项可能在列表下方）
+    nextTick(() => pickerRef.value?.querySelector('.ov-picker-item.active')?.scrollIntoView({ block: 'nearest' }))
+  }
+}
+function choose(value) {
+  pickOption(value)
+  pickerOpen.value = false
+}
+function onDocPointerDown(e) {
+  if (pickerOpen.value && pickerRef.value && !pickerRef.value.contains(e.target)) pickerOpen.value = false
+}
+function onDocKeydown(e) {
+  if (e.key === 'Escape') pickerOpen.value = false
+}
+
+// 当前月份 / 年份落在新数据范围之外时（换了时间范围、数据重新加载），回到最近的一个
+function syncCalendarKeys() {
+  const months = monthList.value
+  if (!months.includes(monthKey.value)) monthKey.value = months[months.length - 1] || ''
+  const years = yearList.value
+  if (!years.includes(yearKey.value)) yearKey.value = years[years.length - 1] || ''
+}
 
 // 当月网格：前面补上月的空格，后面补到整周。有成交的格子红盈绿亏，其余只显示日期
 const calendarCells = computed(() => {
@@ -499,6 +676,7 @@ const calendarCells = computed(() => {
       cells.push({ day: d, date, traded: false, cls: weekend ? 'weekend' : 'idle' })
     }
   }
+  // 补到整周：月份跨 4 / 5 / 6 周就是 4 / 5 / 6 行，行高由 CSS 按行数拉伸，总高度恒定
   while (cells.length % 7) cells.push({ day: 0, cls: 'blank' })
   return cells
 })
@@ -508,6 +686,8 @@ let ro = null
 onMounted(() => {
   loadOverview()
   window.addEventListener('resize', resizeAll)
+  document.addEventListener('pointerdown', onDocPointerDown)
+  document.addEventListener('keydown', onDocKeydown)
   // 容器宽度变化（侧边栏 / 窗口缩放）时重新量尺寸
   // 图表高度由 flex 布局决定（不再是固定像素），所以直接观察每个图表容器自己的尺寸，
   // 而不只是 .ov-body：窗口缩放、卡片之间重新分配高度时都会触发。
@@ -525,6 +705,8 @@ watch(hasData, async (v) => {
 })
 onUnmounted(() => {
   window.removeEventListener('resize', resizeAll)
+  document.removeEventListener('pointerdown', onDocPointerDown)
+  document.removeEventListener('keydown', onDocKeydown)
   ro?.disconnect()
   trendChart?.dispose()
   prodChart?.dispose()

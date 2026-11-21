@@ -268,11 +268,7 @@
 }
 
 .ov-hero-range {
-  display: inline-block;
   margin: 10px 0 6px;
-  padding: 3px 16px;
-  border-radius: 4px;
-  background: rgba(127, 127, 127, 0.15);
   color: var(--text-secondary);
   font-size: 13px;
 }
@@ -355,7 +351,7 @@
   line-height: 1.6;
 }
 
-/* 分段按钮（累计盈亏 / 当日盈亏） */
+/* 分段按钮（累计盈亏 / 每日盈亏） */
 .ov-seg {
   display: inline-flex;
   padding: 3px;
@@ -430,47 +426,249 @@
   overflow: hidden;
 }
 
-.ov-nav-btn {
-  width: 36px;
-  height: 34px;
-  border: none;
-  background: var(--nav-btn-bg);
-  color: var(--accent2);
-  font-size: 18px;
-  cursor: pointer;
+/* 标题栏右侧：维度切换 + 日期选择。
+ * 卡片内容区只有约 400px：标题 + 分段控件 + 选择器（日维度最长，「2026年10月」）加起来很紧，
+ * 所以标题、选择器文字都禁止换行，并把控件压紧；标题允许在极端情况下被挤省略，也不让它折行。 */
+.ov-cal-card .ov-card-head {
+  gap: 8px;
+  height: 34px;   /* 年维度没有选择器，固定头部高度避免切换时卡片高度变化 */
 }
 
-.ov-nav-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+/* 下拉框靠右：年维度没有下拉时它不渲染，.ov-cal-tools 仍占位，Tab 保持在左侧 */
+.ov-cal-tools {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-left: auto;
 }
 
-.ov-month-select {
-  height: 34px;
-  padding: 0 14px;
+.ov-seg-sm {
+  padding: 2px;
+}
+
+.ov-seg-sm button {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+/* 自绘下拉：按钮 + 弹层。原生 <select> 的弹层由浏览器绘制，样式改不动，所以自己画 */
+.ov-picker-wrap {
+  position: relative;
+}
+
+.ov-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  width: 104px;   /* 固定宽度：日（2026年10月）/ 月 / 年三个维度下保持一致 */
+  padding: 0 8px;
+  white-space: nowrap;
   border: none;
-  border-left: 1px solid var(--nav-btn-border);
-  border-right: 1px solid var(--nav-btn-border);
   background: transparent;
   color: var(--text-body);
-  font-size: 14px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
-  text-align-last: center;
+  transition: background 0.15s, color 0.15s;
 }
 
-.ov-month-select option {
+.ov-picker-btn:hover,
+.ov-picker-btn.open {
+  background: var(--nav-btn-bg-hover);
+}
+
+.ov-picker-btn.open {
+  color: var(--accent2);
+}
+
+.ov-picker-caret {
+  width: 10px;
+  height: 10px;
+  color: var(--text-secondary);
+  transition: transform 0.18s;
+}
+
+.ov-picker-btn.open .ov-picker-caret {
+  transform: rotate(180deg);
+  color: var(--accent2);
+}
+
+/* 弹层：向上展开（月历卡片在页面下方，向下展开会被窗口底部裁掉）；右对齐到按钮组 */
+.ov-picker-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  min-width: 100%;
+  max-height: 232px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-popup);
+  border-radius: 10px;
   background: var(--bg-dropdown);
+  box-shadow: var(--shadow-dropdown);
+}
+
+.ov-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-option);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ov-picker-item:hover {
+  background: rgba(var(--accent2-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+.ov-picker-item.active {
+  background: rgba(var(--accent2-rgb), 0.18);
+  color: var(--accent2);
+  font-weight: 600;
+}
+
+.ov-picker-check {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
+/* 弹层滚动条（月份很多时）：细一点，不抢眼 */
+.ov-picker-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ov-picker-list::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+
+.ov-pop-enter-active,
+.ov-pop-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  transform-origin: bottom right;
+}
+
+.ov-pop-enter-from,
+.ov-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+
+/* 日 / 月 / 年三个维度共用的内容区：固定高度，切换维度时卡片高度不变。
+ * 日视图 = 1 行星期头 + 6 行日期；月视图 = 3 行；年视图 = 自动换行，超出内部滚动。 */
+.ov-cal-body {
+  flex: none;
+  height: 292px;   /* 日：30px 星期头 + 6 行 x 约 43px；月：3 行 x 约 92px */
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+/* 卡片是纵向 flex：body 固定高度，汇总行紧跟其后；卡片总高恒定 */
+.ov-cal-card {
+  flex: none;
+}
+
+/* 月 / 年维度：大格子网格 */
+.ov-period {
+  display: grid;
+  gap: 8px;
+  align-content: stretch;
+}
+
+.ov-period.is-month {
+  grid-template-columns: repeat(4, minmax(0, 1fr));   /* 12 个月 = 4 列 x 3 行 */
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.ov-period.is-year {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-auto-rows: 84px;   /* 年份少时靠上排列，多了在固定高度的容器内滚动 */
+  align-content: start;
+}
+
+.ov-period-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--text-body);
+}
+
+.ov-period-name {
+  font-size: 14px;
+}
+
+.ov-period-pnl {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-period-cell.idle .ov-period-name {
+  color: var(--text-secondary);
+}
+
+.ov-period-cell.win {
+  background: rgba(var(--up-rgb), 0.18);
+}
+
+.ov-period-cell.win .ov-period-pnl {
+  color: var(--up);
+}
+
+.ov-period-cell.loss {
+  background: rgba(var(--down-rgb), 0.18);
+}
+
+.ov-period-cell.loss .ov-period-pnl {
+  color: var(--down);
+}
+
+.ov-period-cell.flat {
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.ov-period-cell.clickable {
+  cursor: pointer;
+  transition: filter 0.15s, border-color 0.15s;
+}
+
+.ov-period-cell.clickable:hover {
+  filter: brightness(1.25);
+  border-color: var(--accent2);
 }
 
 .ov-cal {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  margin-top: 8px;
+  /* 星期头 + N 行日期：N 由当月跨越的周数决定（4 / 5 / 6，见内联变量 --cal-rows），行高均分剩余高度 */
+  grid-template-rows: 30px repeat(var(--cal-rows, 6), minmax(0, 1fr));
 }
 
 .ov-cal-week {
-  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border-bottom: 1px solid rgba(var(--accent2-rgb), 0.12);
   color: var(--text-body);
   font-size: 13px;
@@ -482,7 +680,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 0;
   border: 1px solid transparent;
   color: var(--text-body);
 }
