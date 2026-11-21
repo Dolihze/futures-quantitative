@@ -60,15 +60,18 @@
 /* 主内容区 */
 .main-content {
   padding: 32px 24px;
-  max-width: 1200px;
+  max-width: 1360px;   /* 原 1200px；1600px 太宽。1440 宽的窗口左右各空出约 40px */
   margin: 0 auto;
 }
 
 /* 数据统计 */
+/* 固定 4 列等宽，随容器宽度自适应；列间距与下方两列面板的间距（24px）一致，
+   这样第 2 张卡片的右边缘正好对齐左列面板的右边缘，第 3 张的左边缘对齐右列面板。
+   minmax(0, 1fr)：金额很长时不会把列撑宽。 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
   margin-bottom: 32px;
 }
 
@@ -76,7 +79,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px;
+  padding: 20px 28px;   /* 左右内边距加大，文字不贴着卡片左边 */
   transition: border-color 0.2s, transform 0.2s;
 }
 
@@ -900,6 +903,7 @@
 
 /* 窗口较窄时恢复上下堆叠，避免两列都被压得过窄 */
 @media (max-width: 1000px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .trade-row { grid-template-columns: minmax(0, 1fr); }
   .trade-col + .trade-col { margin-top: 28px; }
   .trade-col + .trade-col .orders-header { margin-top: 0; }
