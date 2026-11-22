@@ -83,6 +83,7 @@ def create_app():
     CORS(app, supports_credentials=True, origins=[
         'tauri://localhost',
         'https://tauri.localhost',
+        'http://tauri.localhost',   # Tauri 2 在 Windows 上默认使用 http://tauri.localhost
         'http://localhost:5173',
         'http://127.0.0.1:5173',
     ])
