@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "期货量化交易系统 - Tauri 2.x",
   "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
     "tauri": "tauri",
     "setup": "node scripts/setup.mjs",

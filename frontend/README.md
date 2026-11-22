@@ -16,14 +16,16 @@
 
 ### 安装依赖
 
+在**项目根目录**执行一次即可（前端是根目录 npm workspace 的一部分，依赖装在根目录的 `node_modules/`，不需要进 `frontend/` 再装一次）：
+
 ```bash
-cd frontend
 npm install
 ```
 
 ### 开发模式
 
 ```bash
+cd frontend
 npm run dev
 ```
 

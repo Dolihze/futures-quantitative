@@ -1,5 +1,5 @@
 // 首次运行 / 换新机器时的一键准备：npm run setup
-// 依次：安装前端依赖 → 安装 Python 依赖 → 打包后端 sidecar。
+// 依次：安装 Python 依赖 → 打包后端 sidecar（前端依赖由根目录的 `npm install` 负责）。
 // 之后用 `npm run dev` 启动即可。
 import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
@@ -16,7 +16,7 @@ function run(title, command, cwd = root) {
   }
 }
 
-run('安装前端依赖', 'npm install', join(root, 'frontend'))
+// 前端依赖已经由根目录的 `npm install` 一并装好（package.json 的 workspaces 包含 frontend），这里不再单独安装
 // 用 `python -m pip` 而不是裸 `pip`，保证装进的是后面打包所用的同一个 Python
 run('安装 Python 依赖', 'python -m pip install -r requirements.txt')
 run('打包后端 sidecar', 'npm run backend:build')

@@ -86,18 +86,20 @@ futures-quantitative/
 ## 快速开始
 
 ```bash
-# 1. 首次准备（根目录 npm install 之后只需执行一次）
-npm install
-npm run setup     # 装前端依赖 + 装 Python 依赖 + 打包后端 sidecar
+# 1. 首次准备（只需执行一次）
+npm install       # 根目录一条命令，前端（frontend/）的依赖也一并装好，不需要再 cd frontend
+npm run setup     # 装 Python 依赖 + 打包后端 sidecar
 
 # 2. 启动
 npm run dev
 ```
 
+> 根目录 `package.json` 用 npm workspaces 把 `frontend/` 纳入同一次安装：所有依赖装在根目录的 `node_modules/`，只有一份 `package-lock.json`（在根目录）。
+> 在 `frontend/` 目录里执行 `npm run dev` / `npm run build` 等脚本仍然可用，只是不需要、也不要再单独 `npm install`。
+
 `npm run setup` 等价于手动执行：
 
 ```bash
-cd frontend && npm install && cd ..
 python -m pip install -r requirements.txt
 npm run backend:build
 ```
@@ -111,7 +113,8 @@ npm run backend:build
 
 | 命令 | 作用 |
 |---|---|
-| `npm run setup` | 首次准备：安装前端、Python 依赖并打包 sidecar |
+| `npm install` | 安装全部 Node 依赖（根目录 + 前端，一条命令） |
+| `npm run setup` | 首次准备：安装 Python 依赖并打包 sidecar |
 | `npm run dev` | 启动完整开发环境（Tauri + 前端 + sidecar） |
 | `npm run build` | 构建安装包 |
 | `npm run backend:build` | 用 PyInstaller（onedir）打包后端到 `src-tauri/backend-dist/` |
