@@ -86,17 +86,33 @@ def test_credentials_contract():
 # ---------------------------------------------------------------------------
 # 量化回测
 # ---------------------------------------------------------------------------
+def _tick_csv(symbol, rows_):
+    """rows_: [(YYYYMMDDHHMMSS, price, 当日累计量)]"""
+    rows = ["symbol,name,time,current,volume,money,position"]
+    rows += [f"{symbol},测试,{t}000,{p},{v},{v * p * 10},1000" for t, p, v in rows_]
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
 def test_backtest_contracts(monkeypatch):
     monkeypatch.setattr(backtest_service, "fetch_backtest_bars", lambda symbol, period: _bars())
-    _validate(schemas.BacktestProducts, client.get("/api/backtest/products").get_json())
-    _validate(schemas.BacktestKline, client.get("/api/backtest/kline?period=5&days=30").get_json())
-    ov = _validate(schemas.BacktestOverview, client.get("/api/backtest/overview?days=30").get_json())
+    # 合约列表来自本地行情库（depth_files）：先导入一个合约
+    csv = _tick_csv("fu2611", [("20261020090010", 100, 10), ("20261020090120", 101, 20)])
+    assert _upload("/api/depth/upload", csv, "fu2611.csv").status_code == 200
+    cs = _validate(schemas.BacktestContracts, client.get("/api/backtest/contracts").get_json())
+    assert [c.symbol for c in cs.data] == ["fu2611"] and cs.default == "fu2611"
+    _validate(schemas.BacktestKline, client.get("/api/backtest/kline?symbol=fu2611&period=5&days=30").get_json())
+    ov = _validate(schemas.BacktestOverview, client.get("/api/backtest/overview?symbol=fu2611&days=30").get_json())
     assert ov.data, "至少应有一个策略"
-    _validate(schemas.BacktestRun, client.get("/api/backtest/run?strategy=reversal&days=30").get_json())
+    _validate(schemas.BacktestRun, client.get("/api/backtest/run?strategy=reversal&symbol=fu2611&days=30").get_json())
+
+
+def test_backtest_contracts_empty_library_contract():
+    cs = _validate(schemas.BacktestContracts, client.get("/api/backtest/contracts").get_json())
+    assert cs.data == [] and cs.default == ""
 
 
 def test_error_envelope_contract():
-    for url in ("/api/backtest/kline?product=XX", "/api/backtest/run?strategy=nope",
+    for url in ("/api/backtest/kline", "/api/backtest/run?strategy=nope",
                 "/api/review/curve?reviewId=zzz", "/api/depth/kline?depthId=zzz"):
         j = client.get(url).get_json()
         m = _validate(schemas.ApiResult, j)
@@ -128,17 +144,13 @@ def test_review_overview_empty_state_contract():
     assert ov.fileCount == 0
 
 
-def test_review_day_kline_contract(monkeypatch):
-    import pandas as pd
-
-    def fake_sina(symbol, period):
-        times = pd.date_range("2026-10-19 21:00", periods=10, freq=f"{period}min")
-        return pd.DataFrame({"datetime": times, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 3})
-
-    import akshare
-    monkeypatch.setattr(akshare, "futures_zh_minute_sina", fake_sina)
+def test_review_day_kline_contract():
+    csv = _tick_csv("fu2611", [("20261019210010", 100, 10), ("20261019210120", 101, 20),
+                               ("20261020090010", 102, 5), ("20261020090120", 103, 9)])
+    assert _upload("/api/depth/upload", csv, "fu2611.csv").status_code == 200
     j = client.get("/api/review/day-kline?symbol=fu2611&day=2026-10-20").get_json()
-    _validate(schemas.ReviewDayKline, j)
+    m = _validate(schemas.ReviewDayKline, j)
+    assert m.available is True and m.count == 4
     nodata = client.get("/api/review/day-kline?symbol=fu2611&day=2000-01-01").get_json()
     m = _validate(schemas.ReviewDayKline, nodata)
     assert m.available is False

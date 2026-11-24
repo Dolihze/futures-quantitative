@@ -26,16 +26,14 @@
         </div>
         <div class="toolbar-controls">
           <el-select
-            v-model="params.product"
+            v-model="params.symbol"
             class="toolbar-select"
             filterable
-            placeholder="选择品种"
-            :disabled="loading"
+            placeholder="选择合约（来自数据库管理）"
+            :disabled="loading || !contracts.length"
             @change="load"
           >
-            <el-option-group v-for="g in productGroups" :key="g.exchange" :label="g.exchange">
-              <el-option v-for="p in g.items" :key="p.code" :label="`${p.name} ${p.code}`" :value="p.code" />
-            </el-option-group>
+            <el-option v-for="c in contracts" :key="c.symbol" :label="c.label" :value="c.symbol" />
           </el-select>
           <el-radio-group v-model="params.days" :disabled="loading" @change="load">
             <el-radio-button v-for="o in dayOptions" :key="o.value" :value="o.value">{{ o.label }}</el-radio-button>
@@ -53,8 +51,20 @@
         :closable="false"
       />
 
-      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说。
-           宽度按内容自适应；可以手动关闭，关闭后到下一次加载（刷新 / 换品种 / 换时间范围）才会重新出现 -->
+      <!-- 本地行情库里还没有任何合约：引导去数据库管理导入 tick -->
+      <el-alert
+        v-if="contractsLoaded && !contracts.length"
+        class="overview-alert"
+        type="warning"
+        title="本地历史行情库为空：回测使用「数据库管理 → 历史行情数据管理」里导入的 tick 数据，请先导入合约。"
+        show-icon
+        :closable="false"
+      >
+        <router-link to="/database?tab=market">去数据库管理导入 →</router-link>
+      </el-alert>
+
+      <!-- 数据范围说明：本地库里的 tick 只覆盖有限的交易日，数据不够所选天数时必须明说。
+           宽度按内容自适应；可以手动关闭，关闭后到下一次加载（刷新 / 换合约 / 换时间范围）才会重新出现 -->
       <el-alert
         v-if="coverageNotice && !noticeClosed"
         class="overview-alert"
@@ -130,7 +140,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getBacktestOverview, getBacktestProducts } from '@/api'
+import { getBacktestOverview, getBacktestContracts } from '@/api'
 import { chartColors, onThemeChange } from '@/utils/chartTheme'
 import { fmtMoney, fmtRatio, pnlClass } from './format'
 import { buildDayOptions, clampDays } from './range'
@@ -140,15 +150,15 @@ const router = useRouter()
 const loading = ref(false)
 const errorMsg = ref('')
 const strategies = ref([])
-// 回测对象是各常见品种的主连，下拉框选择，默认燃料油主连（FU）
-const DEFAULT_PRODUCT = 'FU'
-const products = ref([])
+// 回测对象是「数据库管理」里已导入的具体合约（如 fu2611），下拉框选择，默认库里的第一个合约
+const contracts = ref([])
+const contractsLoaded = ref(false)
 const params = reactive({
-  product: String(route.query.product || DEFAULT_PRODUCT),
+  symbol: String(route.query.symbol || ''),
   days: Number(route.query.days) || 30,
   lots: 5
 })
-const symbolName = computed(() => products.value.find((p) => p.code === params.product)?.name || '燃料油主连')
+const symbolName = computed(() => contracts.value.find((c) => c.symbol === params.symbol)?.label || params.symbol || '未选择合约')
 // 所有策略里最多能拿到的数据天数（0 = 还没请求过）。时间范围选项据此收敛，超出的档位不提供
 const availableDays = ref(0)
 const requestedDays = ref(0) // 最近一次请求时用户选的天数（收敛到「全部」之前）
@@ -159,30 +169,21 @@ const coverageNotice = computed(() => {
   const short = strategies.value.filter((s) => s.coverage && s.coverage.truncated)
   if (!short.length) return ''
   const detail = short.map((s) => `「${s.name}」(${s.period}分钟线) 实际只有 ${s.coverage.availableDays} 天`).join('；')
-  return `所选 ${requestedDays.value} 天超出了可获取的数据范围，已使用全部可得数据：${detail}。新浪每个周期只提供最近约 1000 根 K 线。`
-})
-// 按交易所分组，保持后端给出的顺序
-const productGroups = computed(() => {
-  const groups = []
-  for (const p of products.value) {
-    let g = groups.find((x) => x.exchange === p.exchange)
-    if (!g) groups.push((g = { exchange: p.exchange, items: [] }))
-    g.items.push(p)
-  }
-  return groups
+  return `所选 ${requestedDays.value} 天超出了本地行情库的数据范围，已使用全部可得数据：${detail}。需要更长区间请到「数据库管理」导入更多交易日的 tick 数据。`
 })
 
-async function loadProducts() {
+// 读取本地行情库里已导入的合约；URL 里带了已不存在的合约时回退到库里的第一个
+async function loadContracts() {
   try {
-    const res = await getBacktestProducts()
+    const res = await getBacktestContracts()
     if (res.success) {
-      products.value = res.data
-      // URL 里带了已不存在的品种时回退到默认
-      if (!products.value.some((p) => p.code === params.product)) params.product = res.default || DEFAULT_PRODUCT
+      contracts.value = res.data
+      if (!contracts.value.some((c) => c.symbol === params.symbol)) params.symbol = res.default || ''
     }
   } catch (e) {
-    // 品种列表取不到时下拉框为空，当前（默认）品种仍可回测，错误由 load() 展示
-    console.warn('获取品种列表失败', e)
+    console.warn('获取本地合约列表失败', e)
+  } finally {
+    contractsLoaded.value = true
   }
 }
 
@@ -192,13 +193,19 @@ let seq = 0
 
 async function load() {
   const my = ++seq
-  loading.value = true
   errorMsg.value = ''
   noticeClosed.value = false
-  // 品种和时间范围同步到 URL：刷新页面、从详情页返回时保持选择
-  router.replace({ query: { product: params.product, days: params.days } })
+  // 本地库没有任何合约（或没选合约）时不请求回测，由页面上的导入引导提示用户
+  if (!params.symbol) {
+    strategies.value = []
+    loading.value = false
+    return
+  }
+  loading.value = true
+  // 合约和时间范围同步到 URL：刷新页面、从详情页返回时保持选择
+  router.replace({ query: { symbol: params.symbol, days: params.days } })
   try {
-    const res = await getBacktestOverview({ product: params.product, days: params.days, lots: params.lots })
+    const res = await getBacktestOverview({ symbol: params.symbol, days: params.days, lots: params.lots })
     if (my !== seq) return
     if (!res.success) {
       errorMsg.value = res.message || '回测失败'
@@ -210,7 +217,7 @@ async function load() {
       // 同时记下用户原本想看多少天，用于提示「所选 90 天，实际只有 21 天」
       requestedDays.value = params.days
       params.days = clampDays(params.days, availableDays.value)
-      router.replace({ query: { product: params.product, days: params.days } })
+      router.replace({ query: { symbol: params.symbol, days: params.days } })
     }
   } catch (e) {
     if (my !== seq) return
@@ -238,7 +245,7 @@ function ratioClass(st) {
 
 function openDetail(s) {
   if (!s.stats) return
-  router.push({ path: `/backtest/${s.id}`, query: { product: params.product, days: params.days, lots: params.lots } })
+  router.push({ path: `/backtest/${s.id}`, query: { symbol: params.symbol, days: params.days, lots: params.lots } })
 }
 
 // ---------- 迷你净值曲线 ----------
@@ -323,9 +330,9 @@ watch(gridRef, (el) => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('resize', handleResize)
-  loadProducts()
+  await loadContracts()   // 先确定合约，再回测
   load()
 })
 

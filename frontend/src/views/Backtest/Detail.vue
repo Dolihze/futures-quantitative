@@ -21,7 +21,7 @@
         <div class="toolbar-title">
           <h2>{{ result?.strategy.name || '--' }}</h2>
           <span class="toolbar-sub">
-            {{ result?.symbolName || params.product + '主连' }} · {{ result?.strategy.period || '-' }}分钟线 · {{ result?.stats.timeSpan || '--' }} ·
+            {{ result?.symbolName || params.symbol }} · {{ result?.strategy.period || '-' }}分钟线 · {{ result?.stats.timeSpan || '--' }} ·
             每笔 {{ params.lots }} 手 · 不含手续费与滑点
           </span>
         </div>
@@ -34,7 +34,7 @@
       </div>
 
       <el-alert v-if="errorMsg" class="overview-alert" type="error" :title="errorMsg" show-icon :closable="false" />
-      <!-- 数据范围说明：新浪每个周期只给最近约 1023 根 K 线，数据不够所选天数时必须明说。
+      <!-- 数据范围说明：本地行情库里的 tick 只覆盖有限的交易日，数据不够所选天数时必须明说。
            宽度按内容自适应；可以手动关闭，下一次加载时重新出现 -->
       <el-alert
         v-if="coverageNotice && !noticeClosed"
@@ -207,14 +207,14 @@ const route = useRoute()
 const loading = ref(false)
 const errorMsg = ref('')
 const result = ref(null)
-// 回测对象是总览页选中的品种主连（URL 的 product 参数），缺省为燃料油
+// 回测对象是总览页选中的本地行情库合约（URL 的 symbol 参数）
 const params = reactive({
-  product: String(route.query.product || 'FU'),
+  symbol: String(route.query.symbol || ''),
   days: Number(route.query.days) || 30,
   lots: Number(route.query.lots) || 5
 })
-// 返回总览时带上品种和时间范围，保持用户刚才的选择
-const backTo = computed(() => ({ path: '/backtest', query: { product: params.product, days: params.days } }))
+// 返回总览时带上合约和时间范围，保持用户刚才的选择
+const backTo = computed(() => ({ path: '/backtest', query: { symbol: params.symbol, days: params.days } }))
 
 // 时间范围选项按该策略周期实际可得的数据天数收敛（0 = 还没请求过）
 const availableDays = ref(0)
@@ -224,7 +224,7 @@ const noticeClosed = ref(false) // 数据范围提示被手动关闭；每次重
 const coverageNotice = computed(() => {
   const c = result.value?.coverage
   if (!c || !c.truncated) return ''
-  return `所选 ${requestedDays.value} 天超出了可获取的数据范围，已使用全部可得数据（${c.dataFrom.slice(0, 10)} ~ ${c.dataTo.slice(0, 10)}，共 ${c.availableDays} 天）。新浪每个周期只提供最近约 1000 根 K 线（${result.value.strategy.period} 分钟线）。`
+  return `所选 ${requestedDays.value} 天超出了可获取的数据范围，已使用全部可得数据（${c.dataFrom.slice(0, 10)} ~ ${c.dataTo.slice(0, 10)}，共 ${c.availableDays} 天，${result.value.strategy.period} 分钟线）。需要更长区间请到「数据库管理」导入更多交易日的 tick 数据。`
 })
 
 // 成交明细按时间倒序（最新的在最上面），再分页取当前页的 10 条。
@@ -274,7 +274,7 @@ async function loadViewBars() {
   klineLoading.value = true
   try {
     // days 用「全部可得数据」：不同周期可得的天数差别很大，取全量后由买卖点映射决定哪些能显示
-    const res = await getBacktestKline({ product: params.product, period: viewPeriod.value, days: 3650 })
+    const res = await getBacktestKline({ symbol: params.symbol, period: viewPeriod.value, days: 3650 })
     if (my !== klineSeq) return
     if (!res.success || !res.data?.length) throw new Error(res.message || '未获取到K线数据')
     viewBars.value = res.data

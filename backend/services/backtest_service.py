@@ -1,31 +1,12 @@
-"""量化回测服务：新浪 K 线获取与短时缓存。"""
-import time
+"""量化回测服务：从本地历史行情库（数据库管理里导入的 tick）取分钟 K 线。"""
+from backend.services import kline_store
 
-# 新浪 K 线按 (合约, 周期) 缓存几分钟：首页一次要对所有策略回测，详情页又会再取一次，不必每次都请求网络。
-BACKTEST_KLINE_CACHE = {}
-BACKTEST_KLINE_TTL = 300  # 秒
-BACKTEST_PERIODS = ('1', '5', '15', '30', '60')
+BACKTEST_PERIODS = kline_store.KLINE_PERIODS
 
 
 def fetch_backtest_bars(symbol, period):
-    """取某合约某周期的全部可得 K 线（新浪每个周期只给最近约 1023 根）。返回 dict 列表，升序。"""
-    import akshare as ak
-    import pandas as pd
+    """取某合约某周期在本地库里的全部可得 K 线，返回 dict 列表，升序。
 
-    key = (symbol, period)
-    cached = BACKTEST_KLINE_CACHE.get(key)
-    if cached and time.time() - cached[0] < BACKTEST_KLINE_TTL:
-        return cached[1]
-    df = ak.futures_zh_minute_sina(symbol=symbol, period=period)
-    if df is None or df.empty:
-        return []
-    df = df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df = df.sort_values('datetime')
-    bars = [{
-        'time': r.datetime.strftime('%Y-%m-%d %H:%M:%S'),
-        'open': float(r.open), 'high': float(r.high), 'low': float(r.low), 'close': float(r.close),
-        'volume': int(r.volume) if hasattr(r, 'volume') else 0,
-    } for r in df.itertuples(index=False)]
-    BACKTEST_KLINE_CACHE[key] = (time.time(), bars)
-    return bars
+    合约没导入时抛 ApiError(404) 并提示去「数据库管理」导入。聚合结果带缓存，库文件变化后自动失效。
+    """
+    return kline_store.fetch_bars(symbol, period)

@@ -59,17 +59,20 @@ class LoginResult(ApiResult):
 # ---------------------------------------------------------------------------
 # 量化回测
 # ---------------------------------------------------------------------------
-class BacktestProduct(_Model):
-    code: str
-    name: str
+class BacktestContract(_Model):
+    """本地历史行情库里已导入的合约（回测页下拉用）。"""
     symbol: str
-    exchange: str
-    default: bool
+    name: str
+    label: str
+    dayCount: int
+    start: str
+    end: str
+    tickCount: int
 
 
-class BacktestProducts(ApiResult):
+class BacktestContracts(ApiResult):
     default: str
-    data: list[BacktestProduct]
+    data: list[BacktestContract]
 
 
 class KlineBar(_Model):
@@ -83,7 +86,6 @@ class KlineBar(_Model):
 
 class BacktestKline(ApiResult):
     data: list[KlineBar]
-    product: str
     symbol: str
     symbolName: str
     count: int
@@ -117,7 +119,6 @@ class BacktestOverviewItem(_Model):
 
 
 class BacktestOverview(ApiResult):
-    product: str
     symbol: str
     symbolName: str
     days: int
@@ -139,7 +140,6 @@ class BacktestRun(ApiResult):
     strategy: StrategyInfo
     symbol: str
     symbolName: str
-    product: str
     lots: int
     days: int
     period: str
@@ -349,7 +349,7 @@ RESPONSES: dict[tuple[str, str], type[BaseModel]] = {
     ("GET", "/api/brokers"): BrokerGroup,   # 实际返回 list[BrokerGroup]，见 gen-openapi 的特殊处理
     ("GET", "/api/credentials"): SavedCredentials,
     ("POST", "/api/login"): LoginResult,
-    ("GET", "/api/backtest/products"): BacktestProducts,
+    ("GET", "/api/backtest/contracts"): BacktestContracts,
     ("GET", "/api/backtest/kline"): BacktestKline,
     ("GET", "/api/backtest/overview"): BacktestOverview,
     ("GET", "/api/backtest/run"): BacktestRun,

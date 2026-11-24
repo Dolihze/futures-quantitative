@@ -128,50 +128,106 @@ def test_slice_recent_days_and_registry():
     assert "reversal" in ids
 
 
-def test_product_catalog():
-    prods = be.list_products()
-    codes = [p["code"] for p in prods]
-    assert len(codes) == len(set(codes)) and len(codes) > 50
-    # 默认品种是燃料油主连，且只有一个默认
-    assert [p["code"] for p in prods if p["default"]] == ["FU"]
-    fu = next(p for p in prods if p["code"] == "FU")
-    assert fu["name"] == "燃料油主连" and fu["symbol"] == "FU0" and fu["exchange"] == "上期所"
-    assert be.main_symbol("rb") == "RB0" and be.main_symbol("FU2611") == "FU0"
-    # 每个品种都有可用的合约参数，且新浪主连代码形如 XX0
-    for p in prods:
-        cfg = be.get_instrument_config(p["code"])
-        assert cfg["tickSize"] > 0 and cfg["multiplier"] > 0
-        assert p["symbol"] == p["code"] + "0"
-    assert be.get_instrument_config("AU0") == {"tickSize": 0.02, "multiplier": 1000}
+def test_instrument_config_by_contract_code():
+    # 合约参数按品种字母取：fu2611 / SHFE.fu2611 / FU0 都是燃料油
+    assert be.product_code("fu2611") == "FU" and be.product_code("SHFE.fu2611") == "FU" and be.product_code("FU0") == "FU"
+    assert be.get_instrument_config("au2612") == {"tickSize": 0.02, "multiplier": 1000}
+    assert be.get_instrument_config("zz9999") == be.DEFAULT_INSTRUMENT   # 目录外品种走默认参数
+    for code, cfg in be.INSTRUMENT_CONFIG.items():
+        assert cfg["tickSize"] > 0 and cfg["multiplier"] > 0, code
+    assert be.contract_name("fu2611") == "燃料油 FU2611" and be.contract_name("SHFE.rb2610") == "螺纹钢 RB2610"
+    assert be.contract_name("zz9999") == "ZZ9999"
 
 
-def test_backtest_api_selects_product_main_contract():
-    """product 参数选择品种主连：默认燃料油 FU0；未知品种返回 400；每个品种用自己的合约乘数结算。"""
+def _tick_csv(symbol, day_prices):
+    """造一份 tick CSV（time 为 YYYYMMDDHHMMSSmmm，volume 为当日累计）。day_prices: [(YYYYMMDD, [(HHMMSS, price, cum_vol), ...])]"""
+    rows = ["symbol,name,time,current,volume,money,position"]
+    for day, ticks in day_prices:
+        for hms, price, cum in ticks:
+            rows.append(f"{symbol},测试,{day}{hms}000,{price},{cum},{cum * price * 10},1000")
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+def _with_depth_dir(tmp_path, monkeypatch, files):
+    """把 depth_files 指到临时目录并写入 {文件名: bytes}，清掉 K 线缓存。"""
+    from backend.services import depth_service, kline_store
+    monkeypatch.setenv("DEPTH_FILES_DIR", str(tmp_path))
+    for name, content in files.items():
+        (tmp_path / name).write_bytes(content)
+    depth_service._DEPTH_META_CACHE.clear()
+    kline_store.clear_cache()
+    return kline_store
+
+
+def test_kline_store_aggregates_ticks_with_end_time_stamps(tmp_path, monkeypatch):
+    # 09:00:10 / 09:00:50 在同一根 1 分钟线（标 09:01），09:01:20 在下一根（标 09:02）；5 分钟线都落在 09:05
+    csv = _tick_csv("fu2611", [("20261020", [("090010", 100, 10), ("090050", 102, 30), ("090120", 99, 45), ("090430", 101, 60)])])
+    ks = _with_depth_dir(tmp_path, monkeypatch, {"fu2611_20261020.csv": csv})
+    one = ks.fetch_bars("fu2611", "1")
+    assert [b["time"] for b in one] == ["2026-10-20 09:01:00", "2026-10-20 09:02:00", "2026-10-20 09:05:00"]
+    first = one[0]
+    assert (first["open"], first["high"], first["low"], first["close"]) == (100, 102, 100, 102)
+    assert first["volume"] == 30 and one[1]["volume"] == 15 and one[2]["volume"] == 15   # 累计量差分成增量
+    five = ks.fetch_bars("SHFE.FU2611", "5")   # 大小写 / 交易所前缀都能匹配
+    assert len(five) == 1 and five[0]["time"] == "2026-10-20 09:05:00"
+    assert (five[0]["open"], five[0]["high"], five[0]["low"], five[0]["close"]) == (100, 102, 99, 101)
+    assert five[0]["volume"] == 60
+
+
+def test_kline_store_missing_contract_and_bad_period(tmp_path, monkeypatch):
+    from backend.errors import ApiError
+    ks = _with_depth_dir(tmp_path, monkeypatch, {})
+    for args, status in ((("fu2611", "5"), 404), (("fu2611", "7"), 400)):
+        try:
+            ks.fetch_bars(*args)
+        except ApiError as e:
+            assert e.status == status
+            if status == 404:
+                assert "数据库管理" in e.message   # 提示去导入
+        else:
+            raise AssertionError("应该抛 ApiError")
+    assert ks.list_contracts() == []
+
+
+def test_kline_store_cache_invalidates_when_files_change(tmp_path, monkeypatch):
+    day1 = _tick_csv("fu2611", [("20261020", [("090010", 100, 10), ("090120", 101, 20)])])
+    ks = _with_depth_dir(tmp_path, monkeypatch, {"fu2611_20261020.csv": day1})
+    assert len(ks.fetch_bars("fu2611", "1")) == 2
+    # 再导入第二个交易日：同一合约的文件合并成一条时间线，缓存按文件签名自动失效
+    day2 = _tick_csv("fu2611", [("20261021", [("090010", 105, 10), ("090120", 106, 20)])])
+    (tmp_path / "fu2611_20261021.csv").write_bytes(day2)
+    bars = ks.fetch_bars("fu2611", "1")
+    assert [b["time"][:10] for b in bars] == ["2026-10-20"] * 2 + ["2026-10-21"] * 2
+    c = ks.list_contracts()
+    assert len(c) == 1 and c[0]["symbol"] == "fu2611" and c[0]["dayCount"] == 2
+
+
+def test_backtest_api_uses_local_library_contracts(tmp_path, monkeypatch):
+    """回测接口按 symbol 取本地库 K 线：symbol 必填；未导入的合约 404 并提示导入；每个合约用自己品种的乘数结算。"""
     from backend import app as backend
-    from backend.services import backtest_service
+    ks = _with_depth_dir(tmp_path, monkeypatch, {
+        "fu2611_20261020.csv": _tick_csv("fu2611", [("20261020", [("090010", 100, 10), ("090120", 101, 20), ("090230", 99, 30)])]),
+        "au2612_20261020.csv": _tick_csv("au2612", [("20261020", [("090010", 500, 10), ("090120", 501, 20)])]),
+    })
+    client = backend.app.test_client()
 
-    asked = []
-    bars = [bar("2026-10-20 09:05:00", 100, 100, 100, 100), bar("2026-10-20 09:10:00", 100, 101, 99, 100)]
-    orig = backtest_service.fetch_backtest_bars
-    backtest_service.fetch_backtest_bars = lambda symbol, period: (asked.append(symbol), bars)[1]
-    try:
-        client = backend.app.test_client()
-        d = client.get("/api/backtest/overview?days=30").get_json()                       # 默认品种
-        o = client.get("/api/backtest/overview?product=rb&days=30").get_json()           # 小写也可
-        r = client.get("/api/backtest/run?strategy=reversal&product=AU&days=30").get_json()
-        k = client.get("/api/backtest/kline?product=CU&period=5&days=30").get_json()
-        bad = client.get("/api/backtest/overview?product=XX&days=30")
-        bad_k = client.get("/api/backtest/kline?product=XX&period=5")
-        prods = client.get("/api/backtest/products").get_json()
-    finally:
-        backtest_service.fetch_backtest_bars = orig
-    assert d["product"] == "FU" and d["symbol"] == "FU0" and d["symbolName"] == "燃料油主连"
-    assert o["product"] == "RB" and o["symbol"] == "RB0" and o["symbolName"] == "螺纹钢主连"
-    assert r["success"] and r["symbol"] == "AU0" and r["symbolName"] == "沪金主连"
-    assert k["success"] and k["symbol"] == "CU0"
-    assert set(asked) == {"FU0", "RB0", "AU0", "CU0"}
-    assert bad.status_code == 400 and bad_k.status_code == 400
-    assert prods["success"] and prods["default"] == "FU" and len(prods["data"]) > 50
+    cs = client.get("/api/backtest/contracts").get_json()
+    assert cs["success"] and [c["symbol"] for c in cs["data"]] == ["au2612", "fu2611"] and cs["default"] == "au2612"
+    assert {c["symbol"]: c["label"] for c in cs["data"]} == {"au2612": "沪金 AU2612", "fu2611": "燃料油 FU2611"}
+
+    k = client.get("/api/backtest/kline?symbol=fu2611&period=1&days=30").get_json()
+    assert k["success"] and k["symbol"] == "fu2611" and k["symbolName"] == "燃料油 FU2611" and k["count"] == 3
+    r = client.get("/api/backtest/run?strategy=reversal&symbol=au2612&days=30").get_json()
+    assert r["success"] and r["symbol"] == "au2612" and r["symbolName"] == "沪金 AU2612" and "product" not in r
+    o = client.get("/api/backtest/overview?symbol=fu2611&days=30").get_json()
+    assert o["success"] and o["symbol"] == "fu2611" and o["data"]
+
+    assert client.get("/api/backtest/overview?days=30").status_code == 400            # 没选合约
+    assert client.get("/api/backtest/kline?symbol=fu2611&period=7").status_code == 400
+    for url in ("/api/backtest/overview?symbol=rb2610", "/api/backtest/kline?symbol=rb2610&period=5",
+                "/api/backtest/run?strategy=reversal&symbol=rb2610"):
+        miss = client.get(url)
+        assert miss.status_code == 404 and "数据库管理" in miss.get_json()["message"], url
 
 
 def test_data_coverage_reports_truncation():
@@ -186,28 +242,23 @@ def test_data_coverage_reports_truncation():
     assert be.data_coverage([], 30)["truncated"] is False
 
 
-def test_api_returns_coverage_so_60_and_90_are_not_silently_identical():
+def test_api_returns_coverage_so_60_and_90_are_not_silently_identical(monkeypatch):
     from backend import app as backend
     from backend.services import backtest_service
 
-    # 5 分钟线只有约 3 周：构造 21 天数据，每天 1 根
+    # 本地库只有约 3 周数据：构造 21 天数据，每天 1 根
     bars = [bar(f"2026-10-{d:02d} 09:05:00", 100, 100, 100, 100) for d in range(1, 22)]
-    orig = backtest_service.fetch_backtest_bars
-    backtest_service.fetch_backtest_bars = lambda symbol, period: bars
-    try:
-        client = backend.app.test_client()
-        o30 = client.get("/api/backtest/overview?days=30").get_json()
-        o90 = client.get("/api/backtest/overview?days=90").get_json()
-        r90 = client.get("/api/backtest/run?strategy=reversal&days=90").get_json()
-        r7 = client.get("/api/backtest/run?strategy=reversal&days=7").get_json()
-    finally:
-        backtest_service.fetch_backtest_bars = orig
+    monkeypatch.setattr(backtest_service, "fetch_backtest_bars", lambda symbol, period: bars)
+    client = backend.app.test_client()
+    o30 = client.get("/api/backtest/overview?symbol=fu2611&days=30").get_json()
+    o90 = client.get("/api/backtest/overview?symbol=fu2611&days=90").get_json()
+    r90 = client.get("/api/backtest/run?strategy=reversal&symbol=fu2611&days=90").get_json()
+    r7 = client.get("/api/backtest/run?strategy=reversal&symbol=fu2611&days=7").get_json()
     assert o30["availableDays"] == 21 and o90["availableDays"] == 21
     cov = o90["data"][0]["coverage"]
     assert cov["truncated"] and cov["requestedDays"] == 90 and cov["usedDays"] == 21
     assert r90["coverage"]["truncated"] and len(r90["kline"]) == 21
     assert not r7["coverage"]["truncated"] and len(r7["kline"]) == 8  # 末日往前 7 天（含端点）
-
 
 def test_pnl_uses_each_products_multiplier():
     bars = [

@@ -5,7 +5,7 @@
 - **客户端**：Tauri 2.x（Rust + 系统 WebView2）
 - **前端**：Vue 3 + Vite + Element Plus + Pinia + ECharts
 - **后端**：Flask，打包成 PyInstaller 可执行文件，作为 Tauri **sidecar** 子进程运行
-- **行情数据**：akshare（新浪财经）
+- **行情数据**：本地历史行情库（「数据库管理」导入的 tick CSV，回测与交易复盘的 K 线均由它聚合而来，不访问在线行情接口）
 
 ## 架构
 
@@ -150,11 +150,11 @@ npm run backend:build
 | `/api/login` | POST | 账号登录（目前为调试模式，放行任意账号） |
 | `/api/logout` | POST | 退出登录 |
 | `/api/quant-login` | POST | 量化账号登录（目前为调试模式） |
-| `/api/backtest/kline` | GET | 品种主连 K 线数据，参数 `product`（默认 `FU`）`period` `days` |
-| `/api/backtest/products` | GET | 量化回测：可选品种（主连）列表，默认燃料油主连 |
+| `/api/backtest/kline` | GET | 本地行情库里某合约的 K 线数据，参数 `symbol` `period` `days`；合约未导入返回 404 并提示去导入 |
+| `/api/backtest/contracts` | GET | 量化回测：可回测的合约 = 本地行情库里已导入的合约 |
 | `/api/backtest/strategies` | GET | 量化回测：已注册策略列表 |
-| `/api/backtest/overview` | GET | 量化回测首页：所选品种主连上所有策略的胜率、盈亏比、总盈亏、缩略净值曲线，参数 `product` `days` `lots` |
-| `/api/backtest/run` | GET | 量化回测详情：单个策略的 K 线、逐笔成交、净值曲线、完整统计，参数 `strategy` `product` `days` `lots` |
+| `/api/backtest/overview` | GET | 量化回测首页：所选合约上所有策略的胜率、盈亏比、总盈亏、缩略净值曲线，参数 `symbol` `days` `lots` |
+| `/api/backtest/run` | GET | 量化回测详情：单个策略的 K 线、逐笔成交、净值曲线、完整统计，参数 `strategy` `symbol` `days` `lots` |
 | `/api/review/upload` | POST | 交易复盘：上传交易记录（multipart，字段 `file`，≤20MB），返回 `reviewId`、品种列表、数据时间范围、解析提示 |
 | `/api/review/curve` | GET | 交易复盘：按 `reviewId`、`products`（逗号分隔，空=全部）、`start`、`end`、`fee`（1=扣手续费）返回累计盈亏曲线和统计 |
 
@@ -311,7 +311,7 @@ npm run backend:build
 ## 构建发布
 
 ```bash
-npm run backend:build   # 1. 打包后端（已内置 data/ 与 akshare 数据文件）
+npm run backend:build   # 1. 打包后端（已内置 data/）
 npm run build           # 2. 构建前端并生成安装包
 ```
 
@@ -324,7 +324,6 @@ npm run build           # 2. 构建前端并生成安装包
 - 入口是 **`backend/app.py`**；`pathex` 指向项目根目录，才能解析 `from backend import ...`。
 - **onedir**：输出 `src-tauri/backend-dist/python-backend.exe` + `_internal/`，由 `tauri.conf.json` 的 `bundle.resources` 打进安装包，Rust 在运行时从资源目录启动它。不再使用 `externalBin`，所以也不需要带目标三元组后缀的副本。
 - `data/` 整体打进包内；`backend/config.py` 的 `find_data_file` 会依次在 PyInstaller 资源目录、exe 同级目录和项目目录中查找。
-- `collect_data_files('akshare')`：akshare 自带的 `file_fold/calendar.json` 等数据文件必须打包，否则 `/api/backtest/kline` 会 500。
 - 中间产物放在 `.build/`，构建完成后自动删除；最终输出 `src-tauri/backend-dist/` 已在 `.gitignore` 中，不会提交（仅保留 `.gitkeep`，让全新克隆也能通过 Tauri 的编译期检查）。
 
 ## 故障排除
@@ -335,7 +334,7 @@ npm run build           # 2. 构建前端并生成安装包
 | 编译报 `PermissionDenied` / `拒绝访问`（tauri-build） | 有残留的 `python-backend.exe` 锁住了文件。结束进程后重试：`Stop-Process -Name python-backend -Force`。应用内已用 Job Object 避免此问题。 |
 | 前端报 `ECONNREFUSED 127.0.0.1:5000`（开发模式） | 后端没起来或崩溃，或 5000 被其它程序占用。看终端里的 `[Backend STDERR]`；单独运行 `src-tauri\backend-dist\python-backend.exe` 验证；或 `npm run backend:dev` 排查源码。5000 被占用时可设置环境变量 `BACKEND_PORT` 换端口（Rust、Vite、后端都读它）。 |
 | 窗口显示「后端服务启动超时」 | 后端 60 秒内没监听端口。看终端的 `[Backend STDERR]`；确认已执行 `npm run backend:build` 且 `src-tauri/backend-dist/python-backend.exe` 存在。 |
-| `/api/backtest/kline` 返回 500 | 通常是 sidecar 缺 akshare 数据文件，确认用最新的 `npm run backend:build` 打包。 |
+| 量化回测 / 交易复盘 K 线提示「本地行情库里没有合约…的数据」 | 回测和复盘 K 线只读「数据库管理 → 历史行情数据管理」里导入的 tick。到该页导入对应合约（且覆盖所需交易日）的 tick CSV 后刷新即可。 |
 | 交易复盘提示“没有识别到必需的列” | 导出文件的列名不在识别范围内。提示里会列出已识别的列（有多张工作表时会说明是哪一张）；把表头改成上面表格里的常见叫法，或把文件发给开发者适配。 |
 | 交易复盘提示“文件里只有日期，没有具体的成交时间” | 导入的是只有日期的表（例如结算单里的「平仓明细」）。同一天的成交分不出先后，无法按成交时间聚合。请导入带「成交时间」列的「成交明细」工作表。 |
 | 交易复盘提示“当前筛选下只有开仓，没有平仓” | 曲线只统计「平」的成交。这个筛选范围里的成交都还没有平仓，把时间范围拉长，或换一个有平仓的品种。 |

@@ -127,11 +127,11 @@ async function loadKline(my) {
     } else {
       kline.value = res.data
       period.value = res.period || 1
-      // 新浪的 K 线接口没有日期参数，每个周期只给最近 1023 根：1 分钟线只有最近约 3 个交易日。
-      // 取不到 1 分钟线时后端自动换成更长的周期，这里要告诉用户现在看到的不是 1 分钟线。
+      // K 线取自本地历史行情库（数据库管理里导入的 tick），由后端聚合成 1 分钟线；
+      // 周期不是 1 分钟时要告诉用户现在看到的不是 1 分钟线。
       const msgs = []
       if (period.value !== 1) {
-        msgs.push(`这一天的 1 分钟 K 线已经取不到（新浪只保留最近约 3 个交易日），当前显示的是 ${period.value} 分钟 K 线，成交点仍按真实成交时间标在所在的那根 K 线上`)
+        msgs.push(`当前显示的是 ${period.value} 分钟 K 线，成交点仍按真实成交时间标在所在的那根 K 线上`)
       }
       if (res.partial) msgs.push('这一天的开头部分可能缺失')
       notice.value = msgs.join('；')
@@ -139,7 +139,7 @@ async function loadKline(my) {
   } catch (e) {
     if (my !== seq) return
     kline.value = []
-    klineUnavailable.value = e?.response?.data?.message || '获取 K 线失败，请检查网络后重试'
+    klineUnavailable.value = e?.response?.data?.message || '获取 K 线失败，请确认后端已启动后重试'
   }
   renderChart()
 }
@@ -328,7 +328,7 @@ function drawChart() {
     return
   }
   // 横轴用类目轴（第几根 K 线），夜盘到日盘之间的休市时间不留空白。
-  // 新浪 K 线的时间戳是这根 K 线的“结束时间”（1 分钟线第一根是 09:01，5 分钟线第一根是 09:05，区间右闭），
+  // K 线的时间戳是这根 K 线的“结束时间”（1 分钟线第一根是 09:01，5 分钟线第一根是 09:05，区间右闭；本地行情库聚合时与此对齐），
   // 所以成交放在“结束时间不早于成交时间的第一根”里：09:03 的成交在 5 分钟线的 09:05 那根，09:05:00 整也在 09:05 那根。
   // 用精确到秒的时间比较，不能截断到分钟（09:05:30 应该落在 09:10 那根）。
   const ends = bars.map((b) => toMs(b.time))

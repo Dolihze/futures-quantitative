@@ -20,8 +20,8 @@
 /** @typedef {Schemas['SavedCredentials']} SavedCredentials */
 /** @typedef {Schemas['LoginResult']} LoginResult */
 
-/** @typedef {Schemas['BacktestProducts']} BacktestProducts */
-/** @typedef {Schemas['BacktestProduct']} BacktestProduct */
+/** @typedef {Schemas['BacktestContracts']} BacktestContracts */
+/** @typedef {Schemas['BacktestContract']} BacktestContract */
 /** @typedef {Schemas['BacktestKline']} BacktestKline */
 /** @typedef {Schemas['KlineBar']} BacktestKlineBar */
 /** @typedef {Schemas['BacktestCoverage']} BacktestCoverage */
@@ -126,7 +126,7 @@
 
 /**
  * @typedef {Object} BacktestParams
- * @property {string} [product]  品种代码，默认 FU
+ * @property {string} [symbol]   合约代码（本地行情库里已导入的合约，如 fu2611）
  * @property {number} [days]
  * @property {number} [lots]
  * @property {string} [strategy] 仅 runBacktest

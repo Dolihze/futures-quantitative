@@ -37,10 +37,41 @@
         }
       }
     },
+    "/api/backtest/contracts": {
+      "get": {
+        "operationId": "get_backtest_backtest_contracts",
+        "summary": "可回测的合约：本地历史行情库里已导入的合约，附带数据覆盖的交易日范围。",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestContracts"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backtest/kline": {
       "get": {
         "operationId": "get_backtest_get_kline_data",
-        "summary": "获取某品种主连的 K 线数据。参数：product（默认 FU）、period、days",
+        "summary": "获取某合约在本地库里的 K 线数据。参数：symbol、period、days",
         "tags": [
           "backtest"
         ],
@@ -82,37 +113,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BacktestOverview"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "失败：success=false + message（HTTP 4xx/5xx）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResult"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/backtest/products": {
-      "get": {
-        "operationId": "get_backtest_backtest_products",
-        "summary": "可回测的品种（主连）列表，默认燃料油主连",
-        "tags": [
-          "backtest"
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BacktestProducts"
                 }
               }
             }
@@ -1402,7 +1402,7 @@
     "/api/review/day-kline": {
       "get": {
         "operationId": "get_review_review_day_kline",
-        "summary": "某个合约在某个交易日的 K 线（夜盘 + 日盘），尽量用最细的周期。",
+        "summary": "某个合约在某个交易日的 K 线（夜盘 + 日盘），取自本地历史行情库（数据库管理里导入的 tick）。",
         "tags": [
           "review"
         ],
@@ -1741,6 +1741,124 @@
         "title": "ApiResult",
         "type": "object"
       },
+      "BacktestContract": {
+        "description": "本地历史行情库里已导入的合约（回测页下拉用）。",
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "dayCount": {
+            "title": "Daycount",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "tickCount": {
+            "title": "Tickcount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "symbol",
+          "name",
+          "label",
+          "dayCount",
+          "start",
+          "end",
+          "tickCount"
+        ],
+        "title": "BacktestContract",
+        "type": "object"
+      },
+      "BacktestContracts": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "default": {
+            "type": "string",
+            "title": "Default"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestContract"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "default",
+          "data"
+        ],
+        "title": "BacktestContracts",
+        "type": "object"
+      },
       "BacktestCoverage": {
         "properties": {
           "availableDays": {
@@ -1854,10 +1972,6 @@
             "title": "Data",
             "type": "array"
           },
-          "product": {
-            "title": "Product",
-            "type": "string"
-          },
           "symbol": {
             "title": "Symbol",
             "type": "string"
@@ -1874,7 +1988,6 @@
         "required": [
           "success",
           "data",
-          "product",
           "symbol",
           "symbolName",
           "count"
@@ -1936,10 +2049,6 @@
             "default": null,
             "title": "Filemissing"
           },
-          "product": {
-            "title": "Product",
-            "type": "string"
-          },
           "symbol": {
             "title": "Symbol",
             "type": "string"
@@ -1970,7 +2079,6 @@
         },
         "required": [
           "success",
-          "product",
           "symbol",
           "symbolName",
           "days",
@@ -2058,113 +2166,6 @@
         "title": "BacktestOverviewItem",
         "type": "object"
       },
-      "BacktestProduct": {
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "symbol": {
-            "title": "Symbol",
-            "type": "string"
-          },
-          "exchange": {
-            "title": "Exchange",
-            "type": "string"
-          },
-          "default": {
-            "type": "boolean",
-            "title": "Default"
-          }
-        },
-        "required": [
-          "code",
-          "name",
-          "symbol",
-          "exchange",
-          "default"
-        ],
-        "title": "BacktestProduct",
-        "type": "object"
-      },
-      "BacktestProducts": {
-        "properties": {
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Message"
-          },
-          "expired": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Expired"
-          },
-          "exists": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Exists"
-          },
-          "fileMissing": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Filemissing"
-          },
-          "default": {
-            "type": "string",
-            "title": "Default"
-          },
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/BacktestProduct"
-            },
-            "title": "Data",
-            "type": "array"
-          }
-        },
-        "required": [
-          "success",
-          "default",
-          "data"
-        ],
-        "title": "BacktestProducts",
-        "type": "object"
-      },
       "BacktestRun": {
         "properties": {
           "success": {
@@ -2230,10 +2231,6 @@
             "title": "Symbolname",
             "type": "string"
           },
-          "product": {
-            "title": "Product",
-            "type": "string"
-          },
           "lots": {
             "title": "Lots",
             "type": "integer"
@@ -2286,7 +2283,6 @@
           "strategy",
           "symbol",
           "symbolName",
-          "product",
           "lots",
           "days",
           "period",

@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 
 from backend.core import review
 from backend.errors import ApiError, bad_request, not_found
+from backend.services import kline_store
 from backend.services import review_service as svc
 
 bp = Blueprint('review', __name__)
@@ -225,17 +226,13 @@ def review_day_trades():
 
 @bp.route('/api/review/day-kline')
 def review_day_kline():
-    """某个合约在某个交易日的 K 线（夜盘 + 日盘），尽量用最细的周期。
+    """某个合约在某个交易日的 K 线（夜盘 + 日盘），取自本地历史行情库（数据库管理里导入的 tick）。
 
-    数据来自新浪（akshare 的 futures_zh_minute_sina）。这个接口没有日期参数，每个周期只返回最近 1023 根，
-    所以周期越长回溯越远：1 分钟约 3 个交易日、5 分钟约 3 周、15 分钟约 2.5 个月、30 分钟约 4 个月、60 分钟约 8 个月。
-    这里按 1 → 5 → 15 → 30 → 60 分钟的顺序找，用第一个“完整覆盖这个交易日”的周期；
-    1 分钟取不到时自动降级，并在返回里用 period 告诉前端实际用了几分钟线。
-    某个周期里这一天只有后半段（最早那天被截断）算不完整，继续试更长的周期；全都不完整时用其中最细的那个并标 partial。
-    参数：symbol（合约代码，如 FU2611）、day（YYYY-MM-DD，交易日）。
+    tick 可以聚合出任意周期，所以直接用最细的 1 分钟线；不再访问在线行情接口。
+    本地库里没有这个合约、或这个合约没有覆盖这个交易日时不是错误：available=False，message 说明库内能提供的范围，
+    提示用户去「数据库管理」导入对应数据。
+    参数：symbol（合约代码，如 FU2611 / SHFE.fu2611）、day（YYYY-MM-DD，交易日）。
     """
-    import akshare as ak
-
     symbol = request.args.get('symbol', '').strip()
     day = request.args.get('day', '').strip()
     if not symbol or not day:
@@ -244,51 +241,21 @@ def review_day_kline():
         target = pd.to_datetime(day).strftime('%Y-%m-%d')
     except (ValueError, TypeError):
         raise bad_request(f"日期格式不对：{day}")
-    # 新浪要的是不带交易所前缀的合约代码（SHFE.fu2611 -> fu2611）
-    code = symbol.split('.')[-1]
+    code = kline_store.normalize_symbol(symbol)
 
-    best = None              # (period, day_df)：完整覆盖这一天的最细周期；没有的话是“找到这一天但开头被截断”的最细周期
-    complete = False         # best 是否完整覆盖了这一天
-    ranges = []              # 每个周期实际能取到的范围，取不到时写进提示
-    last_error = None
-    for period in ('1', '5', '15', '30', '60'):
-        try:
-            df = ak.futures_zh_minute_sina(symbol=code, period=period)
-        except Exception as e:
-            last_error = e
-            print(f"[Review] 获取 K 线失败 {code} {period}分钟: {e}")
-            continue
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        have_from, have_to = df['datetime'].min(), df['datetime'].max()
-        ranges.append(f"{period}分钟 {have_from:%m-%d} ~ {have_to:%m-%d}")
-        # 和成交用同一套“交易日”口径：夜盘（20:00 之后）属于下一个交易日
-        tday = df['datetime'].map(review.trading_day).dt.strftime('%Y-%m-%d')
-        day_df = df[tday == target]
-        if day_df.empty:
-            continue
-        # 这一天的第一根就是整份数据的第一根：说明开头可能被截断（更早的部分没有取到）
-        if day_df['datetime'].min() == have_from:
-            if best is None:
-                best = (period, day_df)
-            continue
-        best, complete = (period, day_df), True
-        break
+    try:
+        bars = kline_store.fetch_bars(code, '1')
+    except ApiError as e:
+        if e.status != 404:
+            raise
+        return jsonify({"success": True, "available": False, "data": [], "message": e.message})
 
-    if best is None:
-        if last_error is not None and not ranges:
-            raise ApiError(f"获取 {code} 的 K 线失败：{last_error}", 502)
-        detail = '；'.join(ranges) if ranges else '没有取到任何数据（合约可能已退市，或新浪暂无数据）'
+    # 和成交用同一套“交易日”口径：夜盘（20:00 之后）属于下一个交易日
+    day_bars = [b for b in bars if review.trading_day(pd.Timestamp(b['time'])).strftime('%Y-%m-%d') == target]
+    if not day_bars:
+        have = f"{bars[0]['time'][:10]} ~ {bars[-1]['time'][:10]}" if bars else '没有可用数据'
         return jsonify({"success": True, "available": False, "data": [],
-                        "message": f"取不到 {code} 在 {target} 的 K 线。新浪能提供的范围：{detail}"})
-
-    period, day_df = best
-    data = [{
-        'time': r.datetime.strftime('%Y-%m-%d %H:%M:%S'),
-        'open': float(r.open), 'high': float(r.high), 'low': float(r.low), 'close': float(r.close),
-        'volume': int(r.volume),
-    } for r in day_df.itertuples(index=False)]
+                        "message": f"本地行情库里 {code} 没有 {target} 的数据（库内范围：{have}），"
+                                   f"{kline_store.IMPORT_HINT}"})
     return jsonify({"success": True, "available": True, "symbol": code, "day": target,
-                    "period": int(period), "data": data, "count": len(data), "partial": not complete})
+                    "period": 1, "data": day_bars, "count": len(day_bars), "partial": False})

@@ -416,98 +416,69 @@ def test_day_trades_overnight_position_and_pnl_computed_without_file_pnl():
     assert all(x["openInDay"] and not x["closeInDay"] for x in prev["symbols"][0]["trades"])
 
 
-def _fake_bars(start, n, freq):
-    import pandas as pd
-    t = pd.date_range(start, periods=n, freq=freq)
-    return pd.DataFrame({"datetime": t, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 3, "hold": 9})
+def _tick_csv(symbol, ticks):
+    """造 tick CSV：ticks 是 [(YYYYMMDDHHMMSS, price, 当日累计量)]，按给定顺序写入。"""
+    rows = ["symbol,name,time,current,volume,money,position"]
+    rows += [f"{symbol},测试,{t}000,{p},{v},{v * p * 10},1000" for t, p, v in ticks]
+    return ("\n".join(rows) + "\n").encode("utf-8")
 
 
-def _with_fake_sina(by_period, calls=None):
-    """把 akshare 的新浪分钟线接口换成离线假数据：by_period 是 {周期: DataFrame 或 异常}。"""
-    import akshare as ak
-    orig = ak.futures_zh_minute_sina
+class _local_depth_library:
+    """把 depth_files 指到临时目录并写入 {文件名: bytes}；退出时还原环境变量并清缓存（pytest 和直接运行都能用）。"""
 
-    def fake(symbol, period):
-        if calls is not None:
-            calls.append(period)
-        v = by_period.get(period)
-        if isinstance(v, Exception):
-            raise v
-        return v if v is not None else _fake_bars("2000-01-01", 0, "1min")
-    ak.futures_zh_minute_sina = fake
-    return lambda: setattr(ak, "futures_zh_minute_sina", orig)
+    def __init__(self, files):
+        self.files = files
+
+    def __enter__(self):
+        from backend.services import depth_service, kline_store
+        self.dir = tempfile.mkdtemp(prefix="depth_files_test_")
+        self.old = os.environ.get("DEPTH_FILES_DIR")
+        os.environ["DEPTH_FILES_DIR"] = self.dir
+        for name, content in self.files.items():
+            with open(os.path.join(self.dir, name), "wb") as f:
+                f.write(content)
+        depth_service._DEPTH_META_CACHE.clear()
+        kline_store.clear_cache()
+        return self
+
+    def __exit__(self, *exc):
+        from backend.services import depth_service, kline_store
+        if self.old is None:
+            os.environ.pop("DEPTH_FILES_DIR", None)
+        else:
+            os.environ["DEPTH_FILES_DIR"] = self.old
+        shutil.rmtree(self.dir, ignore_errors=True)
+        depth_service._DEPTH_META_CACHE.clear()
+        kline_store.clear_cache()
 
 
-def test_day_kline_uses_finest_period_that_fully_covers_the_day():
-    import pandas as pd
-    # 1 分钟线从 10-21 夜盘 21:00 开始（该交易日 10-22 的第一根就是整份数据的第一根 → 开头被截断，不完整）
-    # 5 分钟线更早开始 → 完整，用它；交易日口径：夜盘 21:00 属于 10-22
-    one = _fake_bars("2026-10-21 21:00", 6, "1min")
-    five = pd.concat([_fake_bars("2026-10-20 09:00", 3, "5min"), _fake_bars("2026-10-21 21:00", 3, "5min"),
-                      _fake_bars("2026-10-22 09:00", 3, "5min")], ignore_index=True)
-    calls = []
-    restore = _with_fake_sina({"1": one, "5": five}, calls)
-    try:
+def test_day_kline_reads_one_minute_bars_from_local_library():
+    # 夜盘 10-21 21:00 起算交易日 10-22；日盘 10-22 09:00。tick 在同一分钟内合成一根 1 分钟线，时间标结束时间
+    ticks = [("20261021210010", 100, 10), ("20261021210030", 102, 25), ("20261021210130", 101, 40),
+             ("20261022090020", 103, 5), ("20261022090140", 104, 12),
+             ("20261023090020", 110, 5)]   # 10-23 的数据：不应出现在 10-22 的结果里
+    with _local_depth_library({"fu2611_20261022.csv": _tick_csv("fu2611", ticks)}):
         j = client.get("/api/review/day-kline?symbol=SHFE.FU2611&day=2026-10-22").get_json()
-    finally:
-        restore()
-    assert j["success"] and j["available"] and j["symbol"] == "FU2611"
-    assert j["period"] == 5 and j["partial"] is False and j["count"] == 6, "1 分钟被截断，降级到完整的 5 分钟"
-    assert j["data"][0]["time"] == "2026-10-21 21:00:00" and j["data"][-1]["time"] == "2026-10-22 09:10:00"
-    assert calls == ["1", "5"], "找到完整的就停，不再请求更长的周期"
+    assert j["success"] and j["available"] and j["symbol"] == "fu2611"
+    assert j["period"] == 1 and j["partial"] is False and j["count"] == 4
+    assert [b["time"] for b in j["data"]] == ["2026-10-21 21:01:00", "2026-10-21 21:02:00",
+                                              "2026-10-22 09:01:00", "2026-10-22 09:02:00"]
+    first = j["data"][0]
+    assert (first["open"], first["high"], first["low"], first["close"], first["volume"]) == (100, 102, 100, 102, 25)
 
 
-def test_day_kline_one_minute_when_complete_and_partial_when_nothing_is_complete():
-    import pandas as pd
-    # 1 分钟完整（这个交易日前面还有更早的数据）→ 直接用 1 分钟，只请求一次
-    one = pd.concat([_fake_bars("2026-10-21 09:00", 3, "1min"), _fake_bars("2026-10-21 21:00", 3, "1min")],
-                    ignore_index=True)
-    calls = []
-    restore = _with_fake_sina({"1": one}, calls)
-    try:
-        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
-    finally:
-        restore()
-    assert j["period"] == 1 and j["partial"] is False and calls == ["1"]
-
-    # 每个周期里这一天都是最早的数据（都被截断）→ 取最细的 1 分钟，标 partial
-    same = _fake_bars("2026-10-21 21:00", 3, "1min")
-    restore = _with_fake_sina({p: same for p in ("1", "5", "15", "30", "60")})
-    try:
-        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
-    finally:
-        restore()
-    assert j["available"] and j["period"] == 1 and j["partial"] is True
-
-
-def test_day_kline_unavailable_lists_ranges_and_handles_errors():
-    # 所有周期都没有这一天：不是错误，available=False，message 里写清各周期能取到的范围
-    bars = {p: _fake_bars("2026-11-04 09:00", 3, "1min") for p in ("1", "5", "15", "30", "60")}
-    restore = _with_fake_sina(bars)
-    try:
+def test_day_kline_unavailable_when_library_lacks_contract_or_day():
+    one_day = _tick_csv("fu2611", [("20261104090010", 100, 10), ("20261104090120", 101, 20)])
+    with _local_depth_library({"fu2611_20261104.csv": one_day}):
+        # 库里没有这一天：不是错误，available=False，message 写清库内范围并提示导入
         j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-01").get_json()
-    finally:
-        restore()
-    assert j["success"] and j["available"] is False and "2026-10-01" in j["message"]
-    assert "1分钟 11-04" in j["message"] and "60分钟" in j["message"]
-
-    # 个别周期出错（网络抖动）不影响用其它周期；全部出错才是 502
-    five = _fake_bars("2026-10-20 09:00", 2, "5min")
-    five = __import__("pandas").concat([five, _fake_bars("2026-10-22 09:00", 2, "5min")], ignore_index=True)
-    restore = _with_fake_sina({"1": RuntimeError("boom"), "5": five})
-    try:
-        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
-    finally:
-        restore()
-    assert j["available"] and j["period"] == 5
-    restore = _with_fake_sina({p: RuntimeError("boom") for p in ("1", "5", "15", "30", "60")})
-    try:
-        r = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22")
-    finally:
-        restore()
-    assert r.status_code == 502 and "boom" in r.get_json()["message"]
-    assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
-
+        assert j["success"] and j["available"] is False and j["data"] == []
+        assert "2026-10-01" in j["message"] and "2026-11-04" in j["message"] and "数据库管理" in j["message"]
+        # 库里没有这个合约
+        j = client.get("/api/review/day-kline?symbol=RB2610&day=2026-11-04").get_json()
+        assert j["success"] and j["available"] is False and "数据库管理" in j["message"]
+        assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
+        assert client.get("/api/review/day-kline?symbol=FU2611&day=not-a-date").status_code == 400
 
 import atexit  # noqa: E402
 

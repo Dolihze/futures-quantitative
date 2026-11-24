@@ -61,17 +61,17 @@ export function logout() {
   })
 }
 
-// 量化回测：可选的品种（主连）列表，默认燃料油主连
-/** @returns {Promise<ApiResult & { default: string, data: import('./types').BacktestProduct[] }>} */
-export function getBacktestProducts() {
+// 量化回测：可回测的合约 = 「数据库管理 → 历史行情数据管理」里已导入的合约
+/** @returns {Promise<ApiResult & { default: string, data: import('./types').BacktestContract[] }>} */
+export function getBacktestContracts() {
   return http({
-    url: '/api/backtest/products',
+    url: '/api/backtest/contracts',
     method: 'get',
     silent: true
   })
 }
 
-// 量化回测首页：所选品种主连上，所有策略在最近 days 天内的胜率、盈亏比、总盈亏、缩略净值曲线。
+// 量化回测首页：所选合约（本地行情库）上，所有策略在最近 days 天内的胜率、盈亏比、总盈亏、缩略净值曲线。
 // 后端要对每个策略取 K 线并回测，首次可能较慢，放宽超时；失败由页面自己展示，不弹全局提示。
 /**
  * @param {import('./types').BacktestParams} params
@@ -102,10 +102,10 @@ export function runBacktest(params) {
   })
 }
 
-// 量化回测详情：只取某品种主连某周期的 K 线（不重跑回测），用于「K线与买卖点」切换显示周期
+// 量化回测详情：只取某合约某周期的 K 线（不重跑回测），用于「K线与买卖点」切换显示周期
 /**
  * @param {import('./types').BacktestParams} params
- * @returns {Promise<ApiResult & { data: import('./types').BacktestKlineBar[], product: string, symbol: string, symbolName: string, count: number }>}
+ * @returns {Promise<ApiResult & { data: import('./types').BacktestKlineBar[], symbol: string, symbolName: string, count: number }>}
  */
 export function getBacktestKline(params) {
   return http({
@@ -207,7 +207,7 @@ export function getReviewDayTrades(params) {
   })
 }
 
-// 交易复盘：某个合约在某个交易日的 1 分钟 K 线（新浪数据，只有最近几个交易日）
+// 交易复盘：某个合约在某个交易日的 1 分钟 K 线（取自本地历史行情库，需先在数据库管理导入该合约的 tick）
 /**
  * @param {{ symbol: string, day: string }} params
  * @returns {Promise<ApiResult & { available?: boolean, symbol?: string, day?: string, period?: number, data: import('./types').BacktestKlineBar[], count?: number, partial?: boolean }>}
