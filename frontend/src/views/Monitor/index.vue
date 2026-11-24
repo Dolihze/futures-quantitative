@@ -73,26 +73,26 @@
 
             <el-form-item v-if="cfg.size_mode !== 'fixed'" label="倍数" class="inline-field">
               <el-input-number v-model="cfg.multiplier" :min="0.01" :max="100" :step="0.1" :precision="2"
-                               controls-position="right" align="left" />
+                               controls-position="right" align="left" :disabled="running" />
             </el-form-item>
             <el-form-item v-else label="每笔固定手数" class="inline-field">
               <el-input-number v-model="cfg.fixed_volume" :min="1" :max="10000" :step="1" :precision="0"
-                               controls-position="right" align="left" />
+                               controls-position="right" align="left" :disabled="running" />
             </el-form-item>
 
             <el-form-item label="开仓偏移（跳）" class="inline-field">
               <el-input-number v-model="cfg.price_offset_ticks" :min="0" :max="100" :step="1" :precision="0"
-                               controls-position="right" align="left" />
+                               controls-position="right" align="left" :disabled="running" />
             </el-form-item>
 
             <el-form-item label="开仓时限（秒）" class="inline-field">
               <el-input-number v-model="cfg.follow_timeout" :min="30" :max="300" :step="10" :precision="0"
-                               controls-position="right" align="left" />
+                               controls-position="right" align="left" :disabled="running" />
             </el-form-item>
 
             <el-form-item label="品种白名单">
               <el-select v-model="whitelist" multiple filterable allow-create default-first-option
-                         placeholder="不选 = 全部品种" style="width: 100%"
+                         :disabled="running" placeholder="不选 = 全部品种" style="width: 100%"
                          popper-class="monitor-broker-popper">
                 <el-option v-for="p in FUTURES_PRODUCTS" :key="p.value" :value="p.value"
                            :label="`${p.label}（${p.value}）`" />
@@ -111,7 +111,6 @@
               启动跟单
             </el-button>
             <p v-if="!monitorOn" class="hint">请先登录被监控账号。</p>
-            <p v-else class="hint">只跟随<b>启动之后</b>产生的新成交，不会补齐已有持仓。</p>
           </template>
           <template v-else>
             <el-button v-if="status?.paused_reason" type="warning" size="large" style="width: 100%; margin-top: 10px"
@@ -121,9 +120,6 @@
             <el-button type="danger" size="large" style="width: 100%; margin-top: 10px"
                        :loading="busy" @click="handleStop">
               停止跟单
-            </el-button>
-            <el-button size="small" style="width: 100%; margin-top: 8px" :loading="busy" @click="handleUpdate">
-              应用修改后的配置（对之后的信号生效）
             </el-button>
           </template>
         </section>
@@ -252,9 +248,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBrokers } from '@/api'
 import {
   monitorLogin, monitorLogout, getMonitorAccount, getMonitorStatus, getMonitorRecords,
-  getMonitorCredentials, startCopy, stopCopy, updateCopyConfig, saveCopyConfig, resumeCopy,
+  getMonitorCredentials, startCopy, stopCopy, saveCopyConfig, resumeCopy,
   exportMonitorLogs
 } from '@/api/monitor'
+import { isTauri } from '@/utils/backend'
 import { useUserStore } from '@/stores/user'
 import { FUTURES_PRODUCTS } from '@/constants/futuresProducts'
 
@@ -328,13 +325,29 @@ const exportingLogs = ref(false)
 const handleExportLogs = async () => {
   exportingLogs.value = true
   try {
+    const d = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    const filename = `运行日志_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.xlsx`
+
+    if (isTauri()) {
+      // 桌面端：WebView2 的 <a download> 会静默存到系统下载文件夹，所以改用原生「另存为」对话框
+      const { core } = window.__TAURI__
+      const path = await core.invoke('plugin:dialog|save', {
+        options: { defaultPath: filename, filters: [{ name: 'Excel', extensions: ['xlsx'] }] },
+      })
+      if (!path) return   // 用户取消
+      const blob = await exportMonitorLogs()
+      const data = Array.from(new Uint8Array(await blob.arrayBuffer()))
+      await core.invoke('save_file', { path, data })
+      ElMessage.success(`运行日志已导出：${path}`)
+      return
+    }
+
     const blob = await exportMonitorLogs()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    const d = new Date()
-    const p = (n) => String(n).padStart(2, '0')
     a.href = url
-    a.download = `运行日志_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.xlsx`
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -417,8 +430,7 @@ const syncConfigFromStatus = () => {
   return true
 }
 
-// 表单一改就自动保存到本地（防抖）。运行中的修改仍需点「应用修改后的配置」才对信号生效，
-// 但保存的是表单当前值，下次打开软件时与关闭时一致
+// 表单一改就自动保存到本地（防抖）。运行中表单置灰不可改，停止跟单后才能修改
 let saveTimer = null
 const persistConfig = () => {
   clearTimeout(saveTimer)
@@ -494,12 +506,10 @@ const handleMonitorLogout = async () => {
 }
 
 const handleStart = async () => {
-  const summary = `手数：${{ multiple: '固定倍数', fixed: '固定手数' }[cfg.size_mode]}，`
-    + `开仓：反向限价（对方成交价${cfg.price_offset_ticks}跳外），平仓：反向市价`
   try {
     await ElMessageBox.confirm(
-      `即将【反向】跟单：对方账号 ${account.value?.username} 的新成交，会立即用你的交易账号 ${userStore.username} 做相反方向的真实下单（对方做多你做空，对方做空你做多）。\n\n${summary}\n\n确认启动？`,
-      '跟单确认', { type: 'warning', confirmButtonText: '确认跟单', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
+      '确认启动跟单？',
+      '跟单确认', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
   } catch { return }
 
   busy.value = true
@@ -515,6 +525,12 @@ const handleStart = async () => {
 }
 
 const handleStop = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确认停止跟单？',
+      '跟单确认', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' })
+  } catch { return }
+
   busy.value = true
   try {
     await stopCopy()
@@ -540,16 +556,6 @@ const handleResume = async () => {
   }
 }
 
-const handleUpdate = async () => {
-  busy.value = true
-  try {
-    const res = await updateCopyConfig(buildConfig())
-    res.success ? ElMessage.success(res.message) : ElMessage.error(res.message)
-    await refresh()
-  } finally {
-    busy.value = false
-  }
-}
 </script>
 
 <style scoped>

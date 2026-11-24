@@ -205,12 +205,19 @@ fn toggle_devtools(window: tauri::WebviewWindow) {
     }
 }
 
+/// 把前端导出的文件内容写入用户在「另存为」对话框里选定的路径。
+#[tauri::command]
+fn save_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, data).map_err(|e| format!("写入文件失败: {}", e))
+}
+
 fn main() {
     bind_children_to_app_lifetime();
 
     let port = pick_port();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Backend {
             child: Mutex::new(None),
             port,
@@ -235,7 +242,8 @@ fn main() {
             is_backend_ready,
             open_devtools,
             close_devtools,
-            toggle_devtools
+            toggle_devtools,
+            save_file
         ])
         .build(tauri::generate_context!())
         .expect("Error while building Tauri application")

@@ -11,6 +11,12 @@ from backend.app import app  # noqa: E402
 from backend.core import copy_trading  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_log_db(tmp_path, monkeypatch):
+    # 日志数据库在 %LOCALAPPDATA% 下：测试用临时目录，避免读写真实的用户数据
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+
 @pytest.fixture
 def client():
     app.config["TESTING"] = True

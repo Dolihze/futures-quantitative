@@ -7,7 +7,7 @@ from flask import Blueprint, Response, jsonify, request
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
-from backend.core import copy_trading, credential_store, ctp_service
+from backend.core import copy_trading, credential_store, ctp_service, log_store
 
 bp = Blueprint('monitor', __name__)
 
@@ -95,8 +95,11 @@ def build_logs_xlsx(logs):
         cell.font = Font(bold=True)
     for entry in reversed(logs):
         level = str(entry.get("level", ""))
-        ws.append([str(entry.get("time", "")), LOG_LEVEL_TEXT.get(level, level), str(entry.get("msg", ""))])
-    ws.column_dimensions["A"].width = 12
+        # 数据库里的日志带时间戳：导出完整「年-月-日 时:分:秒」，历史日志才分得清是哪天的
+        ts = entry.get("ts")
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else str(entry.get("time", ""))
+        ws.append([when, LOG_LEVEL_TEXT.get(level, level), str(entry.get("msg", ""))])
+    ws.column_dimensions["A"].width = 20
     ws.column_dimensions["B"].width = 8
     ws.column_dimensions["C"].width = 100
     ws.freeze_panes = "A2"
@@ -108,7 +111,11 @@ def build_logs_xlsx(logs):
 @bp.route('/api/monitor/logs/export')
 def monitor_logs_export():
     """导出运行日志为 Excel（.xlsx），时间正序"""
-    data = build_logs_xlsx(copy_trading.engine.get_logs())
+    # 导出数据库里保留期内的全部历史日志（不只是界面显示的最近 300 条）
+    history = log_store.all_logs()
+    # build_logs_xlsx 接收「最新在前」的列表；数据库读不出来（异常 / 空）时退回内存里的日志
+    logs = list(reversed(history)) if history else copy_trading.engine.get_logs()
+    data = build_logs_xlsx(logs)
     filename = f"运行日志_{time.strftime('%Y%m%d_%H%M%S')}.xlsx"
     # filename* 用 RFC 5987 编码，中文文件名在各浏览器 / WebView 里都不会乱码
     return Response(data, mimetype=XLSX_MIMETYPE, headers={

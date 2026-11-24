@@ -103,6 +103,7 @@ def init_runtime():
     print(f"[Backend] 基础路径: {config.BASE_DIR}")
     routes_init_runtime()
     copy_trading.engine.load_saved_config()   # 恢复上次保存的跟单配置
+    copy_trading.engine.load_saved_logs()     # 恢复历史运行日志（并清理 30 天前的）
 
 
 class _SafeStream:

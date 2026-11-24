@@ -25,7 +25,7 @@ import time
 import queue
 import collections
 
-from backend.core import ctp_service
+from backend.core import ctp_service, log_store
 
 # 手数模式
 SIZE_MULTIPLE = "multiple"  # 固定倍数：源手数 × multiplier
@@ -258,10 +258,24 @@ class CopyEngine:
 
     # ------------------------------------------------------------------ 日志 / 记录
     def log(self, msg, level="info"):
-        entry = {"time": time.strftime("%H:%M:%S"), "level": level, "msg": msg}
+        now = time.time()
+        entry = {"ts": now, "time": time.strftime("%H:%M:%S", time.localtime(now)), "level": level, "msg": msg}
         with self._lock:
             self.logs.appendleft(entry)
+        log_store.add(now, level, msg)      # 同时写入数据库，关闭客户端后不丢
         print(f"[Copy] {msg}")
+
+    def load_saved_logs(self):
+        """启动软件时：清理超过保留期的旧日志，并把最近的日志载入内存供界面展示。"""
+        log_store.purge_old()
+        entries = [
+            {"ts": r["ts"], "time": time.strftime("%H:%M:%S", time.localtime(r["ts"])),
+             "level": r["level"], "msg": r["msg"]}
+            for r in log_store.recent(MAX_LOGS)
+        ]
+        with self._lock:
+            self.logs.clear()
+            self.logs.extend(entries)      # recent() 已是最新在前，与 appendleft 的顺序一致
 
     def _new_record(self, **kw):
         with self._lock:
