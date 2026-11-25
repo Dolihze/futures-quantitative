@@ -56,18 +56,6 @@
           <div v-if="errorMsg" class="depth-error"><span>{{ errorMsg }}</span></div>
           <div v-for="(w, i) in warnings" :key="i" class="depth-warning">⚠ {{ w }}</div>
         </div>
-
-        <!-- 当前 K 线统计 -->
-        <div v-if="bars.length" class="stat-panel">
-          <h4>📊 当前视图</h4>
-          <div class="stat-grid">
-            <div class="stat-item"><div class="stat-label">K 线根数</div><div class="stat-value">{{ bars.length }}</div></div>
-            <div class="stat-item"><div class="stat-label">tick 笔数</div><div class="stat-value">{{ totalTicksInView.toLocaleString() }}</div></div>
-            <div class="stat-item"><div class="stat-label">最高</div><div class="stat-value up">{{ viewHigh }}</div></div>
-            <div class="stat-item"><div class="stat-label">最低</div><div class="stat-value down">{{ viewLow }}</div></div>
-            <div class="stat-item wide"><div class="stat-label">总成交量</div><div class="stat-value">{{ totalVolume.toLocaleString() }}</div></div>
-          </div>
-        </div>
       </aside>
 
       <!-- 右侧：工具栏 + K 线 + 盘口 -->
@@ -229,12 +217,6 @@ const emptyDesc = computed(() => {
   if (loading.value || contractsLoading.value) return ''
   return contracts.value.length ? '从左侧点击一个合约查看行情' : '请先到「数据库管理」导入历史 tick 数据，导入后会出现在左侧合约列表里'
 })
-
-// ---------- 统计 ----------
-const totalTicksInView = computed(() => bars.value.reduce((s, b) => s + (b.ticks || 0), 0))
-const totalVolume = computed(() => bars.value.reduce((s, b) => s + (b.volume || 0), 0))
-const viewHigh = computed(() => (bars.value.length ? Math.max(...bars.value.map((b) => b.high)) : '--'))
-const viewLow = computed(() => (bars.value.length ? Math.min(...bars.value.map((b) => b.low)) : '--'))
 
 // 从 axios 错误里取后端给的可读提示（silent 请求不会弹全局提示）
 function errorText(error, fallback) {

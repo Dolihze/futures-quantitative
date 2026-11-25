@@ -218,58 +218,6 @@
   color: var(--amber);
 }
 
-/* 当前视图统计 */
-.stat-panel {
-  background: var(--bg-panel);
-  border-radius: 10px;
-  padding: 15px;
-  margin-bottom: 20px;
-}
-
-.stat-panel h4 {
-  color: var(--accent2);
-  margin-bottom: 15px;
-  font-size: 14px;
-}
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.stat-item {
-  background: var(--bg-chart);
-  padding: 10px;
-  border-radius: 5px;
-  text-align: center;
-}
-
-.stat-item.wide {
-  grid-column: 1 / -1;
-}
-
-.stat-label {
-  color: var(--text-muted2);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  color: var(--accent2);
-  font-size: 15px;
-  font-weight: bold;
-  word-break: break-all;
-}
-
-.stat-value.up {
-  color: var(--up);
-}
-
-.stat-value.down {
-  color: var(--down);
-}
-
 /* 右侧图表区 */
 .chart-container {
   flex: 1;

@@ -74,6 +74,14 @@
               共 {{ reviewTradeTotal.toLocaleString() }} 手成交 · {{ formatSize(reviewSizeTotal) }}
             </span>
             <a class="db-link" :class="{ disabled: reviewLoading }" @click="loadReviewFiles">刷新</a>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              :disabled="!selectedReviewNames.length || reviewDeleting"
+              :loading="reviewDeleting"
+              @click="removeSelectedReviewFiles"
+            >批量删除{{ selectedReviewNames.length ? `（${selectedReviewNames.length}）` : '' }}</el-button>
           </div>
 
           <div v-if="!reviewFiles.length" class="db-empty">
@@ -82,6 +90,14 @@
 
           <div v-else class="db-table">
             <div class="db-row db-row-head review-row">
+              <span class="c-check">
+                <el-checkbox
+                  :model-value="reviewAllChecked"
+                  :indeterminate="reviewIndeterminate"
+                  :disabled="reviewDeleting"
+                  @change="toggleAllReview"
+                />
+              </span>
               <span class="c-symbol">文件</span>
               <span class="c-days">交易日</span>
               <span class="c-products">品种</span>
@@ -89,7 +105,20 @@
               <span class="c-num">大小</span>
               <span class="c-op">操作</span>
             </div>
-            <div v-for="f in reviewFiles" :key="f.name" class="db-row db-row-item review-row">
+            <div
+              v-for="f in reviewFiles"
+              :key="f.name"
+              class="db-row db-row-item review-row"
+              :class="{ selected: selectedReview.includes(f.name) }"
+              @click="toggleReviewSelect(f.name)"
+            >
+              <span class="c-check" @click.stop>
+                <el-checkbox
+                  :model-value="selectedReview.includes(f.name)"
+                  :disabled="reviewDeleting"
+                  @change="toggleReviewSelect(f.name)"
+                />
+              </span>
               <span class="c-symbol"><b :title="f.name">📄 {{ f.name }}</b></span>
               <template v-if="!f.error">
                 <span class="c-days">{{ dayRange(f.days) }}</span>
@@ -99,7 +128,7 @@
               <span v-else class="c-err" :title="f.error">⚠ {{ f.error }}</span>
               <span class="c-num">{{ formatSize(f.size) }}</span>
               <span class="c-op">
-                <router-link v-if="!f.error" :to="{ path: '/review', query: { file: f.name } }" class="op-link">查看</router-link>
+                <router-link v-if="!f.error" :to="{ path: '/review', query: { file: f.name } }" class="op-link" @click.stop>查看</router-link>
                 <a class="op-link danger" @click.stop="removeReviewFile(f.name)">删除</a>
               </span>
             </div>
@@ -607,6 +636,25 @@ const reviewTasks = ref([])
 const reviewTradeTotal = computed(() => reviewFiles.value.reduce((s, f) => s + (f.tradeCount || 0), 0))
 const reviewSizeTotal = computed(() => reviewFiles.value.reduce((s, f) => s + f.size, 0))
 
+// ---------- 批量选择 / 批量删除 ----------
+const selectedReview = ref([])        // 已勾选的文件名
+const reviewDeleting = ref(false)
+// 只统计当前列表里还存在的文件（刷新后被删掉的不算）
+const selectedReviewNames = computed(() => selectedReview.value.filter((n) => reviewFiles.value.some((f) => f.name === n)))
+const reviewAllChecked = computed(() => reviewFiles.value.length > 0 && selectedReviewNames.value.length === reviewFiles.value.length)
+const reviewIndeterminate = computed(() => selectedReviewNames.value.length > 0 && !reviewAllChecked.value)
+
+function toggleReviewSelect(name) {
+  if (reviewDeleting.value) return
+  const i = selectedReview.value.indexOf(name)
+  if (i >= 0) selectedReview.value.splice(i, 1)
+  else selectedReview.value.push(name)
+}
+
+function toggleAllReview(checked) {
+  selectedReview.value = checked ? reviewFiles.value.map((f) => f.name) : []
+}
+
 async function loadReviewFiles() {
   reviewLoading.value = true
   try {
@@ -617,6 +665,7 @@ async function loadReviewFiles() {
     reviewFiles.value = []
     ElMessage.error(errorText(error, '读取交易记录列表失败'))
   } finally {
+    selectedReview.value = selectedReviewNames.value   // 去掉列表里已不存在的选中项
     reviewLoading.value = false
   }
 }
@@ -680,6 +729,39 @@ async function removeReviewFile(name) {
     if (!error?.response?.data?.fileMissing) ElMessage.error(errorText(error, '删除失败'))
   }
   loadReviewFiles()
+}
+
+// 批量删除：逐个调用单文件删除接口（文件已不存在视为已删除）
+async function removeSelectedReviewFiles() {
+  const names = [...selectedReviewNames.value]
+  if (!names.length || reviewDeleting.value) return
+  const preview = names.slice(0, 5).map((n) => `「${n}」`).join('、') + (names.length > 5 ? ` 等 ${names.length} 个文件` : '')
+  try {
+    await ElMessageBox.confirm(`确定要删除选中的 ${names.length} 个交易记录文件吗？${preview}。此操作不可恢复。`, '批量删除', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch {
+    return
+  }
+  reviewDeleting.value = true
+  let ok = 0
+  const failed = []
+  for (const name of names) {
+    try {
+      await deleteReviewFile(name)
+      ok++
+    } catch (error) {
+      if (error?.response?.data?.fileMissing) ok++
+      else failed.push(name)
+    }
+  }
+  reviewDeleting.value = false
+  if (failed.length) {
+    ElMessage.warning(`已删除 ${ok} 个文件，${failed.length} 个删除失败：${failed.join('、')}`)
+  } else {
+    ElMessage.success(`已删除 ${ok} 个文件`)
+  }
+  await loadReviewFiles()
 }
 
 onMounted(() => {

@@ -625,12 +625,26 @@
   background: var(--accent2);
 }
 
-/* 交易记录表：文件 / 交易日 / 品种 / 成交手数 / 大小 / 操作 */
+/* 交易记录表：勾选 / 文件 / 交易日 / 品种 / 成交手数 / 大小 / 操作 */
 .review-row {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.4fr) minmax(100px, 1.2fr) 90px 80px 100px;
+  grid-template-columns: 24px minmax(180px, 2fr) minmax(140px, 1.4fr) minmax(100px, 1.2fr) 90px 80px 100px;
   align-items: center;
   gap: 12px;
+}
+
+.review-row.selected {
+  background: rgba(var(--primary-rgb), 0.1);
+}
+
+.c-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.c-check .el-checkbox {
+  height: auto;
 }
 
 .review-row .c-symbol b {
