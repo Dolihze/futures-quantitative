@@ -7,6 +7,7 @@ from backend.core import depth_market
 from backend.errors import ApiError, bad_request, not_found, wrap_errors
 from backend.services import depth_archive as archive
 from backend.services import depth_service as svc
+from backend.services import tick_store
 
 bp = Blueprint('depth', __name__)
 
@@ -25,14 +26,6 @@ def parse_ticks(content, filename):
     return svc.cache_ticks(td), td
 
 
-def depth_analyze_to_response(content, filename):
-    """解析一份 tick CSV，放进缓存，返回 JSON（上传和从文件夹选择共用）。"""
-    depth_id, td = parse_ticks(content, filename)
-    data = depth_market.summary(td)
-    data.update({"success": True, "depthId": depth_id, "filename": filename})
-    return jsonify(data)
-
-
 def _depth_get(depth_id):
     """取缓存里的 tick 数据；失效抛 ApiError(410)。"""
     td = svc.get_cached(depth_id)
@@ -41,19 +34,21 @@ def _depth_get(depth_id):
     return td
 
 
-def _file_path_or_error(name, *, missing_hint=''):
-    """校验文件名并确认文件存在，返回真实路径；否则抛 ApiError。"""
-    path = svc.safe_depth_path(name)
-    if path is None:
-        raise bad_request("文件名不合法")
-    if not os.path.isfile(path):
-        raise not_found(f"文件「{name}」不存在，可能已被移动或删除{missing_hint}", fileMissing=True)
-    return path
+def _unit_or_error(name, *, missing_hint=''):
+    """校验数据单元名并确认它在行情库里；否则抛 ApiError。返回单元名。"""
+    if not name or name != os.path.basename(name.replace('\\', '/')):   # 含路径分隔符 / .. 的一律拒绝，不做「取文件名」式的宽容
+        raise bad_request("名称不合法")
+    n = svc.unit_name(name)
+    if not n or tick_store.safe_store_path(svc.depth_files_dir(), n) is None:
+        raise bad_request("名称不合法")
+    if not svc.unit_exists(n):
+        raise not_found(f"数据「{n}」不存在，可能已被删除{missing_hint}", fileMissing=True)
+    return n
 
 
 @bp.route('/api/depth/upload', methods=['POST'])
 def depth_upload():
-    """上传 tick CSV：解析成功后保存到 depth_files。同名文件未带 overwrite=1 时返回 409 + exists:true（同复盘）。"""
+    """上传 tick CSV：解析一次后存进行情库（不保留 CSV）。数据已在库里且未带 overwrite=1 时返回 409 + exists:true。"""
     f = request.files.get('file')
     if f is None or not f.filename:
         raise bad_request("请选择要上传的文件")
@@ -63,42 +58,37 @@ def depth_upload():
     content = f.read()
 
     # 每次导入的文件名可能都一样（如 fu2701.csv），实际是不同日期的数据：
-    # 先读文件内部的合约和交易日，改名为「合约名_YYYYMMDD.csv」再判断是否重名
+    # 先读文件内部的合约和交易日，得到规范名「合约名_YYYYMMDD」再判断是否已导入过
     try:
         meta = depth_market.peek_meta(content, orig_name)
-        name = depth_market.canonical_name(content, orig_name, os.path.splitext(orig_name)[1].lower() or '.csv', meta)
+        name = depth_market.canonical_name(content, orig_name, '.csv', meta)
     except depth_market.DepthParseError as e:
         raise bad_request(str(e))
     except Exception as e:
         print(f"[Depth] 读取文件日期失败: {e}")
         raise bad_request(f"读取文件日期失败：{e}")
-    path = svc.safe_depth_path(name)
-    if path is None:
-        raise bad_request(f"文件名不合法：{name}")
+    unit = svc.unit_name(name)
+    if tick_store.safe_store_path(svc.depth_files_dir(), unit) is None:
+        raise bad_request(f"名称不合法：{name}")
     overwrite = request.form.get('overwrite') == '1'
-    if os.path.exists(path) and not overwrite:
-        raise ApiError(f"「{name}」已存在，是否覆盖？", 409, exists=True, name=name, originalName=orig_name)
+    if not overwrite:
+        why = svc.already_imported(unit, str(meta['symbol']), meta['days'])
+        if why:
+            raise ApiError(f"{why}，是否覆盖？", 409, exists=True, name=unit, originalName=orig_name)
 
-    data = depth_analyze_to_response(content, name).get_json()
-    tmp = path + '.uploading'
+    depth_id, td = parse_ticks(content, name)
+    data = depth_market.summary(td)
+    data.update({"success": True, "depthId": depth_id, "filename": name})
     try:
-        os.makedirs(svc.depth_files_dir(), exist_ok=True)
-        with open(tmp, 'wb') as out:
-            out.write(content)
-        os.replace(tmp, path)
-        svc.remember_meta(name, path, meta)   # 内容已经解析过，直接记进索引，列表不用再读这个文件
+        svc.save_unit(unit, td, source=orig_name)
         data["saved"] = True
         data["overwritten"] = overwrite
-        data["savedName"] = name
+        data["savedName"] = unit
         data["originalName"] = orig_name
     except OSError as e:
-        print(f"[Depth] 保存到 {svc.depth_files_dir()} 失败: {e}")
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
+        print(f"[Depth] 写入行情库 {svc.depth_files_dir()} 失败: {e}")
         data["saved"] = False
-        data["warnings"] = list(data.get("warnings", [])) + [f"文件没能保存到「{svc.DEPTH_FILES_DIRNAME}」文件夹：{e}"]
+        data["warnings"] = list(data.get("warnings", [])) + [f"数据没能写入行情库：{e}"]
     return jsonify(data)
 
 
@@ -157,9 +147,15 @@ def depth_archive_task():
 
 @bp.route('/api/depth/contracts')
 def depth_contracts():
-    """已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用。"""
+    """已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用。
+
+    migration：以前版本导入的遗留 CSV 正在后台迁移进行情库时 running=true（列表里已迁移的数据陆续出现）。
+    """
     contracts, bad = svc.scan()
-    return jsonify({"success": True, "dir": svc.DEPTH_FILES_DIRNAME, "contracts": contracts, "unrecognized": bad})
+    m = svc.migration_status()
+    return jsonify({"success": True, "dir": svc.DEPTH_FILES_DIRNAME, "contracts": contracts, "unrecognized": bad,
+                    "migration": {"running": m["running"], "total": m["total"], "done": m["done"],
+                                  "current": m["current"], "pending": m["pending"]}})
 
 
 def _find_contract(symbol, message):
@@ -170,10 +166,19 @@ def _find_contract(symbol, message):
     return c
 
 
+def _reject_while_migrating():
+    """遗留 CSV 还在迁移时，合约名下的数据可能只迁了一部分：打开 / 删除都会得到不完整的结果，先拒绝并说明。"""
+    m = svc.migration_status()
+    if m["running"]:
+        raise ApiError(f"历史数据正在迁移进行情库（{m['done']}/{m['total']}），完成后才能打开或删除合约，请稍候", 409,
+                       migrating=True)
+
+
 @bp.route('/api/depth/open-contract', methods=['POST'])
 def depth_open_contract():
     """打开一个合约：把它的所有文件解析后按时间合并成一条时间线，返回结构同 /api/depth/open。"""
     symbol = (request.get_json(silent=True) or {}).get('symbol', '')
+    _reject_while_migrating()
     c = _find_contract(symbol, f"合约「{symbol}」没有数据文件，可能已被删除，请刷新列表")
     try:
         # 统一缓存：同一个合约（文件没变）不管是深度行情、回测还是复盘先打开的，都只解析一次
@@ -194,49 +199,70 @@ def depth_open_contract():
 def depth_contract_delete():
     """删除一个合约：删掉它名下的全部文件。返回删除了哪些、哪些失败。"""
     symbol = (request.get_json(silent=True) or {}).get('symbol', '')
+    _reject_while_migrating()
     c = _find_contract(symbol, f"合约「{symbol}」没有数据文件")
     deleted, failed = [], []
     for f in c["files"]:
-        path = svc.safe_depth_path(f["name"])
         try:
-            os.remove(path)
+            svc.remove_unit(f["name"])
             deleted.append(f["name"])
-        except OSError as e:
+        except (OSError, tick_store.StoreError) as e:
             failed.append({"name": f["name"], "error": str(e)})
     if failed:
-        raise bad_request(f"{len(failed)} 个文件删除失败（可能正被其它程序打开）：{failed[0]['name']}",
+        raise bad_request(f"{len(failed)} 份数据删除失败（可能正被其它程序占用）：{failed[0]['name']}",
                           deleted=deleted, failed=failed)
     return jsonify({"success": True, "deleted": deleted})
 
 
 @bp.route('/api/depth/files')
 def depth_files():
-    """列出 depth_files 文件夹里的 tick CSV（最近修改的在前）。"""
+    """列出行情库里的全部数据单元（最近导入的在前）。"""
+    svc.scan()   # 顺便触发遗留 CSV 的后台迁移
     return jsonify({"success": True, "dir": svc.DEPTH_FILES_DIRNAME, "files": svc.list_files()})
 
 
 @bp.route('/api/depth/files', methods=['DELETE'])
 def depth_file_delete():
     name = (request.get_json(silent=True) or {}).get('name', '')
-    path = _file_path_or_error(name)
+    unit = _unit_or_error(name)
+    try:
+        svc.remove_unit(unit)
+    except (OSError, tick_store.StoreError) as e:
+        raise bad_request(f"删除失败：{e}（文件可能正被其它程序占用）")
+    return jsonify({"success": True, "name": unit})
+
+
+@bp.route('/api/depth/unrecognized', methods=['DELETE'])
+def depth_unrecognized_delete():
+    """删除「无法识别的文件」：未能迁移进行情库、仍留在 depth_files 根目录的 CSV。只允许删这类文件，不会碰行情库。"""
+    name = (request.get_json(silent=True) or {}).get('name', '')
+    if not name or name != os.path.basename(name.replace('\\', '/')):
+        raise bad_request("名称不合法")
+    path = svc.safe_depth_path(name)
+    if path is None:
+        raise bad_request("名称不合法")
+    if not os.path.isfile(path):
+        raise not_found(f"文件「{name}」不存在，可能已被删除", fileMissing=True)
     try:
         os.remove(path)
     except OSError as e:
-        raise bad_request(f"删除失败：{e}（文件可能正被其它程序打开）")
+        raise bad_request(f"删除失败：{e}（文件可能正被其它程序占用）")
     return jsonify({"success": True, "name": name})
 
 
 @bp.route('/api/depth/open', methods=['POST'])
 def depth_open():
-    """选择 depth_files 里已有的文件，返回结构和上传接口一致。"""
+    """打开行情库里的一份数据单元，返回结构和上传接口一致。"""
     name = (request.get_json(silent=True) or {}).get('name', '')
-    path = _file_path_or_error(name, missing_hint='，请刷新列表')
+    unit = _unit_or_error(name, missing_hint='，请刷新列表')
     try:
-        with open(path, 'rb') as fh:
-            content = fh.read()
-    except OSError as e:
-        raise bad_request(f"读取文件失败：{e}")
-    return depth_analyze_to_response(content, name)
+        td = tick_store.read_unit(svc.depth_files_dir(), unit)
+    except (tick_store.StoreError, OSError) as e:
+        raise bad_request(f"读取数据失败：{e}")
+    depth_id = svc.cache_ticks(td)
+    data = depth_market.summary(td)
+    data.update({"success": True, "depthId": depth_id, "filename": unit})
+    return jsonify(data)
 
 
 @bp.route('/api/depth/kline')

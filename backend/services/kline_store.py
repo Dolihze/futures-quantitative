@@ -31,7 +31,7 @@ def normalize_symbol(symbol):
 def _find_contract(symbol):
     """在库里按不区分大小写、去交易所前缀的方式找合约，返回 scan() 里的合约 dict 或 None。"""
     key = normalize_symbol(symbol)
-    contracts, _ = depth_service.scan()
+    contracts, _ = depth_service.scan(migrate='none')
     for c in contracts:
         if normalize_symbol(c['symbol']) == key:
             return c
@@ -40,7 +40,7 @@ def _find_contract(symbol):
 
 def list_contracts():
     """库里已导入的合约（回测页下拉用）：[{symbol, name, days, dayCount, start, end, tickCount}]。"""
-    contracts, _ = depth_service.scan()
+    contracts, _ = depth_service.scan(migrate='none')
     out = [{
         'symbol': c['symbol'], 'name': c['name'],
         'dayCount': c['dayCount'], 'start': c['start'], 'end': c['end'],

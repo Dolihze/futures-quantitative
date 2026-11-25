@@ -532,7 +532,7 @@
 
 .db-file {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(200px, 1.4fr) 80px 72px 120px 40px;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(190px, 1.3fr) 80px 72px 118px minmax(80px, 1fr) 40px;
   align-items: center;
   gap: 10px;
   height: 32px;
@@ -559,6 +559,60 @@
 .f-err {
   color: var(--amber);
   word-break: break-all;
+}
+
+/* 导入来源（单个导入是原文件名，批量导入是压缩包内路径） */
+.f-src {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, var(--text-secondary));
+  opacity: 0.8;
+}
+
+/* 展开合约后第一行：已导入的交易日区间，导入前对照它避免重复导入 */
+.db-covered {
+  padding: 4px 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  border-bottom: 1px dashed var(--border-panel);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+/* 行情库台账说明 */
+.db-ledger-tip {
+  padding: 8px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-panel);
+}
+
+/* 历史数据迁移进度条 */
+.db-migrate {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(var(--primary-rgb), 0.5);
+  border-radius: 4px;
+  background: rgba(var(--primary-rgb), 0.08);
+}
+
+.db-migrate-text {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-body);
+}
+
+.db-migrate-cur {
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* Element Plus 上传拖拽区 */

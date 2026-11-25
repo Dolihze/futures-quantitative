@@ -442,7 +442,7 @@
     "/api/depth/files": {
       "get": {
         "operationId": "get_depth_depth_files",
-        "summary": "列出 depth_files 文件夹里的 tick CSV（最近修改的在前）。",
+        "summary": "列出行情库里的全部数据单元（最近导入的在前）。",
         "tags": [
           "depth"
         ],
@@ -564,7 +564,7 @@
     "/api/depth/open": {
       "post": {
         "operationId": "post_depth_depth_open",
-        "summary": "选择 depth_files 里已有的文件，返回结构和上传接口一致。",
+        "summary": "打开行情库里的一份数据单元，返回结构和上传接口一致。",
         "tags": [
           "depth"
         ],
@@ -654,10 +654,41 @@
         }
       }
     },
+    "/api/depth/unrecognized": {
+      "delete": {
+        "operationId": "delete_depth_depth_unrecognized_delete",
+        "summary": "删除「无法识别的文件」：未能迁移进行情库、仍留在 depth_files 根目录的 CSV。只允许删这类文件，不会碰行情库。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/depth/upload": {
       "post": {
         "operationId": "post_depth_depth_upload",
-        "summary": "上传 tick CSV：解析成功后保存到 depth_files。同名文件未带 overwrite=1 时返回 409 + exists:true（同复盘）。",
+        "summary": "上传 tick CSV：解析一次后存进行情库（不保留 CSV）。数据已在库里且未带 overwrite=1 时返回 409 + exists:true。",
         "tags": [
           "depth"
         ],
@@ -2829,6 +2860,7 @@
         "type": "object"
       },
       "DepthContractFile": {
+        "description": "行情库里的一份数据单元（台账条目）：导入时 CSV 解析后存成列式文件，CSV 本身不保留。",
         "properties": {
           "name": {
             "title": "Name",
@@ -2864,6 +2896,16 @@
           "hasBs": {
             "title": "Hasbs",
             "type": "boolean"
+          },
+          "importedAt": {
+            "default": 0,
+            "title": "Importedat",
+            "type": "integer"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
@@ -2950,6 +2992,17 @@
             },
             "title": "Unrecognized",
             "type": "array"
+          },
+          "migration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepthMigration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -3033,6 +3086,40 @@
           "files"
         ],
         "title": "DepthFiles",
+        "type": "object"
+      },
+      "DepthMigration": {
+        "description": "以前版本导入的 CSV 迁移进行情库的后台进度。",
+        "properties": {
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "current": {
+            "title": "Current",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "total",
+          "done",
+          "current",
+          "pending"
+        ],
+        "title": "DepthMigration",
         "type": "object"
       },
       "DepthOpenResult": {
@@ -4013,6 +4100,21 @@
             ],
             "default": null,
             "title": "Overwritten"
+          },
+          "removed": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Removed"
           }
         },
         "required": [

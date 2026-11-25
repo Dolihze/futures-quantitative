@@ -25,11 +25,13 @@ import zipfile
 
 from backend.core import depth_market
 from backend.services import depth_service as svc
+from backend.services import tick_store
 
 # 防 zip 炸弹：单个合约 CSV 解压后的上限；嵌套 zip（月/日这一层）本身解压后的上限
 MAX_CSV_BYTES = 500 * 1024 * 1024
 MAX_NESTED_ZIP_BYTES = 2 * 1024 * 1024 * 1024
 MAX_DEPTH = 6   # 嵌套层数上限，防止循环 / 恶意套娃
+LEDGER_FLUSH_EVERY = 20   # 批量导入每入库这么多份，把台账落盘一次
 
 _MONTH_RE = re.compile(r'^\d{6}$')
 _DAY_RE = re.compile(r'^\d{8}$')
@@ -212,6 +214,7 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
     counts = {'imported': 0, 'overwritten': 0, 'skipped': 0, 'failed': 0}
     contracts = set()
     seen_names = set()   # 本次导入中已处理的目标文件名：同一天出现重复成员时只取第一份
+    since_flush = 0
 
     def add(label, status, name='', message='', symbol=''):
         items.append({'label': label, 'status': status, 'name': name, 'message': message, 'symbol': symbol})
@@ -252,39 +255,43 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
                     continue
 
                 symbol = str(meta['symbol'])
-                path = svc.safe_depth_path(name)
-                if path is None:
+                unit = svc.unit_name(name)
+                if tick_store.safe_store_path(root, unit) is None:
                     counts['failed'] += 1
-                    add(label, 'failed', name, f'文件名不合法：{name}')
+                    add(label, 'failed', unit, f'名称不合法：{unit}')
                     continue
-                if name in seen_names:
+                if unit in seen_names:
                     counts['skipped'] += 1
-                    add(label, 'skipped', name, '压缩包内重复的数据，已忽略', symbol)
+                    add(label, 'skipped', unit, '压缩包内重复的数据，已忽略', symbol)
                     continue
-                seen_names.add(name)
+                seen_names.add(unit)
 
-                existed = os.path.exists(path)
-                if existed and on_exists != 'overwrite':
-                    counts['skipped'] += 1
-                    add(label, 'skipped', name, '已存在，已跳过', symbol)
-                    contracts.add(symbol)
-                    continue
+                existed = svc.unit_exists(unit)
+                if on_exists != 'overwrite':
+                    why = svc.already_imported(unit, symbol, meta['days'])
+                    if why:
+                        counts['skipped'] += 1
+                        add(label, 'skipped', unit, '已导入过，已跳过', symbol)
+                        contracts.add(symbol)
+                        continue
 
-                tmp = path + '.uploading'
+                # 已经跳过的数据不再解析（上面只读了元数据）；真正要入库的才做完整解析
                 try:
-                    os.makedirs(root, exist_ok=True)
-                    with open(tmp, 'wb') as out:
-                        out.write(csv_bytes)
-                    os.replace(tmp, path)
-                except OSError as e:
-                    try:
-                        os.remove(tmp)
-                    except OSError:
-                        pass
+                    td = depth_market.parse(csv_bytes, csv_name)
+                    svc.save_unit(unit, td, source=label, save_ledger=False)   # 先不落盘台账，每隔若干份 / 结束时统一写
+                    since_flush += 1
+                    if since_flush >= LEDGER_FLUSH_EVERY:
+                        svc.flush_ledger()   # 进程被杀时不至于丢掉前面几百份的台账（npz 虽能重建，但要逐个读，很慢）
+                        since_flush = 0
+                except depth_market.DepthParseError as e:
                     counts['failed'] += 1
-                    add(label, 'failed', name, f'保存失败：{e}', symbol)
+                    add(label, 'failed', unit, str(e), symbol)
                     continue
-                svc.remember_meta(name, path, meta, save=False)   # 内容已解析过，直接记进索引；整批结束后统一落盘
+                except Exception as e:  # noqa: BLE001
+                    counts['failed'] += 1
+                    add(label, 'failed', unit, f'入库失败：{e}', symbol)
+                    continue
+                name = unit
                 if existed:
                     counts['overwritten'] += 1
                     add(label, 'overwritten', name, '已覆盖', symbol)
@@ -295,7 +302,7 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
         except zipfile.BadZipFile as e:
             raise ArchiveError(f'压缩包已损坏：{e}')
         finally:
-            svc.save_index()   # 无论成功 / 中途出错，已导入的文件都要把索引落盘
+            svc.flush_ledger()   # 无论成功 / 中途出错，已入库的数据都要把台账落盘
 
     if progress:
         progress(matched, total, '')

@@ -301,7 +301,7 @@ class DepthOpenResult(ApiResult):
 class DepthArchiveItem(_Model):
     label: str      # 压缩包内路径，如 202611/20261102/fu2611.zip
     status: str     # imported / overwritten / skipped / failed
-    name: str       # 保存后的文件名（合约名_YYYYMMDD.csv），失败时可能为空
+    name: str       # 入库后的数据单元名（合约名_YYYYMMDD），失败时可能为空
     message: str
     symbol: str
 
@@ -338,14 +338,17 @@ class DepthArchiveTask(ApiResult):
 
 
 class DepthContractFile(_Model):
-    name: str
-    size: int
-    mtime: int
+    """行情库里的一份数据单元（台账条目）：导入时 CSV 解析后存成列式文件，CSV 本身不保留。"""
+    name: str           # 单元名，如 fu2611_20261102
+    size: int           # 库文件大小（字节）
+    mtime: int          # 导入时间（Unix 秒）
     tickCount: int
     days: list[str]
     start: str
     end: str
     hasBs: bool
+    importedAt: int = 0     # 导入时间（Unix 秒），同 mtime
+    source: str = ''        # 来源：单个导入是原文件名，批量导入是压缩包内路径
 
 
 class DepthContract(_Model):
@@ -370,15 +373,25 @@ class DepthUnrecognized(_Model):
     error: str
 
 
+class DepthMigration(_Model):
+    """以前版本导入的 CSV 迁移进行情库的后台进度。"""
+    running: bool
+    total: int      # 本轮要迁移的文件数
+    done: int
+    current: str
+    pending: int    # 还没迁移的 CSV 个数
+
+
 class DepthContracts(ApiResult):
     dir: str
     contracts: list[DepthContract]
     unrecognized: list[DepthUnrecognized]
+    migration: Optional[DepthMigration] = None
 
 
 class DepthFiles(ApiResult):
     dir: str
-    files: list[ReviewFile]
+    files: list[ReviewFile]   # 行情库里的数据单元（name 为单元名）
 
 
 # ---------------------------------------------------------------------------

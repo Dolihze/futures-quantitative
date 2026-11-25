@@ -249,24 +249,38 @@
         </div>
       </div>
 
+      <!-- 历史数据迁移（以前版本导入的 CSV -> 行情库）：后台进行，期间列表陆续出现 -->
+      <div v-if="migration.running" class="db-migrate">
+        <div class="db-migrate-text">
+          正在把以前导入的 CSV 迁移进行情库（{{ migration.done }} / {{ migration.total }}）。迁移期间可以导入新数据，
+          但暂时不能打开或删除合约；完成后原 CSV 会被删除，之后打开合约不再需要解析 CSV。
+        </div>
+        <el-progress :percentage="migrationPercent" :stroke-width="12" text-inside :format="() => `${migrationPercent}%`" />
+        <div class="db-migrate-cur" :title="migration.current">{{ migration.current }}</div>
+      </div>
+
       <!-- 合约表 -->
       <div class="db-panel">
         <div class="db-panel-head">
           <span>已导入的品种（{{ productGroups.length }}）· 合约（{{ contracts.length }}）</span>
           <span class="db-total" v-if="contracts.length">
-            共 {{ totalFiles }} 个文件 · {{ totalTicks.toLocaleString() }} 笔 tick · {{ formatSize(totalSize) }}
+            共 {{ totalFiles }} 份数据 · {{ totalTicks.toLocaleString() }} 笔 tick · 占用 {{ formatSize(totalSize) }}
           </span>
           <a class="db-link" :class="{ disabled: loading }" @click="loadContracts">刷新</a>
         </div>
+        <div v-if="contracts.length" class="db-ledger-tip">
+          这里是行情库的台账：导入成功的数据以列式文件保存，原始 CSV 不再保留。展开合约可以看到已导入的每个交易日、导入时间和来源；
+          导入前对照这里即可避免重复导入（重复导入默认会提示并跳过）。
+        </div>
 
         <div v-if="!contracts.length" class="db-empty">
-          {{ loading ? '加载中...' : `还没有数据。导入 tick CSV 后会出现在这里；也可以直接把 CSV 放进 ${dir} 文件夹后点“刷新”。` }}
+          {{ loading ? '加载中...' : '还没有数据。从上方导入 tick CSV 或全量压缩包后会出现在这里。' }}
         </div>
 
         <div v-else class="db-table">
           <div class="db-row db-row-head">
             <span class="c-symbol">品种 / 合约</span>
-            <span class="c-num">文件</span>
+            <span class="c-num">数据</span>
             <span class="c-num">交易日</span>
             <span class="c-num">tick 数</span>
             <span class="c-range">时间范围</span>
@@ -319,12 +333,16 @@
 
                 <!-- 三级：该合约名下的文件 -->
                 <div v-if="expanded === c.symbol" class="db-files">
+                  <div class="db-covered" :title="c.days.join('、')">
+                    已导入交易日（{{ c.dayCount }} 天）：{{ dayCompact(c.days) }}
+                  </div>
                   <div v-for="f in c.files" :key="f.name" class="db-file">
-                    <span class="f-name" :title="f.name">📄 {{ f.name }}</span>
+                    <span class="f-name" :title="f.name">🗄 {{ f.name }}</span>
                     <span class="f-days">{{ dayRange(f.days) }}</span>
                     <span class="f-num">{{ f.tickCount.toLocaleString() }} 笔</span>
                     <span class="f-num">{{ formatSize(f.size) }}</span>
-                    <span class="f-time">{{ formatMtime(f.mtime) }}</span>
+                    <span class="f-time" :title="f.source ? `来源：${f.source}` : ''">{{ f.importedAt ? formatMtime(f.importedAt) : '' }}</span>
+                    <span class="f-src" :title="f.source">{{ f.source }}</span>
                     <a class="op-link danger" @click.stop="removeFile(f.name)">删除</a>
                   </div>
                 </div>
@@ -336,13 +354,13 @@
 
       <!-- 无法识别的文件 -->
       <div v-if="unrecognized.length" class="db-panel warn">
-        <div class="db-panel-head"><span>⚠ 无法识别的文件（{{ unrecognized.length }}）</span></div>
+        <div class="db-panel-head"><span>⚠ 无法识别的文件（{{ unrecognized.length }}）· 未能迁移进行情库，仍保留在 {{ dir }} 文件夹</span></div>
         <div class="db-files flat">
           <div v-for="f in unrecognized" :key="f.name" class="db-file">
             <span class="f-name" :title="f.name">📄 {{ f.name }}</span>
             <span class="f-err">{{ f.error }}</span>
             <span class="f-num">{{ formatSize(f.size) }}</span>
-            <a class="op-link danger" @click.stop="removeFile(f.name)">删除</a>
+            <a class="op-link danger" @click.stop="removeUnrecognized(f.name)">删除</a>
           </div>
         </div>
       </div>
@@ -352,11 +370,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
 import {
-  uploadDepthFile, getDepthContracts, deleteDepthContract, deleteDepthFile,
+  uploadDepthFile, getDepthContracts, deleteDepthContract, deleteDepthFile, deleteDepthUnrecognized,
   uploadReviewFile, getReviewFilesDetail, deleteReviewFile
 } from '@/api'
 import { FUTURES_PRODUCTS } from '@/constants/futuresProducts'
@@ -370,6 +388,10 @@ const loading = ref(false)
 const dir = ref('depth_files')
 const contracts = ref([])
 const unrecognized = ref([])
+// 以前版本导入的 CSV 正在后台迁移进行情库时的进度（running=false 表示没有在迁移）
+const migration = ref({ running: false, total: 0, done: 0, current: '', pending: 0 })
+const migrationPercent = computed(() => (migration.value.total ? Math.min(100, Math.round((migration.value.done / migration.value.total) * 100)) : 0))
+let migrationTimer = 0
 const expanded = ref('')          // 展开的合约（显示它名下的文件）
 const expandedProducts = ref([])  // 展开的品种（显示它名下的合约），可同时展开多个
 const tasks = ref([])
@@ -429,7 +451,7 @@ const toggleProduct = (code) => {
 async function removeProduct(g) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除品种「${g.code}${g.label ? ' ' + g.label : ''}」吗？将删除它名下 ${g.contracts.length} 个合约、${g.fileCount} 个文件（${g.tickCount.toLocaleString()} 笔 tick），此操作不可恢复。`,
+      `确定要删除品种「${g.code}${g.label ? ' ' + g.label : ''}」吗？将删除它名下 ${g.contracts.length} 个合约、${g.fileCount} 份数据（${g.tickCount.toLocaleString()} 笔 tick）。原始 CSV 导入后没有保留，删除后需要重新导入，此操作不可恢复。`,
       '删除品种',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
@@ -478,6 +500,8 @@ async function loadContracts() {
     contracts.value = res.contracts || []
     unrecognized.value = res.unrecognized || []
     dir.value = res.dir || dir.value
+    migration.value = res.migration || { running: false, total: 0, done: 0, current: '', pending: 0 }
+    scheduleMigrationPoll()
     if (expanded.value && !contracts.value.some((c) => c.symbol === expanded.value)) expanded.value = ''
     expandedProducts.value = expandedProducts.value.filter((code) => contracts.value.some((c) => productOf(c.symbol) === code))
   } catch (error) {
@@ -491,6 +515,32 @@ async function loadContracts() {
 
 const toggle = (symbol) => {
   expanded.value = expanded.value === symbol ? '' : symbol
+}
+
+// 迁移进行中：每 2 秒刷新一次列表，直到迁移结束（已迁移的数据随进度陆续出现）。离开页面时停掉。
+function scheduleMigrationPoll() {
+  clearTimeout(migrationTimer)
+  if (!migration.value.running) return
+  migrationTimer = window.setTimeout(() => { if (!loading.value) loadContracts(); else scheduleMigrationPoll() }, 2000)
+}
+onBeforeUnmount(() => clearTimeout(migrationTimer))
+
+// ---------- 「已导入」一目了然：每个合约已导入的交易日，折叠成连续区间 ----------
+// 相邻两个交易日间隔不超过 4 天（跨周末 / 小长假）视为同一段
+const dayGap = (a, b) => Math.round((new Date(`${b}T00:00:00`).getTime() - new Date(`${a}T00:00:00`).getTime()) / 86400000)
+const dayCompact = (days) => {
+  if (!days?.length) return ''
+  const out = []
+  let start = days[0]
+  let prev = days[0]
+  for (let i = 1; i < days.length; i++) {
+    const gap = dayGap(prev, days[i])
+    if (gap >= 1 && gap <= 4) { prev = days[i]; continue }
+    out.push(start === prev ? start : `${start} ~ ${prev}`)
+    start = prev = days[i]
+  }
+  out.push(start === prev ? start : `${start} ~ ${prev}`)
+  return out.join('、')
 }
 
 // ---------- 导入（可多选，逐个处理；同名文件逐个询问是否覆盖） ----------
@@ -513,7 +563,7 @@ function handleFileChange(uploadFile) {
 
 async function importOne(file, task) {
   const upd = (status, message) => { task.status = status; task.message = message }
-  upd('wait', '正在解析并保存...')
+  upd('wait', '正在解析并入库...')
   try {
     let res
     try {
@@ -523,11 +573,11 @@ async function importOne(file, task) {
       const name = error.response.data.name || file.name
       task.name = name
       try {
-        await ElMessageBox.confirm(`文件重复：文件夹中已存在「${name}」（导入文件「${file.name}」），是否覆盖？`, '文件重复', {
+        await ElMessageBox.confirm(`这份数据已经导入过：「${name}」（本次文件「${file.name}」），是否覆盖？`, '数据已导入', {
           confirmButtonText: '覆盖', cancelButtonText: '跳过', type: 'warning'
         })
       } catch {
-        upd('skip', '已存在，已跳过')
+        upd('skip', '已导入过，已跳过')
         return
       }
       upd('wait', '正在覆盖...')
@@ -593,7 +643,7 @@ watch(() => imp.finishedSeq, () => {
 async function removeContract(c) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除合约「${c.symbol}」吗？将删除它名下的 ${c.fileCount} 个文件（${c.tickCount.toLocaleString()} 笔 tick），此操作不可恢复。`,
+      `确定要删除合约「${c.symbol}」吗？将删除它名下已导入的 ${c.fileCount} 份数据（${c.dayCount} 个交易日、${c.tickCount.toLocaleString()} 笔 tick）。原始 CSV 导入后没有保留，删除后需要重新导入，此操作不可恢复。`,
       '删除合约',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
@@ -611,7 +661,7 @@ async function removeContract(c) {
 
 async function removeFile(name) {
   try {
-    await ElMessageBox.confirm(`确定要删除文件「${name}」吗？`, '删除文件', {
+    await ElMessageBox.confirm(`确定要删除数据「${name}」吗？原始 CSV 导入后没有保留，删除后需要重新导入。`, '删除数据', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
   } catch {
@@ -619,6 +669,23 @@ async function removeFile(name) {
   }
   try {
     await deleteDepthFile(name)
+    ElMessage.success(`已删除 ${name}`)
+  } catch (error) {
+    if (!error?.response?.data?.fileMissing) ElMessage.error(errorText(error, '删除失败'))
+  }
+  loadContracts()
+}
+
+async function removeUnrecognized(name) {
+  try {
+    await ElMessageBox.confirm(`确定要删除无法识别的文件「${name}」吗？`, '删除文件', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await deleteDepthUnrecognized(name)
     ElMessage.success(`已删除 ${name}`)
   } catch (error) {
     if (!error?.response?.data?.fileMissing) ElMessage.error(errorText(error, '删除失败'))

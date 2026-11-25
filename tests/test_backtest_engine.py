@@ -150,11 +150,12 @@ def _tick_csv(symbol, day_prices):
 
 def _with_depth_dir(tmp_path, monkeypatch, files):
     """把 depth_files 指到临时目录并写入 {文件名: bytes}，清掉 K 线缓存。"""
-    from backend.services import depth_service, kline_store
+    from backend.services import depth_service, kline_store, tick_store
     monkeypatch.setenv("DEPTH_FILES_DIR", str(tmp_path))
     for name, content in files.items():
         (tmp_path / name).write_bytes(content)
-    depth_service._DEPTH_META_CACHE.clear()
+    tick_store.reset_state()
+    depth_service.migrate_legacy()   # 夹具写的是 CSV：同步迁入行情库（回测只读库，不碰遗留 CSV）
     kline_store.clear_cache()
     return kline_store
 
@@ -196,6 +197,8 @@ def test_kline_store_cache_invalidates_when_files_change(tmp_path, monkeypatch):
     # 再导入第二个交易日：同一合约的文件合并成一条时间线，缓存按文件签名自动失效
     day2 = _tick_csv("fu2611", [("20261021", [("090010", 105, 10), ("090120", 106, 20)])])
     (tmp_path / "fu2611_20261021.csv").write_bytes(day2)
+    from backend.services import depth_service
+    depth_service.migrate_legacy()
     bars = ks.fetch_bars("fu2611", "1")
     assert [b["time"][:10] for b in bars] == ["2026-10-20"] * 2 + ["2026-10-21"] * 2
     c = ks.list_contracts()

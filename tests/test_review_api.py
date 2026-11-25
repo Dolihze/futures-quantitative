@@ -493,25 +493,26 @@ class _local_depth_library:
         self.files = files
 
     def __enter__(self):
-        from backend.services import depth_service, kline_store
+        from backend.services import depth_service, kline_store, tick_store
         self.dir = tempfile.mkdtemp(prefix="depth_files_test_")
         self.old = os.environ.get("DEPTH_FILES_DIR")
         os.environ["DEPTH_FILES_DIR"] = self.dir
         for name, content in self.files.items():
             with open(os.path.join(self.dir, name), "wb") as f:
                 f.write(content)
-        depth_service._DEPTH_META_CACHE.clear()
+        tick_store.reset_state()
+        depth_service.migrate_legacy()   # 夹具写的是 CSV：同步迁入行情库（复盘只读库，不碰遗留 CSV）
         kline_store.clear_cache()
         return self
 
     def __exit__(self, *exc):
-        from backend.services import depth_service, kline_store
+        from backend.services import depth_service, kline_store, tick_store
         if self.old is None:
             os.environ.pop("DEPTH_FILES_DIR", None)
         else:
             os.environ["DEPTH_FILES_DIR"] = self.old
         shutil.rmtree(self.dir, ignore_errors=True)
-        depth_service._DEPTH_META_CACHE.clear()
+        tick_store.reset_state()
         kline_store.clear_cache()
 
 
@@ -753,8 +754,10 @@ def test_day_kline_group_cache_invalidated_when_library_changes():
         assert j["available"] is False                      # 还没导入 10-23
         # 导入 10-23 这一天的数据（库的文件签名变了）-> 分组缓存必须失效，立刻能查到
         day2 = _tick_csv("fu2611", [("20261023090020", 110, 5), ("20261023090140", 111, 7)])
+        from backend.services import depth_service
         with open(os.path.join(lib.dir, "fu2611_20261023.csv"), "wb") as f:
             f.write(day2)
+        depth_service.migrate_legacy()   # 夹具写的是 CSV：迁入行情库，台账 / 库文件签名随之变化
         j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-23").get_json()
         assert j["available"] is True and j["count"] == 2
 

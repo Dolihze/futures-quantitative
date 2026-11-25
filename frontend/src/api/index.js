@@ -429,6 +429,14 @@ export function deleteDepthFile(name) {
 
 // 选择 depth_files 里已有文件进行解析，返回结构同 uploadDepthFile
 /**
+ * 删除「无法识别的文件」：未能迁移进行情库、仍留在 depth_files 里的 CSV。
+ * @param {string} name
+ * @returns {Promise<{ success: boolean, name: string }>}
+ */
+export function deleteDepthUnrecognized(name) {
+  return http({ url: '/api/depth/unrecognized', method: 'delete', data: { name }, silent: true })
+}
+/**
  * @param {string} name
  * @returns {Promise<import('./types').DepthOpenResult>}
  */
