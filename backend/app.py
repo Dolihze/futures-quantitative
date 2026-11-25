@@ -30,6 +30,8 @@ class _DepthRequest(Request):
     def max_content_length(self):
         if self.path == '/api/depth/upload':
             return depth_service.DEPTH_MAX_UPLOAD
+        if self.path == '/api/depth/upload-archive':
+            return depth_service.DEPTH_MAX_ARCHIVE_UPLOAD
         return super().max_content_length
 
     @max_content_length.setter
@@ -51,6 +53,8 @@ def _register_error_handlers(app):
     # 界面就只剩一句笼统的“xx失败”（比如后端是没重启的旧版本，缺少新接口时会返回 405）。
     @app.errorhandler(413)
     def too_large(_e):
+        if request.path == '/api/depth/upload-archive':
+            return jsonify({"success": False, "message": "压缩包过大，请上传 10GB 以内的文件"}), 413
         return jsonify({"success": False, "message": "文件过大，请上传 20MB 以内的文件"}), 413
 
     @app.errorhandler(404)

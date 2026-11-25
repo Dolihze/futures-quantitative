@@ -138,6 +138,149 @@
   line-height: 1.6;
 }
 
+/* 导入方式卡片：整体固定高度，批量 / 单个切换时不改变高度 */
+.db-import {
+  display: flex;
+  flex-direction: column;
+  height: 300px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  box-sizing: border-box;
+  background: var(--bg-panel);
+  border-radius: 10px;
+}
+
+.db-import-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.db-import-title {
+  color: var(--text-body);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-import-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.db-import-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 单个导入：拖拽区撑满剩余高度 */
+.db-single :deep(.el-upload),
+.db-single :deep(.el-upload-dragger) {
+  width: 100%;
+  height: 100%;
+}
+
+.db-single :deep(.el-upload-dragger) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.db-single .db-upload {
+  height: 100%;
+  margin-bottom: 0;
+}
+
+/* 批量导入 */
+.db-bulk {
+  display: flex;
+  flex-direction: column;
+}
+
+.db-bulk-desc {
+  flex-shrink: 0;
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.db-bulk-desc code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.15);
+  font-size: 12px;
+}
+
+.db-bulk-form {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.db-bulk-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* 进度 / 结果区：占满剩余高度，内容多时在内部滚动 */
+.db-bulk-status {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border: 1px dashed rgba(127, 127, 127, 0.3);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.db-bulk-progress-text {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.db-bulk-idle {
+  color: var(--text-muted);
+}
+
+.db-bulk-summary {
+  color: var(--text-body);
+  line-height: 1.8;
+}
+
+.db-bulk-summary b {
+  margin: 0 2px;
+}
+
+.db-bulk-summary .ok {
+  color: var(--down);
+}
+
+.db-bulk-summary .bad {
+  color: var(--up);
+}
+
+.db-bulk-fail {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  color: var(--up);
+}
+
+.db-bulk-fail span:first-child {
+  max-width: 280px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+}
 /* 导入任务 */
 .db-tasks {
   margin-bottom: 18px;
@@ -269,6 +412,38 @@
 .db-row-item:hover,
 .db-row-item.open {
   background: rgba(var(--primary-rgb), 0.07);
+}
+
+/* 一级：品种行 */
+.db-row-product {
+  height: 48px;
+  background: rgba(var(--primary-rgb), 0.04);
+}
+
+.db-row-product .c-symbol b {
+  font-size: 15px;
+}
+
+.db-row-product .product-count {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* 二级：品种名下的合约行，整体缩进，左侧加一条引导线 */
+.db-row-contract {
+  padding-left: 30px;
+  border-left: 2px solid rgba(var(--primary-rgb), 0.35);
+}
+
+.db-row-contract .c-symbol b {
+  font-size: 13px;
+}
+
+/* 三级：合约名下的文件，比合约再缩进一层 */
+.db-row-contract + .db-files {
+  padding-left: 52px;
+  border-left: 2px solid rgba(var(--primary-rgb), 0.35);
 }
 
 .c-num {

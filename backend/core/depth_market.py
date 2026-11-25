@@ -301,10 +301,9 @@ def parse(content: bytes, filename: str = '') -> TickData:
     if position is None:
         position = np.full(len(df), np.nan)
 
-    # 累计值 -> 增量。如果整列单调不减就是累计值；若频繁回退（>= 5% 的行）更像是单笔增量，直接使用并提示
+    # 累计值 -> 增量。如果整列单调不减就是累计值；若频繁回退（>= 5% 的行）更像是单笔增量，直接使用并提示。
+    # 文件从盘中截取时第一笔的成交量按 0 处理（不提示用户，见 _diff_cumulative）
     partial_start = _starts_mid_session(dt, cum_vol)
-    if partial_start:
-        warnings.append('文件不是从开盘开始的（第一笔的累计成交量已经很大），第一笔的成交量按 0 处理')
     vol_inc = _diff_cumulative(cum_vol, days, first_is_partial=partial_start)
     drops = int((np.diff(np.nan_to_num(cum_vol)) < 0).sum())
     # 每个交易日开始都会合法回退一次，所以阈值以“交易日数 + 5% 行数”为准

@@ -1,0 +1,64 @@
+/* 数据库管理页「批量导入 - 品种」多选下拉面板样式
+ *
+ * 下拉面板通过 teleport 挂载到 <body> 下，scoped / :deep 命中不了，所以必须以「非 scoped」方式引入。
+ * 所有选择器都以 .db-product-popper 开头（对应 el-select 的 popper-class），避免污染其它页面。
+ * 目标：每个选项前面带一个 checkbox 显示勾选状态，并去掉 Element Plus 默认的右侧对勾。 */
+
+.db-product-popper .el-select-dropdown__list {
+  padding: 4px;
+}
+
+.db-product-popper .el-select-dropdown__item {
+  height: 32px;
+  line-height: 32px;
+  padding: 0 10px;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-option);
+}
+
+.db-product-popper .el-select-dropdown__item:last-child {
+  margin-bottom: 0;
+}
+
+/* 去掉多选默认的右侧对勾（用 checkbox 表示选中），同时撤掉为对勾预留的右内边距 */
+.db-product-popper.el-select__popper .el-select-dropdown.is-multiple .el-select-dropdown__item {
+  padding-right: 10px;
+}
+
+.db-product-popper .el-select-dropdown.is-multiple .el-select-dropdown__item.is-selected::after {
+  display: none;
+}
+
+.db-product-popper .el-select-dropdown__item.is-hovering,
+.db-product-popper .el-select-dropdown__item:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+/* 选中项只靠 checkbox 区分，不再整行变色加粗，避免和勾选框重复强调 */
+.db-product-popper .el-select-dropdown__item.is-selected {
+  background: transparent;
+  color: var(--text-option);
+  font-weight: normal;
+}
+
+.db-product-popper .el-select-dropdown__item.is-selected.is-hovering,
+.db-product-popper .el-select-dropdown__item.is-selected:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
+}
+
+/* checkbox 占满整行；点击交给外层 el-option 处理，这里不接收鼠标事件，避免重复触发两次切换 */
+.db-product-popper .db-product-check {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.db-product-popper .db-product-check .el-checkbox__label {
+  color: inherit;
+  font-size: inherit;
+}

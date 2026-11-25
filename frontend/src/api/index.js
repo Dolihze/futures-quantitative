@@ -351,6 +351,43 @@ export function uploadDepthFile(file, overwrite = false) {
   return http({ url: '/api/depth/upload', method: 'post', data: form, timeout: 600000, silent: true })
 }
 
+// 批量导入：上传全量行情压缩包（YYYYMM/YYYYMMDD/合约.zip），后端只导入指定品种的所有合约。
+// 压缩包可能很大（几个 GB），超时放宽到 1 小时；overwrite=true 时已存在的同名文件直接覆盖，否则跳过。
+// 上传完成后后端在后台导入，立即返回 taskId，用 getDepthArchiveTask 轮询进度。
+/**
+ * @param {File} file
+ * @param {string[]} products 品种代码列表，如 ['fu', 'ag']
+ * @param {boolean} [overwrite]
+ * @param {(percent: number) => void} [onProgress] 上传进度 0-100
+ * @returns {Promise<import('./types').DepthArchiveStart>}
+ */
+export function uploadDepthArchive(file, products, overwrite = false, onProgress) {
+  const form = new FormData()
+  form.append('file', file)
+  products.forEach((p) => form.append('product', p))
+  if (overwrite) form.append('overwrite', '1')
+  return http({
+    url: '/api/depth/upload-archive',
+    method: 'post',
+    data: form,
+    timeout: 3600000,
+    silent: true,
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+  })
+}
+
+// 批量导入任务进度：status = running / done / error，done 时带 result
+// 不传 id 时取最近的任务（有运行中的优先），没有任务返回 404 + noTask：页面重新进入时据此恢复进度
+/**
+ * @param {string} [id]
+ * @returns {Promise<import('./types').DepthArchiveTask>}
+ */
+export function getDepthArchiveTask(id) {
+  return http({ url: '/api/depth/archive-task', method: 'get', params: id ? { id } : {}, silent: true })
+}
+
 // 已导入的合约列表（按合约合并多个文件）+ 无法识别的文件。深度行情左侧列表和数据库管理共用
 /** @returns {Promise<import('./types').DepthContractsResult>} */
 export function getDepthContracts() {

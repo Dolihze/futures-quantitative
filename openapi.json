@@ -317,6 +317,37 @@
         }
       }
     },
+    "/api/depth/archive-task": {
+      "get": {
+        "operationId": "get_depth_depth_archive_task",
+        "summary": "批量导入任务的进度：status = running / done / error；done 时带 result（结构见 DepthArchiveResult）。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthArchiveTask"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/depth/book": {
       "get": {
         "operationId": "get_depth_depth_book",
@@ -637,6 +668,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DepthOpenResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/depth/upload-archive": {
+      "post": {
+        "operationId": "post_depth_depth_upload_archive",
+        "summary": "批量导入：上传全量行情压缩包（YYYYMM/YYYYMMDD/合约.zip），只导入指定品种（可多个）的所有合约。",
+        "tags": [
+          "depth"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepthArchiveStart"
                 }
               }
             }
@@ -2345,6 +2407,351 @@
           "name"
         ],
         "title": "BrokerItem",
+        "type": "object"
+      },
+      "DepthArchiveItem": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "status",
+          "name",
+          "message",
+          "symbol"
+        ],
+        "title": "DepthArchiveItem",
+        "type": "object"
+      },
+      "DepthArchiveResult": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "perProduct": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Perproduct",
+            "type": "object"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "overwritten": {
+            "title": "Overwritten",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "contracts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DepthArchiveItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "originalName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Originalname"
+          }
+        },
+        "required": [
+          "success",
+          "products",
+          "perProduct",
+          "matched",
+          "imported",
+          "overwritten",
+          "skipped",
+          "failed",
+          "contracts",
+          "items"
+        ],
+        "title": "DepthArchiveResult",
+        "type": "object"
+      },
+      "DepthArchiveStart": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "taskId": {
+            "title": "Taskid",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "originalName": {
+            "title": "Originalname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "taskId",
+          "products",
+          "originalName"
+        ],
+        "title": "DepthArchiveStart",
+        "type": "object"
+      },
+      "DepthArchiveTask": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "taskId": {
+            "title": "Taskid",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "originalName": {
+            "title": "Originalname",
+            "type": "string"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "current": {
+            "title": "Current",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepthArchiveResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "taskId",
+          "status",
+          "products",
+          "originalName",
+          "done",
+          "total",
+          "current"
+        ],
+        "title": "DepthArchiveTask",
         "type": "object"
       },
       "DepthContract": {

@@ -40,6 +40,10 @@
 /** @typedef {Schemas['ReviewDayKline']} ReviewDayKline */
 
 /** @typedef {Schemas['DepthOpenResult']} DepthOpenResult */
+/** @typedef {Schemas['DepthArchiveResult']} DepthArchiveResult */
+/** @typedef {Schemas['DepthArchiveItem']} DepthArchiveItem */
+/** @typedef {Schemas['DepthArchiveStart']} DepthArchiveStart */
+/** @typedef {Schemas['DepthArchiveTask']} DepthArchiveTask */
 /** @typedef {Schemas['DepthContract']} DepthContract */
 /** @typedef {Schemas['DepthContractFile']} DepthContractFile */
 /** @typedef {Schemas['DepthContracts']} DepthContractsResult */

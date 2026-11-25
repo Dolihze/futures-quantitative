@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from backend.core import depth_market
 from backend.errors import ApiError, bad_request, not_found, wrap_errors
+from backend.services import depth_archive as archive
 from backend.services import depth_service as svc
 
 bp = Blueprint('depth', __name__)
@@ -97,6 +98,59 @@ def depth_upload():
         data["saved"] = False
         data["warnings"] = list(data.get("warnings", [])) + [f"文件没能保存到「{svc.DEPTH_FILES_DIRNAME}」文件夹：{e}"]
     return jsonify(data)
+
+
+@bp.route('/api/depth/upload-archive', methods=['POST'])
+def depth_upload_archive():
+    """批量导入：上传全量行情压缩包（YYYYMM/YYYYMMDD/合约.zip），只导入指定品种（可多个）的所有合约。
+
+    表单字段：file（.zip）、product（品种代码，如 fu；多个品种重复传该字段，也兼容逗号分隔）、
+    overwrite（1 = 已存在的同名文件直接覆盖，否则跳过）。
+    每份合约数据的解析和改名（合约名_YYYYMMDD.csv）与单文件导入完全一致。
+    压缩包很大，导入在后台线程里跑：本接口保存完上传就返回 taskId，前端用
+    GET /api/depth/archive-task?id= 轮询进度和最终结果。
+    """
+    f = request.files.get('file')
+    if f is None or not f.filename:
+        raise bad_request("请选择要上传的压缩包")
+    if not f.filename.lower().endswith('.zip'):
+        raise bad_request("仅支持 .zip 压缩包")
+    try:
+        products = archive.normalize_products(request.form.getlist('product'))
+    except archive.ArchiveError as e:
+        raise bad_request(str(e))
+    if not products:
+        raise bad_request("请先选择品种")
+    on_exists = 'overwrite' if request.form.get('overwrite') == '1' else 'skip'
+    if archive.has_running_task():
+        raise ApiError("已有一个批量导入正在进行，请等它完成后再导入", 409, busy=True)
+
+    orig_name = os.path.basename(f.filename.replace('\\', '/'))
+    tmp_path = archive.save_upload_to_temp(f)
+    task_id = archive.start_task(tmp_path, products, on_exists, orig_name)   # 临时文件由任务线程负责删除
+    return jsonify({"success": True, "taskId": task_id, "products": products, "originalName": orig_name})
+
+
+@bp.route('/api/depth/archive-task')
+def depth_archive_task():
+    """批量导入任务的进度：status = running / done / error；done 时带 result（结构见 DepthArchiveResult）。
+
+    不带 id 时返回最近的任务（有运行中的优先），没有任何任务返回 404 + noTask；页面重新进入时据此恢复进度。
+    """
+    task_id = request.args.get('id')
+    task = archive.get_task(task_id) if task_id else archive.latest_task()
+    if task is None:
+        if not task_id:
+            raise not_found("没有批量导入任务", noTask=True)
+        raise not_found("导入任务不存在（后端可能已重启）", expired=True)
+    result = task['result']
+    if result is not None:
+        result = {**result, "success": True, "originalName": task['originalName']}
+    return jsonify({
+        "success": True, "taskId": task['id'], "status": task['status'], "products": task['products'],
+        "originalName": task['originalName'], "done": task['done'], "total": task['total'],
+        "current": task['current'], "message": task['message'], "result": result,
+    })
 
 
 @bp.route('/api/depth/contracts')

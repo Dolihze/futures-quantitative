@@ -297,6 +297,45 @@ class DepthOpenResult(ApiResult):
     originalName: Optional[str] = None
 
 
+class DepthArchiveItem(_Model):
+    label: str      # 压缩包内路径，如 202611/20261102/fu2611.zip
+    status: str     # imported / overwritten / skipped / failed
+    name: str       # 保存后的文件名（合约名_YYYYMMDD.csv），失败时可能为空
+    message: str
+    symbol: str
+
+
+class DepthArchiveResult(ApiResult):
+    products: list[str]
+    perProduct: dict[str, int]   # 每个品种命中的合约文件数（0 表示压缩包里没有该品种）
+    matched: int
+    imported: int
+    overwritten: int
+    skipped: int
+    failed: int
+    contracts: list[str]
+    items: list[DepthArchiveItem]
+    originalName: Optional[str] = None
+
+
+class DepthArchiveStart(ApiResult):
+    taskId: str
+    products: list[str]
+    originalName: str
+
+
+class DepthArchiveTask(ApiResult):
+    taskId: str
+    status: str     # running / done / error
+    products: list[str]
+    originalName: str
+    done: int       # 已处理的合约文件数
+    total: int      # 命中的合约文件总数（扫描完成前为 0）
+    current: str    # 正在处理的压缩包内路径
+    message: str    # status=error 时的原因
+    result: Optional[DepthArchiveResult] = None
+
+
 class DepthContractFile(_Model):
     name: str
     size: int
@@ -361,6 +400,8 @@ RESPONSES: dict[tuple[str, str], type[BaseModel]] = {
     ("GET", "/api/review/day-trades"): ReviewDayTrades,
     ("GET", "/api/review/day-kline"): ReviewDayKline,
     ("POST", "/api/depth/upload"): DepthOpenResult,
+    ("POST", "/api/depth/upload-archive"): DepthArchiveStart,
+    ("GET", "/api/depth/archive-task"): DepthArchiveTask,
     ("POST", "/api/depth/open"): DepthOpenResult,
     ("POST", "/api/depth/open-contract"): DepthOpenResult,
     ("GET", "/api/depth/contracts"): DepthContracts,

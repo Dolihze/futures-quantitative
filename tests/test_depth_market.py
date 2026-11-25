@@ -131,7 +131,7 @@ def test_new_format_parse():
     assert td.days == ["2026-09-17"]
     # 首笔累计 71845 是文件之前的成交，不能算进首根 K 线：增量记 0
     assert list(td.vol) == [0, 29, 79, 67, 133, 58, 4, 83, 105, 17]
-    assert any("不是从开盘开始" in w for w in td.warnings)
+    assert not any("不是从开盘开始" in w for w in td.warnings)   # 只静默处理，不再提示用户
     # Turnover 科学计数法被识别
     assert td.money.sum() > 0
     # 不补零的 '2026-9-17 8:59' 解析正确
@@ -426,6 +426,213 @@ def test_upload_larger_than_global_limit():
     assert len(body) > 20 * 1024 * 1024
     r = _upload(body, "big.csv")
     assert r.status_code == 200, r.get_data(as_text=True)[:200]
+
+
+# ---------------------------------------------------------------------------
+# 批量导入：全量压缩包（YYYYMM/YYYYMMDD/合约.zip）-> 指定品种
+# ---------------------------------------------------------------------------
+import zipfile  # noqa: E402
+
+FU_HEADER = "InstrumentID,TradingTime,BS,LastPrice,Volume"
+
+
+def _fu_csv(symbol, day_str):
+    """某合约某天的 CSV（日盘单个交易日）。day_str 形如 2026-11-02。"""
+    rows = [f"{symbol},{day_str} 9:00:00,多开,3000,10", f"{symbol},{day_str} 9:00:01,空平,3001,12"]
+    return ("\n".join([FU_HEADER] + rows)).encode("utf-8")
+
+
+def _inner_zip(csv, csv_name):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(csv_name, csv)
+    return buf.getvalue()
+
+
+def _archive(entries, nested_months=False):
+    """entries: {zip 内路径: 字节}；nested_months=True 时把整个月份文件夹再打成 zip。"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for path, data in entries.items():
+            z.writestr(path, data)
+    return buf.getvalue()
+
+
+class _Resp:
+    """把「上传 -> 轮询任务」包装成和同步接口一样的响应，方便断言。"""
+
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+
+    def get_json(self):
+        return self._body
+
+    def get_data(self, as_text=False):
+        return str(self._body)
+
+
+def _upload_archive(content, product, overwrite=False, name="all.zip"):
+    import time
+    data = {"file": (io.BytesIO(content), name), "product": product}
+    if overwrite:
+        data["overwrite"] = "1"
+    r = client.post("/api/depth/upload-archive", data=data, content_type="multipart/form-data")
+    if r.status_code != 200:
+        return r
+    task_id = r.get_json()["taskId"]
+    for _ in range(200):
+        t = client.get(f"/api/depth/archive-task?id={task_id}").get_json()
+        if t["status"] == "done":
+            assert t["done"] == t["total"]
+            return _Resp(200, t["result"])
+        if t["status"] == "error":
+            return _Resp(400, {"success": False, "message": t["message"]})
+        time.sleep(0.05)
+    raise AssertionError("批量导入任务超时")
+
+
+def _full_archive():
+    return _archive({
+        "202611/20261102/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-02"), "fu2611.csv"),
+        "202611/20261102/fu2701.zip": _inner_zip(_fu_csv("fu2701", "2026-11-02"), "fu2701.csv"),
+        "202611/20261102/rb2610.zip": _inner_zip(_fu_csv("rb2610", "2026-11-02"), "rb2610.csv"),
+        "202611/20261103/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-03"), "fu2611.csv"),
+        "202611/20261103/fut2611.zip": _inner_zip(_fu_csv("fut2611", "2026-11-03"), "fut2611.csv"),  # 不能被 fu 误匹配
+        "__MACOSX/202611/20261103/._fu2611.zip": b"junk",
+    })
+
+
+def test_archive_import_by_product():
+    _clear_depth_files()
+    r = _upload_archive(_full_archive(), "FU")   # 品种大小写不敏感
+    assert r.status_code == 200, r.get_data(as_text=True)
+    j = r.get_json()
+    assert j["products"] == ["fu"] and j["perProduct"] == {"fu": 3} and j["matched"] == 3
+    assert j["imported"] == 3 and j["failed"] == 0 and j["skipped"] == 0
+    assert j["contracts"] == ["fu2611", "fu2701"]
+    assert sorted(os.listdir(_TMP_DIR)) == ["fu2611_20261102.csv", "fu2611_20261103.csv", "fu2701_20261102.csv"]
+    # 数据库管理里能按合约合并出来
+    cs = client.get("/api/depth/contracts").get_json()["contracts"]
+    fu = next(c for c in cs if c["symbol"] == "fu2611")
+    assert fu["fileCount"] == 2 and fu["dayCount"] == 2
+
+    # 再导一次：默认跳过；overwrite=1 覆盖
+    j2 = _upload_archive(_full_archive(), "fu").get_json()
+    assert j2["imported"] == 0 and j2["skipped"] == 3
+    j3 = _upload_archive(_full_archive(), "fu", overwrite=True).get_json()
+    assert j3["overwritten"] == 3 and j3["skipped"] == 0
+    _clear_depth_files()
+
+
+def test_archive_nested_zip_layers():
+    """月份、交易日这两层本身也是 zip 的情况。"""
+    _clear_depth_files()
+    day = _archive({"fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-04"), "fu2611.csv")})
+    month = _archive({"20261104.zip": day})
+    outer = _archive({"202611.zip": month})
+    j = _upload_archive(outer, "fu").get_json()
+    assert j["imported"] == 1 and os.listdir(_TMP_DIR) == ["fu2611_20261104.csv"]
+    _clear_depth_files()
+
+
+def test_archive_bad_member_reported_not_fatal():
+    _clear_depth_files()
+    arc = _archive({
+        "202611/20261102/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-02"), "fu2611.csv"),
+        "202611/20261103/fu2611.zip": _inner_zip(b"a,b\n1,2\n", "fu2611.csv"),     # CSV 无法识别
+        "202611/20261104/fu2611.zip": b"not a zip",                                 # 不是 zip
+    })
+    j = _upload_archive(arc, "fu").get_json()
+    assert j["matched"] == 3 and j["imported"] == 1 and j["failed"] == 2
+    assert os.listdir(_TMP_DIR) == ["fu2611_20261102.csv"]
+    _clear_depth_files()
+
+
+def test_archive_rejects():
+    _clear_depth_files()
+    assert _upload_archive(_full_archive(), "").status_code == 400            # 没选品种
+    assert _upload_archive(_full_archive(), "fu2611").status_code == 400      # 品种非法
+    assert _upload_archive(_full_archive(), "zz").status_code == 400          # 没有该品种
+    assert _upload_archive(b"nope", "fu").status_code == 400                  # 不是 zip
+    assert _upload_archive(b"x", "fu", name="a.csv").status_code == 400       # 扩展名不对
+    assert os.listdir(_TMP_DIR) == []
+
+
+def _multi_archive():
+    return _archive({
+        "202611/20261102/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-02"), "fu2611.csv"),
+        "202611/20261102/ag2612.zip": _inner_zip(_fu_csv("ag2612", "2026-11-02"), "ag2612.csv"),
+        "202611/20261102/a2701.zip": _inner_zip(_fu_csv("a2701", "2026-11-02"), "a2701.csv"),
+        "202611/20261102/rb2610.zip": _inner_zip(_fu_csv("rb2610", "2026-11-02"), "rb2610.csv"),
+        "202611/20261103/ag2612.zip": _inner_zip(_fu_csv("ag2612", "2026-11-03"), "ag2612.csv"),
+    })
+
+
+def test_archive_multiple_products():
+    _clear_depth_files()
+    j = _upload_archive(_multi_archive(), ["fu", "AG", "zz"]).get_json()   # zz 压缩包里没有：不报错，计数为 0
+    assert j["products"] == ["fu", "ag", "zz"]
+    assert j["perProduct"] == {"fu": 1, "ag": 2, "zz": 0}
+    assert j["matched"] == 3 and j["imported"] == 3 and j["failed"] == 0
+    assert j["contracts"] == ["ag2612", "fu2611"]
+    assert sorted(os.listdir(_TMP_DIR)) == ["ag2612_20261102.csv", "ag2612_20261103.csv", "fu2611_20261102.csv"]
+    _clear_depth_files()
+
+    # 同时选 a 和 ag：ag2612 归 ag，不能被算进 a；a2701 归 a
+    j = _upload_archive(_multi_archive(), ["a", "ag"]).get_json()
+    assert j["perProduct"] == {"a": 1, "ag": 2} and j["matched"] == 3
+    assert j["contracts"] == ["a2701", "ag2612"]
+    _clear_depth_files()
+
+    # 逗号分隔的单个字段也兼容；全部都没有 -> 400；任一项非法 -> 400
+    assert _upload_archive(_multi_archive(), "fu,ag").get_json()["perProduct"] == {"fu": 1, "ag": 2}
+    _clear_depth_files()
+    assert _upload_archive(_multi_archive(), ["zz", "yy"]).status_code == 400
+    assert _upload_archive(_multi_archive(), ["fu", "fu2611"]).status_code == 400
+    assert os.listdir(_TMP_DIR) == []
+
+
+def test_archive_latest_task_for_restoring_progress():
+    """页面重新进入时不带 id 查询：有运行中的任务优先返回它，否则返回最近一个；没有任务 404 + noTask。"""
+    import time
+    from backend.services import depth_archive
+    _clear_depth_files()
+    saved = dict(depth_archive._TASKS)
+    depth_archive._TASKS.clear()
+    try:
+        r = client.get("/api/depth/archive-task")
+        assert r.status_code == 404 and r.get_json()["noTask"]
+
+        # 构造一个「运行中」的任务和一个「已完成」的任务
+        depth_archive._TASKS["done1"] = {"id": "done1", "status": "done", "products": ["fu"], "originalName": "a.zip",
+                                         "done": 3, "total": 3, "current": "", "message": "", "result": None}
+        depth_archive._TASKS["run1"] = {"id": "run1", "status": "running", "products": ["ag"], "originalName": "b.zip",
+                                        "done": 1, "total": 5, "current": "202611/x/ag2612.zip", "message": "", "result": None}
+        depth_archive._TASKS["done2"] = {"id": "done2", "status": "done", "products": ["rb"], "originalName": "c.zip",
+                                         "done": 2, "total": 2, "current": "", "message": "", "result": None}
+        j = client.get("/api/depth/archive-task").get_json()
+        assert j["taskId"] == "run1" and j["status"] == "running" and j["done"] == 1 and j["total"] == 5
+
+        depth_archive._TASKS["run1"]["status"] = "done"
+        assert client.get("/api/depth/archive-task").get_json()["taskId"] == "done2"   # 无运行中 -> 最后一个
+
+        # 带 id 仍按 id 查；不存在的 id 是 404 + expired
+        assert client.get("/api/depth/archive-task?id=done1").get_json()["products"] == ["fu"]
+        r = client.get("/api/depth/archive-task?id=nope")
+        assert r.status_code == 404 and r.get_json()["expired"]
+    finally:
+        depth_archive._TASKS.clear()
+        depth_archive._TASKS.update(saved)
+
+
+def test_archive_zip_slip_ignored():
+    _clear_depth_files()
+    arc = _archive({"../../evil/20261102/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-02"), "../evil.csv")})
+    r = _upload_archive(arc, "fu")
+    # 含 .. 的成员被忽略，因此视为没有找到数据
+    assert r.status_code == 400
+    assert os.listdir(_TMP_DIR) == []
 
 
 if __name__ == "__main__":

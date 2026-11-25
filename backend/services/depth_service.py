@@ -14,6 +14,7 @@ DEPTH_CACHE_MAX = 3
 DEPTH_FILES_DIRNAME = 'depth_files'
 DEPTH_EXTS = ('.csv',)
 DEPTH_MAX_UPLOAD = 500 * 1024 * 1024   # tick 文件很大，单个上限 500MB
+DEPTH_MAX_ARCHIVE_UPLOAD = 10 * 1024 * 1024 * 1024   # 全量行情压缩包（含所有品种的多个月数据），上限 10GB
 
 # 每个文件的元数据要读一遍 CSV 才知道，大文件很慢，缓存到内存，按 (大小, 修改时间) 判断是否失效。
 _DEPTH_META_CACHE = {}   # name -> ((size, mtime_ns), meta | {"error": str})
