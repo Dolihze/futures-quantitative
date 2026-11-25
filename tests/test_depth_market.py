@@ -297,6 +297,20 @@ def test_merge_dedups_overlapping_days():
     assert any("重复出现" in w for w in m.warnings)
 
 
+def test_merge_keeps_night_session_split_across_files():
+    # 行情文件按自然日切：文件 A = 9-17 日盘 + 当晚夜盘（归 9-18），文件 B = 9-18 日盘 + 当晚夜盘（归 9-21，周五夜盘算下周一）。
+    # 9-18 的夜盘在 A、日盘在 B，是互补不是重复，合并后两段都要保留。
+    a = dm.parse(csv_bytes(
+        _day_rows("fu2701", "2026-9-17", 0, n=6) + _day_rows("fu2701", "2026-9-17", 0, n=3, hour=21), HEADER_B), "a.csv")
+    b = dm.parse(csv_bytes(
+        _day_rows("fu2701", "2026-9-18", 0, n=5) + _day_rows("fu2701", "2026-9-18", 0, n=2, hour=21), HEADER_B), "b.csv")
+    assert a.days == ["2026-09-17", "2026-09-18"] and b.days == ["2026-09-18", "2026-09-21"]   # 周五夜盘归下周一
+    m = dm.merge([a, b])
+    assert m.count == 6 + 3 + 5 + 2                      # 一笔都不丢
+    assert (m.day == "2026-09-18").sum() == 3 + 5        # 9-18：夜盘 3 笔（来自 A）+ 日盘 5 笔（来自 B）
+    assert not any("重复出现" in w for w in m.warnings)  # 互补，不算重复
+
+
 def test_merge_levels_and_bs_mismatch_degrade():
     with_bs = dm.parse(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv")
     text = "time,last,volume,a1_p,a1_v,b1_p,b1_v\n2026-9-18 9:00,100,5,101,1,99,1\n2026-9-18 9:01,101,9,102,1,100,1\n"

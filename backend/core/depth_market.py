@@ -630,6 +630,14 @@ def summary(td: TickData) -> dict:
 # ---------------------------------------------------------------------------
 # 多文件合并：同一个合约的多个 CSV（比如每个交易日一个文件）合成一条时间线
 # ---------------------------------------------------------------------------
+def _session_keys(td: TickData) -> np.ndarray:
+    """每个 tick 的去重键「交易日|N 或 D」：N = 夜盘（>= 20:00，或跨零点的凌晨 < 03:00），D = 日盘。
+    夜盘归下一交易日，所以同一交易日的夜盘和日盘可能分别落在相邻两个文件里，必须分开去重。"""
+    hours = pd.to_datetime(td.ts, unit='ms').hour
+    night = (hours >= 20) | (hours < 3)
+    return np.char.add(np.char.add(td.day.astype(str), '|'), np.where(night, 'N', 'D'))
+
+
 def merge(parts: list) -> TickData:
     """把同一合约的多份 TickData 按时间合并。
 
@@ -637,31 +645,36 @@ def merge(parts: list) -> TickData:
     绝不能先拼 cum_vol 再差分——每个文件的首笔处理（盘中截取判断、交易日开盘重置）是文件内的事，
     合在一起差分会把相邻文件的首尾错误地相减。
 
-    重叠处理：两个文件覆盖了同一个交易日时（比如重复下载、一个是全天一个是片段），
-    同一交易日只保留 tick 数更多的那个文件的数据，并在 warnings 里提示，避免同一天的 K 线成交量翻倍。
+    重叠处理：两个文件覆盖了同一个交易日的【同一时段】时（比如重复下载、一个是全天一个是片段），
+    同一交易日同一时段只保留 tick 数更多的那个文件的数据，并在 warnings 里提示，避免 K 线成交量翻倍。
+
+    时段分「夜盘」和「日盘」两段独立判断：行情文件常按自然日切分（如 10-15 08:59 ~ 10-16 15:05，
+    前一晚的夜盘 + 次日日盘），夜盘归下一交易日，于是同一交易日的夜盘和日盘会分散在相邻两个文件里。
+    它们是互补而不是重复，只按交易日去重会把夜盘（或日盘）整段丢掉。
     """
     if not parts:
         raise DepthParseError('没有可合并的数据')
     if len(parts) == 1:
         return parts[0]
 
-    # 每个交易日只取一个来源：tick 最多的文件；并列取靠前的（调用方按文件名排序，结果稳定）
+    # 每个 (交易日, 时段) 只取一个来源：tick 最多的文件；并列取靠前的（调用方按文件名排序，结果稳定）
+    keys = [_session_keys(p) for p in parts]
     best = {}
-    for pi, p in enumerate(parts):
-        for d, n in zip(*np.unique(p.day.astype(str), return_counts=True)):
-            if d not in best or n > best[d][1]:
-                best[d] = (pi, int(n))
+    for pi, k in enumerate(keys):
+        for key, n in zip(*np.unique(k, return_counts=True)):
+            if key not in best or n > best[key][1]:
+                best[key] = (pi, int(n))
     warnings = []
     for p in parts:
         warnings.extend(p.warnings)
-    dup_days = sorted({d for pi, p in enumerate(parts) for d in set(p.day.astype(str)) if best[d][0] != pi})
+    dup_days = sorted({key.split('|')[0] for pi, k in enumerate(keys) for key in set(k.tolist()) if best[key][0] != pi})
     if dup_days:
         warnings.append(f'{len(dup_days)} 个交易日在多个文件里重复出现（{dup_days[0]}'
-                        f'{"…" if len(dup_days) > 1 else ""}），每个交易日只保留 tick 最多的那个文件的数据')
+                        f'{"…" if len(dup_days) > 1 else ""}），同一交易日同一时段只保留 tick 最多的那个文件的数据')
 
     keep = []   # 每个文件保留的 tick 掩码
-    for pi, p in enumerate(parts):
-        keep.append(np.array([best[str(d)][0] == pi for d in p.day], dtype=bool))
+    for pi, k in enumerate(keys):
+        keep.append(np.array([best[key][0] == pi for key in k], dtype=bool))
 
     levels = min(p.levels for p in parts)
     if len({p.levels for p in parts}) > 1:
