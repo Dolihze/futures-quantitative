@@ -3,6 +3,7 @@
 不依赖 Flask 请求对象，路由层负责把异常/结果转成 HTTP 响应。
 """
 import os
+import threading
 import uuid
 from collections import OrderedDict
 
@@ -19,7 +20,12 @@ REVIEW_CACHE_MAX = 5
 REVIEW_FILES_DIRNAME = 'review_files'
 REVIEW_EXTS = ('.xlsx', '.xls', '.csv')
 
-_REVIEW_META_CACHE = {}   # name -> ((size, mtime_ns), meta | {"error": str})
+# 每个文件的解析结果缓存：name -> ((size, mtime_ns), ReviewResult | 错误说明 str)。
+# 「数据库管理」的文件列表（要元信息）和「账户总览」（要全部成交记录）以前各解析一遍 Excel，现在共用这一份：
+# 谁先来谁解析，另一个直接复用。文件大小 / 修改时间变了（导入 / 覆盖 / 手动改动）自动重新解析。
+# 交易记录文件很小（实测每个几十 KB，解析结果 < 0.2MB），全部放内存不占压力；失败的文件也缓存（str），不反复解析。
+_PARSED_CACHE = {}
+_parsed_lock = threading.RLock()
 _REVIEW_ALL_CACHE = {"sig": None, "id": None, "warnings": [], "skipped": [], "fileCount": 0}
 
 
@@ -69,24 +75,46 @@ def list_files():
     return files
 
 
-def file_meta(name, path):
-    """交易记录文件的元信息（品种 / 交易日 / 成交手数），按 (大小, 修改时间) 缓存，文件没变不再重读。"""
+def parsed_file(name, path):
+    """解析一个交易记录文件，按 (大小, 修改时间) 缓存，文件没变不再重读 Excel。
+
+    返回 ReviewResult；解析不了返回错误说明（str）。列表（file_meta）和总览（all_records）共用这份结果。
+    """
     st = os.stat(path)
     sig = (st.st_size, st.st_mtime_ns)
-    hit = _REVIEW_META_CACHE.get(name)
-    if hit and hit[0] == sig:
-        return hit[1]
+    with _parsed_lock:
+        hit = _PARSED_CACHE.get(name)
+        if hit and hit[0] == sig:
+            return hit[1]
     try:
         with open(path, 'rb') as fh:
-            r = review.analyze(fh.read(), name)
-        meta = {"products": r.products, "days": r.days, "tradeCount": int(len(r.records)),
-                "start": r.start, "end": r.end, "hasFee": r.has_fee}
+            res = review.analyze(fh.read(), name)
     except review.ReviewParseError as e:
-        meta = {"error": str(e)}
+        res = str(e)
     except Exception as e:
-        meta = {"error": f"读取失败：{e}"}
-    _REVIEW_META_CACHE[name] = (sig, meta)
-    return meta
+        res = f"读取失败：{e}"
+    with _parsed_lock:
+        _PARSED_CACHE[name] = (sig, res)
+    return res
+
+
+def remember_parsed(name, path, result):
+    """上传 / 打开时已经解析过文件内容：直接记进缓存，之后列表和总览不用再读这个文件。"""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return
+    with _parsed_lock:
+        _PARSED_CACHE[name] = ((st.st_size, st.st_mtime_ns), result)
+
+
+def file_meta(name, path):
+    """交易记录文件的元信息（品种 / 交易日 / 成交手数）。"""
+    r = parsed_file(name, path)
+    if isinstance(r, str):
+        return {"error": r}
+    return {"products": r.products, "days": r.days, "tradeCount": int(len(r.records)),
+            "start": r.start, "end": r.end, "hasFee": r.has_fee}
 
 
 def list_files_detail():
@@ -104,8 +132,9 @@ def list_files_detail():
             item = {"name": name, "size": st.st_size, "mtime": int(st.st_mtime)}
             item.update(file_meta(name, path))
             files.append(item)
-        for gone in set(_REVIEW_META_CACHE) - alive:
-            _REVIEW_META_CACHE.pop(gone, None)
+        with _parsed_lock:
+            for gone in set(_PARSED_CACHE) - alive:   # 文件被删了，清掉缓存
+                _PARSED_CACHE.pop(gone, None)
     files.sort(key=lambda x: (-x["mtime"], x["name"]))
     return files
 
@@ -133,15 +162,12 @@ def all_records():
 
     parts, warnings, skipped = [], [], []
     for name, path, _s, _m in entries:
-        try:
-            with open(path, 'rb') as fh:
-                r = review.analyze(fh.read(), name)
-            parts.append(r.records)
-            warnings += [f"{name}：{w}" for w in r.warnings]
-        except review.ReviewParseError as e:
-            skipped.append({"name": name, "error": str(e)})
-        except Exception as e:
-            skipped.append({"name": name, "error": f"读取失败：{e}"})
+        r = parsed_file(name, path)   # 和文件列表共用解析结果：列表已经解析过的文件这里不再读 Excel
+        if isinstance(r, str):
+            skipped.append({"name": name, "error": r})
+            continue
+        parts.append(r.records)
+        warnings += [f"{name}：{w}" for w in r.warnings]
     merged = review.merge_records(parts)
     review_id = cache_records(merged)
     _REVIEW_ALL_CACHE.update(sig=sig, id=review_id, warnings=warnings, skipped=skipped, fileCount=len(parts))

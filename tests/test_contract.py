@@ -38,7 +38,7 @@ def _isolated_dirs(monkeypatch, tmp_path):
     # 元信息 / 合并结果缓存是进程级的，按文件名 + 大小 + 修改时间失效；换目录后清掉，避免命中别的用例留下的缓存
     from backend.services import depth_service, review_service
     depth_service._DEPTH_META_CACHE.clear()
-    review_service._REVIEW_META_CACHE.clear()
+    review_service._PARSED_CACHE.clear()
     review_service._REVIEW_ALL_CACHE.update(sig=None, id=None, warnings=[], skipped=[], fileCount=0)
     yield
 

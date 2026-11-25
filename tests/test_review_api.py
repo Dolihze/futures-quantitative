@@ -480,6 +480,164 @@ def test_day_kline_unavailable_when_library_lacks_contract_or_day():
         assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
         assert client.get("/api/review/day-kline?symbol=FU2611&day=not-a-date").status_code == 400
 
+# ---------------------------------------------------------------------------
+# 交易记录文件的解析结果共用：列表（元信息）和总览（全部成交）不再各解析一遍 Excel
+# ---------------------------------------------------------------------------
+class _CountAnalyze:
+    """统计 review.analyze 被调用的次数（= 实际解析了多少次 Excel）。"""
+
+    def __enter__(self):
+        from backend.core import review
+        self.review = review
+        self.n = 0
+        self._orig = review.analyze
+
+        def counted(*a, **k):
+            self.n += 1
+            return self._orig(*a, **k)
+        review.analyze = counted
+        return self
+
+    def __exit__(self, *exc):
+        self.review.analyze = self._orig
+
+
+def _reset_review_state():
+    _clean_review_dir()
+    review_service._PARSED_CACHE.clear()
+    review_service._REVIEW_ALL_CACHE.update(sig=None, id=None, warnings=[], skipped=[], fileCount=0)
+
+
+def _drop_in(name, content):
+    """直接把文件放进文件夹（不经过上传接口）：模拟用户手动拷贝 / 应用重启后的磁盘状态。"""
+    with open(os.path.join(_TMP_REVIEW_DIR, name), "wb") as f:
+        f.write(content)
+
+
+def test_review_list_then_overview_parses_each_excel_once():
+    _reset_review_state()
+    _drop_in("a.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    _drop_in("b.xlsx", make_xlsx(ROWS_A[:2], HEADER_A, title_rows=2))
+    with _CountAnalyze() as c:
+        files = client.get("/api/review/files/detail").get_json()["files"]
+        assert c.n == 2 and all("error" not in f for f in files)          # 列表：每个文件解析一次
+        ov = client.get("/api/review/overview").get_json()
+        assert ov["success"] and ov["fileCount"] == 2
+        assert c.n == 2, "总览应复用列表已解析的结果，不再读 Excel"
+        # 反过来：重启后先开总览，再开列表，同样只解析一次
+        review_service._PARSED_CACHE.clear()
+        review_service._REVIEW_ALL_CACHE.update(sig=None, id=None, warnings=[], skipped=[], fileCount=0)
+        c.n = 0
+        client.get("/api/review/overview")
+        client.get("/api/review/files/detail")
+        assert c.n == 2, "列表应复用总览已解析的结果"
+    _reset_review_state()
+
+
+def test_review_overview_numbers_unchanged_by_sharing():
+    """共用同一份解析结果后，总览的数字必须和原来（每次都重新解析）完全一样。"""
+    _reset_review_state()
+    _drop_in("a.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    _drop_in("b.xlsx", make_xlsx(ROWS_A[:3], HEADER_A, title_rows=2))   # 与 a 有重复成交：合并时要去重
+    client.get("/api/review/files/detail")                                # 列表先解析 -> 总览走共用的结果
+    shared = client.get("/api/review/overview").get_json()
+    review_service._PARSED_CACHE.clear()
+    review_service._REVIEW_ALL_CACHE.update(sig=None, id=None, warnings=[], skipped=[], fileCount=0)
+    fresh = client.get("/api/review/overview").get_json()                 # 直接重新解析
+    for j in (shared, fresh):
+        j.pop("reviewId")
+    assert shared == fresh
+    _reset_review_state()
+
+
+def test_review_shared_parse_is_not_polluted_by_merge_or_queries():
+    """合并 / 筛选 / 曲线都不能改坏缓存里的 DataFrame（否则下一次取到的就是被改过的数据）。"""
+    _reset_review_state()
+    _drop_in("a.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    _drop_in("b.xlsx", make_xlsx(ROWS_A[:3], HEADER_A, title_rows=2))
+    path = os.path.join(_TMP_REVIEW_DIR, "a.xlsx")
+    r = review_service.parsed_file("a.xlsx", path)
+    snapshot = r.records.copy(deep=True)
+    rid = client.get("/api/review/overview").get_json()["reviewId"]
+    client.get(f"/api/review/curve?reviewId={rid}&fee=1")
+    client.get(f"/api/review/overview?start=2026-10-21&end=2026-10-22")
+    assert review_service.parsed_file("a.xlsx", path) is r
+    assert r.records.equals(snapshot) and list(r.records.columns) == list(snapshot.columns)
+    _reset_review_state()
+
+
+def test_review_parse_cache_invalidates_on_change_and_prunes_deleted():
+    _reset_review_state()
+    _drop_in("a.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    before = client.get("/api/review/files/detail").get_json()["files"][0]["tradeCount"]
+    # 文件被改动（大小变了）：列表和总览都必须看到新内容
+    _drop_in("a.xlsx", make_xlsx(ROWS_A[:2], HEADER_A, title_rows=2))
+    after = client.get("/api/review/files/detail").get_json()["files"][0]["tradeCount"]
+    assert after == 2 and after != before
+    assert client.get("/api/review/overview").get_json()["fileCount"] == 1
+    # 删除文件后缓存里的条目被清掉
+    os.remove(os.path.join(_TMP_REVIEW_DIR, "a.xlsx"))
+    client.get("/api/review/files/detail")
+    assert "a.xlsx" not in review_service._PARSED_CACHE
+    _reset_review_state()
+
+
+def test_review_upload_and_open_register_parse_so_listing_reads_nothing():
+    _reset_review_state()
+    data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
+    assert upload(data, "up.xlsx").status_code == 200
+    _drop_in("manual.xlsx", data)
+    with _CountAnalyze() as c:
+        client.get("/api/review/files/detail")
+        assert c.n == 1, "上传的文件已记进缓存，列表只需解析手动拷贝进来的那个"
+        # 打开文件夹里的文件：解析结果同样登记，之后列表 / 总览不再读它
+        review_service._PARSED_CACHE.clear()
+        c.n = 0
+        assert client.post("/api/review/open", json={"name": "manual.xlsx"}).status_code == 200
+        assert c.n == 1
+        client.get("/api/review/files/detail")
+        assert c.n == 2, "只有没打开过的 up.xlsx 需要再解析一次，manual.xlsx 复用 open 的结果"
+    _reset_review_state()
+
+
+def test_review_unreadable_file_is_cached_once_and_reported_in_both_views():
+    _reset_review_state()
+    _drop_in("good.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
+    _drop_in("bad.xlsx", b"this is not an excel file")
+    with _CountAnalyze() as c:
+        files = {f["name"]: f for f in client.get("/api/review/files/detail").get_json()["files"]}
+        assert "error" in files["bad.xlsx"] and "error" not in files["good.xlsx"]
+        ov = client.get("/api/review/overview").get_json()
+        assert [s["name"] for s in ov["skipped"]] == ["bad.xlsx"] and ov["fileCount"] == 1
+        assert ov["skipped"][0]["error"] == files["bad.xlsx"]["error"]   # 两处给出同一条错误说明
+        client.get("/api/review/files/detail")
+        assert c.n == 2, "坏文件也只解析一次，不会每次都重试"
+    _reset_review_state()
+
+
+def test_review_concurrent_requests_stay_consistent():
+    import threading
+    _reset_review_state()
+    for i in range(3):
+        _drop_in(f"f{i}.xlsx", make_xlsx(ROWS_A[: 2 + i], HEADER_A, title_rows=2))
+    out, errors = [], []
+
+    def work(kind):
+        try:
+            if kind == 0:
+                out.append(("list", [f["tradeCount"] for f in client.get("/api/review/files/detail").get_json()["files"]]))
+            else:
+                out.append(("ov", client.get("/api/review/overview").get_json()["fileCount"]))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    ts = [threading.Thread(target=work, args=(i % 2,)) for i in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert not errors
+    assert all(sorted(v) == [2, 3, 4] for k, v in out if k == "list") and all(v == 3 for k, v in out if k == "ov")
+    _reset_review_state()
+
+
 def test_trading_day_of_matches_review_trading_day():
     """kline_store 里按字符串算的交易日，必须和 review.trading_day 逐点一致（含夜盘边界、跨月、跨年）。"""
     import pandas as pd

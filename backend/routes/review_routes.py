@@ -13,10 +13,12 @@ from backend.services import review_service as svc
 bp = Blueprint('review', __name__)
 
 
-def analyze_to_response(content, filename):
+def analyze_to_response(content, filename, path=None, parsed=None):
     """解析一份交易记录，放进缓存，返回给前端的 JSON（上传和从文件夹选择共用，前端不用区分来源）。
 
     解析失败抛 ApiError(400)。
+    path 不为空表示文件已经在 review_files 里：解析结果同时记进文件解析缓存，之后文件列表 / 账户总览不用再读这个 Excel。
+    parsed 是个 dict：把 ReviewResult 放进 parsed["result"]，给「先解析、后落盘」的上传流程用（文件落盘后才能登记缓存）。
     """
     try:
         result = review.analyze(content, filename)
@@ -27,6 +29,10 @@ def analyze_to_response(content, filename):
         traceback.print_exc()
         raise bad_request(f"解析失败：{e}")
 
+    if path:
+        svc.remember_parsed(filename, path, result)
+    if parsed is not None:
+        parsed["result"] = result
     review_id = svc.cache_records(result.records)
     return jsonify({
         "success": True,
@@ -78,7 +84,8 @@ def review_upload():
 
     content = f.read()
     # 解析失败会抛 ApiError：失败的文件不保存，已有的同名旧文件也不会被它覆盖
-    data = analyze_to_response(content, name).get_json()
+    parsed = {}
+    data = analyze_to_response(content, name, parsed=parsed).get_json()
 
     # 保存失败（磁盘只读、没有权限等）不影响本次分析，只在警告里告诉用户。
     # 先写临时文件再替换：写到一半失败时不会把原来的好文件弄坏
@@ -88,6 +95,7 @@ def review_upload():
         with open(tmp, 'wb') as out:
             out.write(content)
         os.replace(tmp, path)
+        svc.remember_parsed(name, path, parsed["result"])   # 已解析过，文件落盘后直接记进缓存：列表 / 总览不再读这个 Excel
         data["saved"] = True
         data["overwritten"] = overwrite
     except OSError as e:
@@ -141,7 +149,7 @@ def review_open():
             content = fh.read()
     except OSError as e:
         raise bad_request(f"读取文件失败：{e}")
-    return analyze_to_response(content, name)
+    return analyze_to_response(content, name, path)
 
 
 @bp.route('/api/review/overview')
