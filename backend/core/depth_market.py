@@ -682,13 +682,15 @@ def merge(parts: list) -> TickData:
     return merged
 
 
-def canonical_name(content: bytes, filename: str = '', ext: str = '.csv') -> str:
+def canonical_name(content: bytes, filename: str = '', ext: str = '.csv', meta: dict = None) -> str:
     """读取文件内部数据（合约代码 + 交易日），返回规范文件名「合约名_YYYYMMDD.csv」。
 
     日期取文件内的【交易日】（夜盘归下一交易日，与图表一致）；一个文件含多个交易日时写成
     「合约名_YYYYMMDD-YYYYMMDD.csv」（最早-最晚）。解析失败抛 DepthParseError。
+    调用方已经算过 peek_meta 时通过 meta 传入，避免把同一份内容再解析一遍。
     """
-    meta = peek_meta(content, filename)
+    if meta is None:
+        meta = peek_meta(content, filename)
     days = meta['days']
     first = days[0].replace('-', '')
     last = days[-1].replace('-', '')

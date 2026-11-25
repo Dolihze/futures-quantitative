@@ -9,26 +9,17 @@
   （depth_market.build_kline 的 time 是开始时间，这里统一 +周期 换成结束时间。）
 - 支持周期：1 / 5 / 15 / 30 / 60 分钟。
 """
-import os
 import re
-import threading
 from datetime import datetime, timedelta
 
 from backend.core import depth_market
 from backend.errors import bad_request, not_found
-from backend.services import depth_service
+from backend.services import depth_service, tick_cache
 
 KLINE_PERIODS = ('1', '5', '15', '30', '60')
 
-# 合约聚合结果缓存：symbol -> (文件签名, TickData)。tick 数据较大，只留最近几个合约；
-# 签名 = 该合约所有文件的 (名称, 大小, mtime_ns)，导入 / 删除 / 覆盖文件后自动失效。
-_TICK_CACHE = {}
-_TICK_CACHE_MAX = 2
-# (symbol, period) -> (签名, bars)
-_BAR_CACHE = {}
-_BAR_CACHE_MAX = 40
-_lock = threading.RLock()
-
+# 合约 tick 的解析缓存和分钟 K 线缓存都在 services/tick_cache.py（和深度行情共用，同一合约只解析一次，按内存预算淘汰）。
+# 缓存签名 = 该合约所有文件的 (名称, 大小, mtime_ns)，导入 / 删除 / 覆盖文件后自动失效。
 IMPORT_HINT = '请先到「数据库管理 → 历史行情数据管理」导入该合约的 tick 数据'
 
 
@@ -59,41 +50,12 @@ def list_contracts():
     return out
 
 
-def _signature(contract):
-    sig = []
-    for f in contract['files']:
-        path = depth_service.safe_depth_path(f['name'])
-        try:
-            st = os.stat(path)
-            sig.append((f['name'], st.st_size, st.st_mtime_ns))
-        except (OSError, TypeError):
-            sig.append((f['name'], -1, -1))
-    return tuple(sorted(sig))
-
-
 def _load_ticks(contract):
-    """解析并合并该合约的所有文件，带缓存。"""
-    symbol = contract['symbol']
-    sig = _signature(contract)
-    with _lock:
-        hit = _TICK_CACHE.get(symbol)
-        if hit and hit[0] == sig:
-            return hit[1]
-    parts = []
-    for f in contract['files']:
-        path = depth_service.safe_depth_path(f['name'])
-        try:
-            with open(path, 'rb') as fh:
-                parts.append(depth_market.parse(fh.read(), f['name']))
-        except depth_market.DepthParseError as e:
-            raise bad_request(f"{f['name']}：{e}")
-        except OSError as e:
-            raise bad_request(f"读取 {f['name']} 失败：{e}")
-    td = depth_market.merge(parts)
-    with _lock:
-        _TICK_CACHE[symbol] = (sig, td)
-        while len(_TICK_CACHE) > _TICK_CACHE_MAX:
-            _TICK_CACHE.pop(next(iter(_TICK_CACHE)))
+    """解析并合并该合约的所有文件，走统一缓存（和深度行情共用）。"""
+    try:
+        td, _ = depth_service.load_contract(contract)
+    except (depth_market.DepthParseError, OSError) as e:
+        raise bad_request(str(e))
     return td
 
 
@@ -115,12 +77,10 @@ def fetch_bars(symbol, period):
     if contract is None:
         raise not_found(f'本地行情库里没有合约「{symbol}」的数据，{IMPORT_HINT}', fileMissing=True)
 
-    sig = _signature(contract)
-    key = (contract['symbol'], period)
-    with _lock:
-        hit = _BAR_CACHE.get(key)
-        if hit and hit[0] == sig:
-            return hit[1]
+    sig = depth_service.contract_signature(contract)
+    hit = tick_cache.get_bars(contract['symbol'], period, sig)
+    if hit is not None:
+        return hit
 
     td = _load_ticks(contract)
     res = depth_market.build_kline(td, int(period))
@@ -134,17 +94,13 @@ def fetch_bars(symbol, period):
             'volume': int(b['volume'] or 0),
         })
     bars.sort(key=lambda x: x['time'])
-    with _lock:
-        _BAR_CACHE[key] = (sig, bars)
-        while len(_BAR_CACHE) > _BAR_CACHE_MAX:
-            _BAR_CACHE.pop(next(iter(_BAR_CACHE)))
+    tick_cache.put_bars(contract['symbol'], period, sig, bars)
     return bars
 
 
 def clear_cache():
-    with _lock:
-        _TICK_CACHE.clear()
-        _BAR_CACHE.clear()
+    """清空所有 tick / K 线缓存（测试用）。"""
+    tick_cache.clear()
 
 
 def product_of(symbol):

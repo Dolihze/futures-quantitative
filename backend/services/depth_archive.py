@@ -237,7 +237,7 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
                 try:
                     csv_bytes, csv_name = _extract_csv(inner_bytes, label)
                     meta = depth_market.peek_meta(csv_bytes, csv_name)
-                    name = depth_market.canonical_name(csv_bytes, csv_name, '.csv')
+                    name = depth_market.canonical_name(csv_bytes, csv_name, '.csv', meta)   # 复用 meta，不再解析第二遍
                 except depth_market.DepthParseError as e:
                     counts['failed'] += 1
                     add(label, 'failed', message=str(e))
@@ -284,6 +284,7 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
                     counts['failed'] += 1
                     add(label, 'failed', name, f'保存失败：{e}', symbol)
                     continue
+                svc.remember_meta(name, path, meta, save=False)   # 内容已解析过，直接记进索引；整批结束后统一落盘
                 if existed:
                     counts['overwritten'] += 1
                     add(label, 'overwritten', name, '已覆盖', symbol)
@@ -293,6 +294,8 @@ def import_archive(archive_path, products, on_exists='skip', progress=None):
                 contracts.add(symbol)
         except zipfile.BadZipFile as e:
             raise ArchiveError(f'压缩包已损坏：{e}')
+        finally:
+            svc.save_index()   # 无论成功 / 中途出错，已导入的文件都要把索引落盘
 
     if progress:
         progress(matched, total, '')

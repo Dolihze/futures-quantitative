@@ -321,6 +321,11 @@ def test_peek_meta_matches_parse():
         raise AssertionError("无法识别的文件应抛 DepthParseError")
 
 
+def _data_files():
+    """目录里的数据文件（不含点开头的元数据索引文件）。"""
+    return sorted(n for n in os.listdir(_TMP_DIR) if not n.startswith('.'))
+
+
 def _clear_depth_files():
     for n in os.listdir(_TMP_DIR):
         os.remove(os.path.join(_TMP_DIR, n))
@@ -343,13 +348,13 @@ def test_contracts_index_open_and_delete():
     fu = by["fu2701"]
     assert fu["fileCount"] == 2 and fu["tickCount"] == 10 and fu["dayCount"] == 2 and fu["hasBs"] is True
     assert fu["days"] == ["2026-09-17", "2026-09-18"]
-    assert [f["name"] for f in fu["files"]] == ["fu_0917.csv", "fu_0918.csv"]   # 按开始时间升序
+    assert [f["name"] for f in fu["files"]] == ["fu2701_20260917.csv", "fu2701_20260918.csv"]   # 上传时按文件内容改名；按开始时间升序
     assert [x["name"] for x in j["unrecognized"]] == ["junk.csv"]
 
     # 索引缓存：文件没变不会重复读（缓存条目的签名保持不变）
-    sig = depth_service._DEPTH_META_CACHE["fu_0917.csv"][0]
+    sig = depth_service._DEPTH_META_CACHE["fu2701_20260917.csv"][0]
     client.get("/api/depth/contracts")
-    assert depth_service._DEPTH_META_CACHE["fu_0917.csv"][0] == sig
+    assert depth_service._DEPTH_META_CACHE["fu2701_20260917.csv"][0] == sig
 
     # 按合约打开：两个文件合并，增量不被错误相减
     o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
@@ -365,9 +370,9 @@ def test_contracts_index_open_and_delete():
 
     # 删除合约：只删它名下的文件
     d = client.delete("/api/depth/contracts", json={"symbol": "fu2701"}).get_json()
-    assert d["success"] and sorted(d["deleted"]) == ["fu_0917.csv", "fu_0918.csv"]
+    assert d["success"] and sorted(d["deleted"]) == ["fu2701_20260917.csv", "fu2701_20260918.csv"]
     left = {c["symbol"] for c in client.get("/api/depth/contracts").get_json()["contracts"]}
-    assert left == {"a2611"} and os.path.exists(os.path.join(_TMP_DIR, "a2611.csv"))
+    assert left == {"a2611"} and os.path.exists(os.path.join(_TMP_DIR, "a2611_20260917.csv"))
     assert client.delete("/api/depth/contracts", json={"symbol": "fu2701"}).status_code == 404
     _clear_depth_files()
 
@@ -377,6 +382,9 @@ def _upload(content, name="t.csv", overwrite=True):
     if overwrite:
         data["overwrite"] = "1"
     return client.post("/api/depth/upload", data=data, content_type="multipart/form-data")
+
+
+FLOW_SAVED = "A2607.XDCE_20260601.csv"   # flow.csv 上传后按文件内的合约和交易日改名
 
 
 def test_api_flow():
@@ -402,12 +410,12 @@ def test_api_flow():
 
     # 列表 / 打开 / 删除
     files = client.get("/api/depth/files").get_json()["files"]
-    assert any(f["name"] == "flow.csv" for f in files)
-    o = client.post("/api/depth/open", json={"name": "flow.csv"}).get_json()
+    assert any(f["name"] == FLOW_SAVED for f in files)
+    o = client.post("/api/depth/open", json={"name": FLOW_SAVED}).get_json()
     assert o["success"] and o["tickCount"] == 5
     assert client.post("/api/depth/open", json={"name": "../evil.csv"}).status_code == 400
-    assert client.delete("/api/depth/files", json={"name": "flow.csv"}).status_code == 200
-    assert client.post("/api/depth/open", json={"name": "flow.csv"}).status_code == 404
+    assert client.delete("/api/depth/files", json={"name": FLOW_SAVED}).status_code == 200
+    assert client.post("/api/depth/open", json={"name": FLOW_SAVED}).status_code == 404
 
     # 缓存失效
     assert client.get("/api/depth/kline?depthId=nope").status_code == 410
@@ -511,7 +519,7 @@ def test_archive_import_by_product():
     assert j["products"] == ["fu"] and j["perProduct"] == {"fu": 3} and j["matched"] == 3
     assert j["imported"] == 3 and j["failed"] == 0 and j["skipped"] == 0
     assert j["contracts"] == ["fu2611", "fu2701"]
-    assert sorted(os.listdir(_TMP_DIR)) == ["fu2611_20261102.csv", "fu2611_20261103.csv", "fu2701_20261102.csv"]
+    assert sorted(_data_files()) == ["fu2611_20261102.csv", "fu2611_20261103.csv", "fu2701_20261102.csv"]
     # 数据库管理里能按合约合并出来
     cs = client.get("/api/depth/contracts").get_json()["contracts"]
     fu = next(c for c in cs if c["symbol"] == "fu2611")
@@ -532,7 +540,7 @@ def test_archive_nested_zip_layers():
     month = _archive({"20261104.zip": day})
     outer = _archive({"202611.zip": month})
     j = _upload_archive(outer, "fu").get_json()
-    assert j["imported"] == 1 and os.listdir(_TMP_DIR) == ["fu2611_20261104.csv"]
+    assert j["imported"] == 1 and _data_files() == ["fu2611_20261104.csv"]
     _clear_depth_files()
 
 
@@ -545,7 +553,7 @@ def test_archive_bad_member_reported_not_fatal():
     })
     j = _upload_archive(arc, "fu").get_json()
     assert j["matched"] == 3 and j["imported"] == 1 and j["failed"] == 2
-    assert os.listdir(_TMP_DIR) == ["fu2611_20261102.csv"]
+    assert _data_files() == ["fu2611_20261102.csv"]
     _clear_depth_files()
 
 
@@ -556,7 +564,7 @@ def test_archive_rejects():
     assert _upload_archive(_full_archive(), "zz").status_code == 400          # 没有该品种
     assert _upload_archive(b"nope", "fu").status_code == 400                  # 不是 zip
     assert _upload_archive(b"x", "fu", name="a.csv").status_code == 400       # 扩展名不对
-    assert os.listdir(_TMP_DIR) == []
+    assert _data_files() == []
 
 
 def _multi_archive():
@@ -576,7 +584,7 @@ def test_archive_multiple_products():
     assert j["perProduct"] == {"fu": 1, "ag": 2, "zz": 0}
     assert j["matched"] == 3 and j["imported"] == 3 and j["failed"] == 0
     assert j["contracts"] == ["ag2612", "fu2611"]
-    assert sorted(os.listdir(_TMP_DIR)) == ["ag2612_20261102.csv", "ag2612_20261103.csv", "fu2611_20261102.csv"]
+    assert sorted(_data_files()) == ["ag2612_20261102.csv", "ag2612_20261103.csv", "fu2611_20261102.csv"]
     _clear_depth_files()
 
     # 同时选 a 和 ag：ag2612 归 ag，不能被算进 a；a2701 归 a
@@ -590,7 +598,7 @@ def test_archive_multiple_products():
     _clear_depth_files()
     assert _upload_archive(_multi_archive(), ["zz", "yy"]).status_code == 400
     assert _upload_archive(_multi_archive(), ["fu", "fu2611"]).status_code == 400
-    assert os.listdir(_TMP_DIR) == []
+    assert _data_files() == []
 
 
 def test_archive_latest_task_for_restoring_progress():
@@ -626,13 +634,378 @@ def test_archive_latest_task_for_restoring_progress():
         depth_archive._TASKS.update(saved)
 
 
+# ---------------------------------------------------------------------------
+# 持久化元数据索引（depth_files/.meta_index.json）
+# ---------------------------------------------------------------------------
+import json  # noqa: E402
+
+
+class _CountPeek:
+    """统计 depth_market.peek_meta 被调用的次数（= 实际读了多少个 CSV）。"""
+
+    def __enter__(self):
+        self.n = 0
+        self._orig = depth_market_mod.peek_meta
+
+        def counted(*a, **k):
+            self.n += 1
+            return self._orig(*a, **k)
+        depth_market_mod.peek_meta = counted
+        return self
+
+    def __exit__(self, *exc):
+        depth_market_mod.peek_meta = self._orig
+
+
+from backend.core import depth_market as depth_market_mod  # noqa: E402
+
+
+def _index_file():
+    return os.path.join(_TMP_DIR, depth_service.META_INDEX_NAME)
+
+
+def _simulate_restart():
+    """模拟后端重启：内存缓存清空、'已加载' 标记复位，下一次 scan 只能靠磁盘索引。"""
+    depth_service._DEPTH_META_CACHE.clear()
+    depth_service._index_state.update(dir=None, loaded=False, dirty=False)
+
+
+def test_index_import_records_meta_so_listing_reads_no_csv():
+    _clear_depth_files()
+    _simulate_restart()
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "x.csv").status_code == 200
+    assert os.path.exists(_index_file())            # 导入时就落盘了
+    with _CountPeek() as c:
+        j = client.get("/api/depth/contracts").get_json()
+    assert c.n == 0 and [x["symbol"] for x in j["contracts"]] == ["fu2701"]   # 列表没有再读 CSV
+    _clear_depth_files()
+
+
+def test_index_survives_restart_without_reading_csv():
+    _clear_depth_files()
+    _simulate_restart()
+    for d in ("2026-9-17", "2026-9-18"):
+        assert _upload(csv_bytes(_day_rows("fu2701", d, 0), HEADER_B), f"x{d}.csv").status_code == 200
+    before = client.get("/api/depth/contracts").get_json()
+
+    _simulate_restart()                              # 重启：内存清空，只剩磁盘索引
+    with _CountPeek() as c:
+        after = client.get("/api/depth/contracts").get_json()
+    assert c.n == 0, "重启后列表应直接用磁盘索引，不读 CSV"
+    assert after == before                           # 结果与重启前完全一致
+    _clear_depth_files()
+
+
+def test_index_invalidates_on_change_and_prunes_deleted():
+    _clear_depth_files()
+    _simulate_restart()
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv").status_code == 200
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-18", 0), HEADER_B), "b.csv").status_code == 200
+    client.get("/api/depth/contracts")
+    _simulate_restart()
+
+    # 重启期间有人直接改了一个文件、删了一个文件、又丢进来一个新文件（没经过后端）
+    changed = os.path.join(_TMP_DIR, "fu2701_20260917.csv")
+    with open(changed, "wb") as f:
+        f.write(csv_bytes(_day_rows("fu2701", "2026-9-17", 0, n=9), HEADER_B))
+    os.remove(os.path.join(_TMP_DIR, "fu2701_20260918.csv"))
+    with open(os.path.join(_TMP_DIR, "ag_new.csv"), "wb") as f:
+        f.write(csv_bytes(_day_rows("ag2612", "2026-9-19", 0), HEADER_B))
+
+    with _CountPeek() as c:
+        j = client.get("/api/depth/contracts").get_json()
+    assert c.n == 2, "只有改动的和新增的文件需要重新读取"
+    by = {x["symbol"]: x for x in j["contracts"]}
+    assert by["fu2701"]["tickCount"] == 9 and by["fu2701"]["fileCount"] == 1 and "ag2612" in by
+
+    saved = json.load(open(_index_file(), encoding="utf-8"))
+    assert saved["version"] == depth_service.META_INDEX_VERSION
+    assert sorted(saved["files"]) == ["ag_new.csv", "fu2701_20260917.csv"]   # 已删除的文件从索引里清掉
+    _clear_depth_files()
+
+
+def test_index_corrupt_or_wrong_version_is_rebuilt():
+    _clear_depth_files()
+    _simulate_restart()
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv").status_code == 200
+    for garbage in ('{ not json', json.dumps({"version": 999, "files": {}}), json.dumps({"version": 1, "files": [1]}),
+                    json.dumps({"version": 1, "files": {"fu2701_20260917.csv": {"sig": "bad", "meta": 1}}})):
+        with open(_index_file(), "w", encoding="utf-8") as f:
+            f.write(garbage)
+        _simulate_restart()
+        with _CountPeek() as c:
+            j = client.get("/api/depth/contracts").get_json()
+        assert c.n == 1 and [x["symbol"] for x in j["contracts"]] == ["fu2701"], garbage   # 丢弃坏索引，重新读 CSV
+        assert json.load(open(_index_file(), encoding="utf-8"))["version"] == depth_service.META_INDEX_VERSION   # 并重写
+    _clear_depth_files()
+
+
+def test_index_file_is_not_treated_as_data():
+    _clear_depth_files()
+    _simulate_restart()
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0), HEADER_B), "a.csv").status_code == 200
+    assert os.path.exists(_index_file())
+    names = [f["name"] for f in client.get("/api/depth/files").get_json()["files"]]
+    assert depth_service.META_INDEX_NAME not in names
+    assert client.get("/api/depth/contracts").get_json()["unrecognized"] == []
+    _clear_depth_files()
+
+
+def test_index_unreadable_csv_error_is_persisted_too():
+    """解析不了的文件也进索引（带 error），重启后不会反复尝试解析同一个坏文件。"""
+    _clear_depth_files()
+    _simulate_restart()
+    with open(os.path.join(_TMP_DIR, "junk.csv"), "wb") as f:
+        f.write(b"x,y\n1,2\n")
+    j = client.get("/api/depth/contracts").get_json()
+    assert [x["name"] for x in j["unrecognized"]] == ["junk.csv"]
+    _simulate_restart()
+    with _CountPeek() as c:
+        j2 = client.get("/api/depth/contracts").get_json()
+    assert c.n == 0 and j2["unrecognized"] == j["unrecognized"]
+    _clear_depth_files()
+
+
+def test_archive_import_writes_index_once_and_listing_reads_nothing():
+    _clear_depth_files()
+    _simulate_restart()
+    saves = []
+    orig = depth_service._save_index
+
+    def spy():
+        saves.append(1)
+        return orig()
+    depth_service._save_index = spy
+    try:
+        j = _upload_archive(_full_archive(), "fu").get_json()
+    finally:
+        depth_service._save_index = orig
+    assert j["imported"] == 3
+    assert len(saves) == 1, f"批量导入应在结束时统一落盘一次，实际 {len(saves)} 次"
+    saved = json.load(open(_index_file(), encoding="utf-8"))
+    assert sorted(saved["files"]) == ["fu2611_20261102.csv", "fu2611_20261103.csv", "fu2701_20261102.csv"]
+    _simulate_restart()
+    with _CountPeek() as c:
+        client.get("/api/depth/contracts")
+    assert c.n == 0
+    _clear_depth_files()
+
+
+def test_archive_import_parses_each_csv_once():
+    """批量导入每份 CSV 只解析一次（以前 peek_meta 在导入里跑了两遍）。"""
+    _clear_depth_files()
+    _simulate_restart()
+    with _CountPeek() as c:
+        j = _upload_archive(_full_archive(), "fu").get_json()
+    assert j["imported"] == 3 and c.n == 3, f"3 份 CSV 应只解析 3 次，实际 {c.n}"
+    _clear_depth_files()
+
+
+def test_index_concurrent_scans_are_consistent():
+    import threading
+    _clear_depth_files()
+    _simulate_restart()
+    for i, d in enumerate(("2026-9-17", "2026-9-18", "2026-9-19")):
+        with open(os.path.join(_TMP_DIR, f"f{i}.csv"), "wb") as f:
+            f.write(csv_bytes(_day_rows("fu2701", d, 0), HEADER_B))
+    results, errors = [], []
+
+    def work():
+        try:
+            results.append(client.get("/api/depth/contracts").get_json()["contracts"][0]["tickCount"])
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    ts = [threading.Thread(target=work) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert not errors and results == [15] * 8
+    saved = json.load(open(_index_file(), encoding="utf-8"))      # 并发写后索引仍是合法 JSON
+    assert len(saved["files"]) == 3
+    _clear_depth_files()
+
+
+# ---------------------------------------------------------------------------
+# 统一 tick 缓存（services/tick_cache.py）：深度行情 / 回测 / 复盘共用
+# ---------------------------------------------------------------------------
+from backend.services import kline_store, tick_cache  # noqa: E402
+
+
+class _CountParse:
+    """统计 depth_market.parse 的调用次数（= 实际解析了多少个 CSV）。"""
+
+    def __enter__(self):
+        self.n = 0
+        self._orig = depth_market_mod.parse
+
+        def counted(*a, **k):
+            self.n += 1
+            return self._orig(*a, **k)
+        depth_market_mod.parse = counted
+        return self
+
+    def __exit__(self, *exc):
+        depth_market_mod.parse = self._orig
+
+
+def _seed_contract(symbol, days=("2026-9-17", "2026-9-18")):
+    for i, d in enumerate(days):
+        assert _upload(csv_bytes(_day_rows(symbol, d, 0), HEADER_B), f"{symbol}-{i}.csv").status_code == 200
+
+
+def test_cache_depth_and_backtest_share_one_parse():
+    """深度行情打开合约后，回测 / 复盘取同一合约的 K 线不再重新解析；内存里只有一份 TickData。"""
+    _clear_depth_files()
+    _seed_contract("fu2701")
+    tick_cache.clear()          # 上传时登记的单文件句柄不在本测试范围内，清掉后只看合约这条路径
+    with _CountParse() as c:
+        o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+        assert o["success"] and c.n == 2                      # 2 个文件各解析一次
+        bars = kline_store.fetch_bars("SHFE.fu2701", "1")     # 回测 / 复盘入口
+        assert bars and c.n == 2, "回测取同一合约不应重新解析"
+        # 再开一次深度行情：同样直接复用
+        o2 = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+        assert c.n == 2 and o2["depthId"] != o["depthId"] and o2["tickCount"] == o["tickCount"]
+    assert tick_cache.get_handle(o["depthId"]) is tick_cache.get_handle(o2["depthId"])   # 句柄指向同一个对象
+    st = tick_cache.stats()
+    assert st["contracts"] == ["fu2701"]
+    assert [h for h in (o["depthId"], o2["depthId"]) if tick_cache.get_handle(h) is not None] == [o["depthId"], o2["depthId"]]
+    one = tick_cache.estimate_bytes(tick_cache.get_handle(o["depthId"]))
+    assert st["usedBytes"] == one, "按对象去重：两个句柄 + 合约缓存只算一份内存"
+    _clear_depth_files()
+
+
+def test_cache_backtest_first_then_depth_reuses():
+    _clear_depth_files()
+    _seed_contract("fu2701")
+    tick_cache.clear()
+    with _CountParse() as c:
+        assert kline_store.fetch_bars("fu2701", "5")
+        assert c.n == 2
+        o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+        assert o["success"] and c.n == 2, "深度行情应复用回测已解析的数据"
+        assert kline_store.fetch_bars("fu2701", "1") and c.n == 2   # 其它周期复用同一份 tick
+    _clear_depth_files()
+
+
+def test_cache_invalidated_when_files_change_including_old_handles():
+    _clear_depth_files()
+    tick_cache.clear()
+    _seed_contract("fu2701")
+    o = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+    assert client.get(f"/api/depth/kline?depthId={o['depthId']}&period=1440").status_code == 200
+    n_before = len(kline_store.fetch_bars("fu2701", "1"))
+
+    # 重新导入覆盖其中一天（数据变多）：合约缓存按文件签名失效，下次取用重新解析
+    assert _upload(csv_bytes(_day_rows("fu2701", "2026-9-17", 0, n=9), HEADER_B), "again.csv").status_code == 200
+    with _CountParse() as c:
+        bars = kline_store.fetch_bars("fu2701", "1")
+        assert c.n == 2 and len(bars) > n_before          # 重新解析 + K 线也是新的
+    # 旧句柄指向的是过期数据，已一并作废（前端收到 410 会重新打开），不会悄悄返回旧数据
+    assert client.get(f"/api/depth/kline?depthId={o['depthId']}&period=1440").status_code == 410
+    o2 = client.post("/api/depth/open-contract", json={"symbol": "fu2701"}).get_json()
+    assert o2["tickCount"] == 9 + 5
+    _clear_depth_files()
+
+
+def test_cache_single_file_open_has_own_handle_and_no_contract_entry():
+    _clear_depth_files()
+    tick_cache.clear()
+    j = _upload(csv_bytes(), "flow.csv").get_json()
+    assert client.get(f"/api/depth/kline?depthId={j['depthId']}&period=1").status_code == 200
+    assert tick_cache.stats()["contracts"] == [] and tick_cache.stats()["handles"] == 1
+    _clear_depth_files()
+
+
+def _fake_td(n):
+    """一个占用约 n 字节的假 TickData（只用数组，足够给淘汰逻辑测试）。"""
+    import numpy as np
+    from backend.core.depth_market import TickData
+    k = max(1, n // (8 * 6))   # ts / price / vol / cum_vol / money / position 共 6 个 8 字节数组
+    z = np.zeros(k)
+    return TickData(ts=z.astype("int64"), price=z, vol=z, cum_vol=z, money=z, position=z, day=np.array([], dtype=object))
+
+
+def test_cache_evicts_by_memory_budget_lru_and_keeps_latest(monkeypatch=None):
+    import os as _os
+    old = _os.environ.get(tick_cache.BUDGET_ENV)
+    try:
+        tick_cache.clear()
+        mb = 1024 * 1024
+        _os.environ[tick_cache.BUDGET_ENV] = "10"           # 预算 10MB
+        # 6 个 3MB 的合约：一共 18MB > 10MB，只能留 3 个（最近使用的）
+        for i in range(1, 7):
+            td = _fake_td(3 * mb)
+            tick_cache.put_contract(f"c{i}", ("sig",), td)
+            if i == 2:
+                tick_cache.get_contract("c1", ("sig",))      # 使用一下 c1，让它比 c2 新
+        left = tick_cache.stats()["contracts"]
+        assert left == ["c4", "c5", "c6"], left
+        assert tick_cache.stats()["usedBytes"] <= 10 * mb
+
+        # 句柄：深度行情正在看的合约（通过句柄使用）算最近使用，不会被后来的挤掉
+        tick_cache.clear()
+        td_a = _fake_td(4 * mb)
+        tick_cache.put_contract("a", ("s",), td_a)
+        h = tick_cache.new_handle(td_a, "a")
+        tick_cache.put_contract("b", ("s",), _fake_td(4 * mb))
+        assert tick_cache.get_handle(h) is td_a              # 用一下 a 的句柄 -> a 比 b 新
+        tick_cache.put_contract("c", ("s",), _fake_td(4 * mb))   # 12MB > 10MB：淘汰最久没用的 b
+        assert tick_cache.stats()["contracts"] == ["a", "c"] and tick_cache.get_handle(h) is td_a
+
+        # 单份就超预算：最新的这份仍然保留（刚打开就失效是不可接受的）
+        tick_cache.clear()
+        big = _fake_td(30 * mb)
+        tick_cache.put_contract("big", ("s",), big)
+        h2 = tick_cache.new_handle(big, "big")
+        assert tick_cache.get_handle(h2) is big and tick_cache.stats()["contracts"] == ["big"]
+        # 再来一个小的：big 最久没用被淘汰，连同它的句柄一起失效（否则 TickData 仍被句柄持有，内存释放不了）
+        tick_cache.put_contract("small", ("s",), _fake_td(1 * mb))
+        assert tick_cache.stats()["contracts"] == ["small"] and tick_cache.get_handle(h2) is None
+    finally:
+        if old is None:
+            _os.environ.pop(tick_cache.BUDGET_ENV, None)
+        else:
+            _os.environ[tick_cache.BUDGET_ENV] = old
+        tick_cache.clear()
+
+
+def test_cache_budget_env_parsing():
+    import os as _os
+    old = _os.environ.get(tick_cache.BUDGET_ENV)
+    try:
+        _os.environ.pop(tick_cache.BUDGET_ENV, None)
+        assert tick_cache.budget_bytes() == tick_cache.DEFAULT_BUDGET_MB * 1024 * 1024
+        _os.environ[tick_cache.BUDGET_ENV] = "abc"
+        assert tick_cache.budget_bytes() == tick_cache.DEFAULT_BUDGET_MB * 1024 * 1024   # 非法值回退默认
+        _os.environ[tick_cache.BUDGET_ENV] = "0"
+        assert tick_cache.budget_bytes() >= 1024 * 1024                                  # 下限 1MB
+    finally:
+        if old is None:
+            _os.environ.pop(tick_cache.BUDGET_ENV, None)
+        else:
+            _os.environ[tick_cache.BUDGET_ENV] = old
+
+
+def test_cache_many_contracts_no_410_for_the_one_on_screen():
+    """以前深度行情只留 3 份：连续打开 4 个合约，第 1 个就 410。现在按内存预算，几个小合约都留得住。"""
+    _clear_depth_files()
+    tick_cache.clear()
+    ids = []
+    for sym in ("fu2701", "fu2702", "fu2703", "fu2704", "fu2705"):
+        _seed_contract(sym, days=("2026-9-17",))
+        ids.append(client.post("/api/depth/open-contract", json={"symbol": sym}).get_json()["depthId"])
+    for did in ids:
+        assert client.get(f"/api/depth/kline?depthId={did}&period=1").status_code == 200
+    _clear_depth_files()
+
+
 def test_archive_zip_slip_ignored():
     _clear_depth_files()
     arc = _archive({"../../evil/20261102/fu2611.zip": _inner_zip(_fu_csv("fu2611", "2026-11-02"), "../evil.csv")})
     r = _upload_archive(arc, "fu")
     # 含 .. 的成员被忽略，因此视为没有找到数据
     assert r.status_code == 400
-    assert os.listdir(_TMP_DIR) == []
+    assert _data_files() == []
 
 
 if __name__ == "__main__":

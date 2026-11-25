@@ -65,7 +65,8 @@ def depth_upload():
     # 每次导入的文件名可能都一样（如 fu2701.csv），实际是不同日期的数据：
     # 先读文件内部的合约和交易日，改名为「合约名_YYYYMMDD.csv」再判断是否重名
     try:
-        name = depth_market.canonical_name(content, orig_name, os.path.splitext(orig_name)[1].lower() or '.csv')
+        meta = depth_market.peek_meta(content, orig_name)
+        name = depth_market.canonical_name(content, orig_name, os.path.splitext(orig_name)[1].lower() or '.csv', meta)
     except depth_market.DepthParseError as e:
         raise bad_request(str(e))
     except Exception as e:
@@ -85,6 +86,7 @@ def depth_upload():
         with open(tmp, 'wb') as out:
             out.write(content)
         os.replace(tmp, path)
+        svc.remember_meta(name, path, meta)   # 内容已经解析过，直接记进索引，列表不用再读这个文件
         data["saved"] = True
         data["overwritten"] = overwrite
         data["savedName"] = name
@@ -173,28 +175,18 @@ def depth_open_contract():
     """打开一个合约：把它的所有文件解析后按时间合并成一条时间线，返回结构同 /api/depth/open。"""
     symbol = (request.get_json(silent=True) or {}).get('symbol', '')
     c = _find_contract(symbol, f"合约「{symbol}」没有数据文件，可能已被删除，请刷新列表")
-    parts = []
-    for f in c["files"]:
-        path = svc.safe_depth_path(f["name"])
-        try:
-            with open(path, 'rb') as fh:
-                parts.append(depth_market.parse(fh.read(), f["name"]))
-        except depth_market.DepthParseError as e:
-            raise bad_request(f"{f['name']}：{e}")
-        except OSError as e:
-            raise bad_request(f"读取 {f['name']} 失败：{e}")
-        except Exception as e:
-            print(f"[Depth] 解析 {f['name']} 失败: {e}")
-            raise bad_request(f"解析 {f['name']} 失败：{e}")
     try:
-        td = depth_market.merge(parts)
+        # 统一缓存：同一个合约（文件没变）不管是深度行情、回测还是复盘先打开的，都只解析一次
+        td, file_count = svc.load_contract(c)
+    except (depth_market.DepthParseError, OSError) as e:
+        raise bad_request(str(e))
     except Exception as e:
-        print(f"[Depth] 合并 {symbol} 失败: {e}")
-        raise bad_request(f"合并文件失败：{e}")
+        print(f"[Depth] 解析合约 {symbol} 失败: {e}")
+        raise bad_request(f"解析合约 {symbol} 失败：{e}")
 
-    depth_id = svc.cache_ticks(td)
+    depth_id = svc.cache_ticks(td, c["symbol"])
     data = depth_market.summary(td)
-    data.update({"success": True, "depthId": depth_id, "filename": symbol, "fileCount": len(parts)})
+    data.update({"success": True, "depthId": depth_id, "filename": symbol, "fileCount": file_count})
     return jsonify(data)
 
 
