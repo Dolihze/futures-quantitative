@@ -480,6 +480,64 @@ def test_day_kline_unavailable_when_library_lacks_contract_or_day():
         assert client.get("/api/review/day-kline?symbol=FU2611").status_code == 400
         assert client.get("/api/review/day-kline?symbol=FU2611&day=not-a-date").status_code == 400
 
+def test_trading_day_of_matches_review_trading_day():
+    """kline_store 里按字符串算的交易日，必须和 review.trading_day 逐点一致（含夜盘边界、跨月、跨年）。"""
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from backend.core import review
+    from backend.services import kline_store
+    labels = ["2026-02-28 20:00:00", "2026-02-28 19:59:59", "2026-12-31 23:59:00", "2026-01-01 00:01:00",
+              "2026-10-21 21:01:00", "2026-10-22 02:30:00", "2026-10-22 09:01:00", "2026-10-22 15:00:00"]
+    base = datetime(2025, 12, 28)
+    labels += [(base + timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:00") for i in range(0, 24 * 60 * 12, 13)]
+    for lb in labels:
+        assert kline_store.trading_day_of(lb) == review.trading_day(pd.Timestamp(lb)).strftime("%Y-%m-%d"), lb
+
+
+def test_day_kline_groups_once_and_reuses_for_other_days():
+    from backend.services import kline_store, tick_cache
+    ticks = [("20261021210010", 100, 10), ("20261021210130", 101, 40),      # 夜盘 -> 10-22
+             ("20261022090020", 103, 5), ("20261022090140", 104, 12),        # 10-22 日盘
+             ("20261023090020", 110, 5), ("20261023090130", 111, 7)]         # 10-23
+    with _local_depth_library({"fu2611_20261022.csv": _tick_csv("fu2611", ticks)}):
+        calls = {"n": 0}
+        orig = kline_store.trading_day_of
+
+        def counted(label):
+            calls["n"] += 1
+            return orig(label)
+        kline_store.trading_day_of = counted
+        try:
+            j22 = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
+            first = calls["n"]
+            j23 = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-23").get_json()
+            j22b = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-22").get_json()
+        finally:
+            kline_store.trading_day_of = orig
+        assert j22["count"] == 4 and j23["count"] == 2 and j22b == j22
+        assert first == 6 and calls["n"] == first, "每根 K 线只判断一次交易日；换一天 / 再取同一天都不再重新分组"
+        assert [b["time"][:10] for b in j23["data"]] == ["2026-10-23", "2026-10-23"]
+
+        # 返回的是缓存里的同一批 bar 字典：取回后不能被调用方悄悄改坏缓存（路由只读，这里确认缓存内容稳定）
+        groups, bars = kline_store.bars_by_day("fu2611", "1")
+        assert sorted(groups) == ["2026-10-22", "2026-10-23"] and sum(len(v) for v in groups.values()) == len(bars)
+        assert [b["time"] for v in groups.values() for b in v] == [b["time"] for b in bars]   # 分组不丢、不乱序
+
+
+def test_day_kline_group_cache_invalidated_when_library_changes():
+    from backend.services import kline_store
+    day1 = _tick_csv("fu2611", [("20261022090020", 100, 10), ("20261022090140", 101, 20)])
+    with _local_depth_library({"fu2611_20261022.csv": day1}) as lib:
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-23").get_json()
+        assert j["available"] is False                      # 还没导入 10-23
+        # 导入 10-23 这一天的数据（库的文件签名变了）-> 分组缓存必须失效，立刻能查到
+        day2 = _tick_csv("fu2611", [("20261023090020", 110, 5), ("20261023090140", 111, 7)])
+        with open(os.path.join(lib.dir, "fu2611_20261023.csv"), "wb") as f:
+            f.write(day2)
+        j = client.get("/api/review/day-kline?symbol=FU2611&day=2026-10-23").get_json()
+        assert j["available"] is True and j["count"] == 2
+
+
 import atexit  # noqa: E402
 
 atexit.register(shutil.rmtree, _TMP_REVIEW_DIR, ignore_errors=True)   # 不论是 pytest 还是直接运行，结束时删掉临时目录

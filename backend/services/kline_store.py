@@ -12,7 +12,7 @@
 import re
 from datetime import datetime, timedelta
 
-from backend.core import depth_market
+from backend.core import depth_market, review
 from backend.errors import bad_request, not_found
 from backend.services import depth_service, tick_cache
 
@@ -70,13 +70,22 @@ def fetch_bars(symbol, period):
 
     合约没导入 / 没有可用数据时抛 ApiError(404)，提示去数据库管理导入；不会访问网络。
     """
-    period = str(period)
-    if period not in KLINE_PERIODS:
+    return _bars_of(_resolve(symbol, period), period)
+
+
+def _resolve(symbol, period):
+    """校验周期并在库里找到合约，返回 scan() 里的合约 dict；找不到抛 404。"""
+    if str(period) not in KLINE_PERIODS:
         raise bad_request(f'不支持的周期：{period}')
     contract = _find_contract(symbol)
     if contract is None:
         raise not_found(f'本地行情库里没有合约「{symbol}」的数据，{IMPORT_HINT}', fileMissing=True)
+    return contract
 
+
+def _bars_of(contract, period):
+    """取已找到的合约在某周期的全部 K 线（带缓存）。"""
+    period = str(period)
     sig = depth_service.contract_signature(contract)
     hit = tick_cache.get_bars(contract['symbol'], period, sig)
     if hit is not None:
@@ -96,6 +105,38 @@ def fetch_bars(symbol, period):
     bars.sort(key=lambda x: x['time'])
     tick_cache.put_bars(contract['symbol'], period, sig, bars)
     return bars
+
+
+def trading_day_of(time_label):
+    """K 线结束时间 'YYYY-MM-DD HH:MM:SS' -> 它所属的交易日 'YYYY-MM-DD'。
+
+    和 review.trading_day 同一口径：20:00 及之后（夜盘）属于下一个交易日，其余（含凌晨夜盘延续）属于当天。
+    直接按字符串计算，不创建 pandas 对象，几万根 K 线分组也只要几十毫秒。
+    """
+    day = time_label[:10]
+    if int(time_label[11:13]) >= review.NIGHT_HOUR:
+        return (datetime.strptime(day, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+    return day
+
+
+def bars_by_day(symbol, period):
+    """某合约某周期的 K 线按交易日分好组：{'YYYY-MM-DD': [bar, ...]}（组内保持升序）。
+
+    交易复盘每点开一天都要取这一天的 K 线；以前每次都把全部 K 线逐根判断一遍交易日再挑出目标日，
+    现在每个合约只分组一次并缓存，之后取任意一天都是直接查表。缓存和 K 线缓存共用签名，文件变化时一起失效。
+    返回 (分组字典, 全部 K 线)；后者用于「库里没有这一天」时提示库内范围。
+    """
+    period = str(period)
+    contract = _resolve(symbol, period)
+    bars = _bars_of(contract, period)
+    sig = depth_service.contract_signature(contract)
+    groups = tick_cache.get_day_bars(contract['symbol'], period, sig)
+    if groups is None:
+        groups = {}
+        for b in bars:
+            groups.setdefault(trading_day_of(b['time']), []).append(b)
+        tick_cache.put_day_bars(contract['symbol'], period, sig, groups)
+    return groups, bars
 
 
 def clear_cache():

@@ -244,14 +244,14 @@ def review_day_kline():
     code = kline_store.normalize_symbol(symbol)
 
     try:
-        bars = kline_store.fetch_bars(code, '1')
+        by_day, bars = kline_store.bars_by_day(code, '1')
     except ApiError as e:
         if e.status != 404:
             raise
         return jsonify({"success": True, "available": False, "data": [], "message": e.message})
 
-    # 和成交用同一套“交易日”口径：夜盘（20:00 之后）属于下一个交易日
-    day_bars = [b for b in bars if review.trading_day(pd.Timestamp(b['time'])).strftime('%Y-%m-%d') == target]
+    # 和成交用同一套“交易日”口径（夜盘 20:00 之后属于下一个交易日）：K 线已按交易日分好组并缓存，直接取这一天
+    day_bars = by_day.get(target, [])
     if not day_bars:
         have = f"{bars[0]['time'][:10]} ~ {bars[-1]['time'][:10]}" if bars else '没有可用数据'
         return jsonify({"success": True, "available": False, "data": [],

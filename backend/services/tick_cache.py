@@ -92,6 +92,8 @@ def _evict():
             _CONTRACTS.pop(sym, None)
             for k in [k for k in _BARS if k[0] == sym]:   # 该合约的 K 线很小，留着不占内存，但数据来源已丢，保持一致一并清掉
                 _BARS.pop(k, None)
+            for k in [k for k in _DAY_BARS if k[0] == sym]:
+                _DAY_BARS.pop(k, None)
         for h in victim["handles"]:
             _HANDLES.pop(h, None)
 
@@ -108,6 +110,8 @@ def _drop_contract(symbol):
         _HANDLES.pop(h, None)
     for k in [k for k in _BARS if k[0] == symbol]:
         _BARS.pop(k, None)
+    for k in [k for k in _DAY_BARS if k[0] == symbol]:
+        _DAY_BARS.pop(k, None)
 
 
 def get_contract(symbol, sig):
@@ -173,11 +177,30 @@ def put_bars(symbol, period, sig, bars):
             _BARS.pop(next(iter(_BARS)))
 
 
+# 按交易日分好组的 K 线：(symbol, period) -> (签名, {交易日: [bar, ...]})。
+# 和上面的 K 线缓存用同一个签名，文件变了一起失效；只是引用同一批 bar 字典，几乎不多占内存。
+_DAY_BARS = {}
+
+
+def get_day_bars(symbol, period, sig):
+    with _lock:
+        hit = _DAY_BARS.get((symbol, period))
+        return hit[1] if hit and hit[0] == sig else None
+
+
+def put_day_bars(symbol, period, sig, groups):
+    with _lock:
+        _DAY_BARS[(symbol, period)] = (sig, groups)
+        while len(_DAY_BARS) > BARS_MAX:
+            _DAY_BARS.pop(next(iter(_DAY_BARS)))
+
+
 def clear():
     with _lock:
         _CONTRACTS.clear()
         _HANDLES.clear()
         _BARS.clear()
+        _DAY_BARS.clear()
 
 
 def stats():
