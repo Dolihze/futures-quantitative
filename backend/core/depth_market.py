@@ -402,6 +402,21 @@ def _group_ticks(td: TickData, period: int, day: str = None):
     return idx, codes, labels
 
 
+def _clean_list(values: np.ndarray) -> list:
+    """一整列数值 -> JSON 友好的 python 值列表，和逐个调用 _clean 的结果完全一致（但快得多）。
+
+    NaN -> None；整数值（且绝对值 < 1e15）-> int；其余 round(x, 6)。
+    """
+    a = np.asarray(values, dtype=float)
+    nan = np.isnan(a)
+    is_int = (~nan) & (a == np.floor(a)) & (np.abs(a) < 1e15)
+    ints = np.where(is_int, a, 0.0).astype(np.int64).tolist()
+    nan_l, int_l, raw = nan.tolist(), is_int.tolist(), a.tolist()
+    # 小数用内置 round，不能用 np.round：两者在恰好落在舍入边界的数上结果不同
+    # （如 0.1234575：内置 round -> 0.123457，np.round -> 0.123458），换了会悄悄改变输出的数值
+    return [None if nan_l[i] else (ints[i] if int_l[i] else round(raw[i], 6)) for i in range(len(raw))]
+
+
 def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
     """由 tick 聚合 K 线。
 
@@ -411,59 +426,62 @@ def build_kline(td: TickData, period: int = 1, day: str = None) -> dict:
     K 线的时间边界按“日历分钟”向下取整（9:00:00~9:00:59 -> 09:00）；5 分钟以上按
     自然整点对齐（9:00、9:05 …）。夜盘不特殊处理，同一个交易日里按真实时间连续排列。
     每根 bar 额外带 first/last tick 序号（ti0 / ti1），前端可据此联动盘口。
+
+    实现是整列向量化：先用 pandas groupby 一次性算出每根 K 线的各项统计，再把每一列整体转成 python 列表、
+    按列拼成 bar 字典；不再逐根逐字段取值。结果与旧的逐根组装版本逐字段、逐类型一致
+    （tests/kline_reference.py 保留了旧实现作对照）。
     """
     idx, keys, labels = _group_ticks(td, period, day)
     if len(idx) == 0:
         return {'bars': [], 'period': period}
 
-    ts = td.ts[idx]
-    price = td.price[idx]
     vol = td.vol[idx]
-    money = td.money[idx]
-    pos = td.position[idx]
-    days = td.day[idx]
-
-    # 逐组聚合（用 pandas groupby，tick 数量几十万量级也很快）
+    # 每个 tick 属于第几根 K 线（keys 是 0..n-1 连续的组号，按出现顺序编号）；bar 按组号升序，和 groupby(sort=True) 一致
     g = pd.DataFrame({
-        'k': keys, 'p': price, 'v': vol, 'm': money, 'pos': pos, 'i': idx, 'ts': ts, 'day': days,
+        'k': keys, 'p': td.price[idx], 'v': vol, 'm': td.money[idx], 'pos': td.position[idx],
+        'i': idx, 'ts': td.ts[idx], 'day': td.day[idx],
     })
     grp = g.groupby('k', sort=True)
     first = grp.first()
     last = grp.last()
     agg = grp.agg(high=('p', 'max'), low=('p', 'min'), volume=('v', 'sum'), money=('m', 'sum'))
     sizes = grp.size()
+    bar_keys = agg.index.to_numpy()
 
-    # 每根 K 线里各类成交性质的手数：{'多开': 手数, ...}（没有 BS 列就不带 bs 字段）
-    bs_by_bar = None
+    # 每根 K 线里各类成交性质的手数：{'多开': 手数, ...}（没有 BS 列就不带 bs 字段，bs 为 None）
+    bs_col = None
     if td.bs is not None:
         bg = pd.DataFrame({'k': keys, 'bs': td.bs[idx], 'v': vol})
         bg = bg[bg['bs'] != '']
-        bs_by_bar = {k: sub.groupby('bs')['v'].sum().to_dict() for k, sub in bg.groupby('k')}
+        # 一次 groupby 搞定所有 K 线，不再每根单独算。sort=True：每根 K 线里 bs 的键按成交性质文字排序，
+        # 和旧实现（逐根 sub.groupby('bs')，默认排序）的键顺序一致，JSON 输出逐字节相同
+        per = bg.groupby(['k', 'bs'], sort=True)['v'].sum()
+        by_bar = {}
+        for (k, name), v in zip(per.index.tolist(), _clean_list(per.to_numpy())):
+            by_bar.setdefault(k, {})[name] = v
+        bs_col = [by_bar.get(k, {}) for k in bar_keys.tolist()]
 
-    bars = []
-    for k in agg.index:
-        bar_bs = None
-        if bs_by_bar is not None:
-            bar_bs = {name: _clean(v) for name, v in bs_by_bar.get(k, {}).items()}
-        bars.append({
-            'time': labels[k],
-            'day': first.at[k, 'day'],
-            'open': _clean(first.at[k, 'p']),
-            'high': _clean(agg.at[k, 'high']),
-            'low': _clean(agg.at[k, 'low']),
-            'close': _clean(last.at[k, 'p']),
-            'volume': _clean(agg.at[k, 'volume']),
-            'money': _clean(agg.at[k, 'money']),
-            'position': _clean(last.at[k, 'pos']),
-            'ts0': int(first.at[k, 'ts']),
-            'ts1': int(last.at[k, 'ts']),
-            'ti0': int(first.at[k, 'i']),
-            'ti1': int(last.at[k, 'i']),
-            'ticks': int(sizes.at[k]),
-            'bs': bar_bs,
-        })
+    n = len(bar_keys)
+    cols = {
+        'time': [labels[k] for k in bar_keys.tolist()],
+        'day': first['day'].tolist(),
+        'open': _clean_list(first['p'].to_numpy()),
+        'high': _clean_list(agg['high'].to_numpy()),
+        'low': _clean_list(agg['low'].to_numpy()),
+        'close': _clean_list(last['p'].to_numpy()),
+        'volume': _clean_list(agg['volume'].to_numpy()),
+        'money': _clean_list(agg['money'].to_numpy()),
+        'position': _clean_list(last['pos'].to_numpy()),
+        'ts0': first['ts'].astype(np.int64).tolist(),
+        'ts1': last['ts'].astype(np.int64).tolist(),
+        'ti0': first['i'].astype(np.int64).tolist(),
+        'ti1': last['i'].astype(np.int64).tolist(),
+        'ticks': sizes.astype(np.int64).tolist(),
+        'bs': bs_col if bs_col is not None else [None] * n,
+    }
+    names = list(cols)
+    bars = [dict(zip(names, row)) for row in zip(*cols.values())]
     return {'bars': bars, 'period': period}
-
 
 # ---------------------------------------------------------------------------
 # 足迹图：每根 K 线内每个价位的主动买 / 主动卖成交量 + 大单

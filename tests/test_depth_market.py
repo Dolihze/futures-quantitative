@@ -825,6 +825,101 @@ def test_index_concurrent_scans_are_consistent():
 
 
 # ---------------------------------------------------------------------------
+# K 线聚合向量化：必须和旧的逐根组装实现（tests/kline_reference.py）逐字段、逐类型、逐字节一致
+# ---------------------------------------------------------------------------
+import json as _json  # noqa: E402
+from kline_reference import build_kline_reference  # noqa: E402
+
+
+def _strict_equal(a, b):
+    """逐字段比较且要求类型一致（int 与 float 视为不同：1 == 1.0 会掩盖 JSON 输出差异）；dict 还要求键顺序一致。"""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return list(a) == list(b) and all(_strict_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(_strict_equal(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def _assert_same_kline(td, periods=(1, 5, 15, 30, 60, 1440), days=(None,)):
+    for period in periods:
+        for day in days:
+            old = build_kline_reference(td, period, day)
+            new = dm.build_kline(td, period, day)
+            assert _strict_equal(old, new), (period, day)
+            assert _json.dumps(old, ensure_ascii=False) == _json.dumps(new, ensure_ascii=False), (period, day)
+
+
+def test_kline_vectorized_matches_reference_on_fixture_data():
+    td = dm.parse(csv_bytes(), "a.csv")                       # 带夜盘 + 日盘、BS 列
+    _assert_same_kline(td, days=(None, "2026-06-01", "2030-01-01"))
+    td2 = dm.parse(csv_bytes(ROWS_B, HEADER_B), "a2611.csv")
+    _assert_same_kline(td2, days=(None, "2026-09-17"))
+
+
+def test_kline_vectorized_matches_reference_multi_day_merge():
+    parts = [dm.parse(csv_bytes(_day_rows("fu2701", d, 0, n=40, minute0=0), HEADER_B), "x.csv")
+             for d in ("2026-9-17", "2026-9-18", "2026-9-21")]
+    td = dm.merge(parts)
+    _assert_same_kline(td, days=(None, "2026-09-18"))
+    assert len(dm.build_kline(td, 1)["bars"]) > 3
+
+
+def test_kline_vectorized_without_bs_column_and_empty_result():
+    no_bs = "symbol,code,name,time,open,current,high,low,volume,money,position"
+    rows = ["fu2701,x,燃油,20261020090000000,0,3000,3000,3000,10,30000,100",
+            "fu2701,x,燃油,20261020090010000,0,3001.5,3001.5,3000,25,75000,101",
+            "fu2701,x,燃油,20261020090100000,0,2999.25,3001.5,2999.25,40,120000,99"]
+    td = dm.parse(csv_bytes(rows, no_bs), "nobs.csv")
+    assert td.bs is None
+    _assert_same_kline(td, days=(None,))
+    assert all(b["bs"] is None for b in dm.build_kline(td, 1)["bars"])      # 没有 BS 列：每根 bs 都是 None（不是 {}）
+    assert dm.build_kline(td, 1, "2099-01-01") == {"bars": [], "period": 1} == build_kline_reference(td, 1, "2099-01-01")
+    # 非整数价格保留小数、整数价格输出 int —— 两个实现的类型必须一致
+    bars = dm.build_kline(td, 1)["bars"]
+    assert any(isinstance(b["close"], float) for b in bars) and any(isinstance(b["open"], int) for b in bars)
+
+
+def test_clean_list_equals_clean_elementwise():
+    """_clean_list 对各种数值的结果必须与逐个 _clean 完全一致（含 NaN、负数、大数、6 位小数舍入边界、-0.0）。"""
+    import numpy as np
+    vals = np.array([0.0, -0.0, 1.0, -1.0, 3000.0, 3001.5, 2999.25, 0.1 + 0.2, 1 / 3, 2 / 3, -2 / 3, 1e-7, 5e-7, 1.0000005,
+                     0.1234565, 0.1234575, 123456.7891235, 1e14, 1e15, 1e15 - 1, 9.99e14, -1e15, 4.5e15, 12345678901234.5,
+                     float("nan"), 2.5, 0.5, 1.5, 1234567.0000004, 99.9999996, 1e-320])
+    assert _strict_equal(dm._clean_list(vals), [dm._clean(x) for x in vals])
+    rng = np.random.default_rng(7)
+    rand = np.concatenate([rng.normal(3000, 50, 5000).round(rng.integers(0, 8)), rng.integers(0, 10**6, 2000).astype(float),
+                           rng.random(2000) * 1e-3, -rng.random(1000) * 1e4])
+    assert _strict_equal(dm._clean_list(rand), [dm._clean(x) for x in rand])
+    assert dm._clean_list(np.array([])) == []
+
+
+def test_kline_vectorized_handles_bs_blank_and_missing_bars():
+    """BS 列里有认不出的值（解析后是空串，不计入 bs）；某根 K 线所有成交性质都认不出时 bs 是 {} 而不是 None。"""
+    hdr = "InstrumentID,TradingTime,BS,LastPrice,BidPrice1,BidVolume1,AskPrice1,AskVolume1,Volume,Turnover,OpenInterest"
+    rows = ["fu2701,2026-9-17 9:00:00,多开,5000,4999,5,5001,6,10,100000,300",
+            "fu2701,2026-9-17 9:00:10,未知,5001,5000,5,5002,6,25,250000,301",     # 认不出的 BS -> 空串
+            "fu2701,2026-9-17 9:01:00,???,5002,5001,5,5003,6,30,300000,302",       # 这根 K 线全是认不出的 BS
+            "fu2701,2026-9-17 9:02:00,空开,5003,5002,5,5004,6,45,450000,303"]
+    td = dm.parse(csv_bytes(rows, hdr), "blank.csv")
+    _assert_same_kline(td, days=(None,))
+    by_time = {b["time"][-5:]: b["bs"] for b in dm.build_kline(td, 1)["bars"]}
+    assert by_time["09:01"] == {} and by_time["09:00"] == {"多开": 10}
+
+
+def test_footprint_still_aligned_with_vectorized_kline():
+    """足迹图复用 build_kline 的分组：bars 数量要和 levels 的分组完全对得上（足迹图原有测试的补充）。"""
+    td = dm.parse(csv_bytes(ROWS_B, HEADER_B), "a2611.csv")
+    fp = dm.build_footprint(td, 1)
+    kl = dm.build_kline(td, 1)
+    assert [b["time"] for b in fp["bars"]] == [b["time"] for b in kl["bars"]]
+    assert all("levels" in b for b in fp["bars"])
+    assert sum(lv["buy"] + lv["sell"] + lv["neutral"] for b in fp["bars"] for lv in b["levels"]) == \
+        sum(b["volume"] for b in kl["bars"])
+
+
+# ---------------------------------------------------------------------------
 # 统一 tick 缓存（services/tick_cache.py）：深度行情 / 回测 / 复盘共用
 # ---------------------------------------------------------------------------
 from backend.services import kline_store, tick_cache  # noqa: E402
