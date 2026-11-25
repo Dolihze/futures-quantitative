@@ -108,6 +108,30 @@ def remember_parsed(name, path, result):
         _PARSED_CACHE[name] = ((st.st_size, st.st_mtime_ns), result)
 
 
+def find_overlaps(name, days):
+    """找出 review_files 里和新文件冲突的旧文件：同名，或包含新文件的任一交易日。
+
+    返回 [{"name", "days": [重叠的交易日]}]（同名文件即使没有重叠交易日也会列出，days 为空）。
+    目前每个文件是单日交易记录，重叠就意味着同一天重复导入：确认后整个旧文件被删除、由新文件取代。
+    解析不了的旧文件不参与（没有交易日可比），同名的除外。
+    """
+    root = review_files_dir()
+    if not os.path.isdir(root):
+        return []
+    new_days = set(days)
+    own = os.path.basename(safe_review_path(name) or name).lower()   # Windows 文件名不区分大小写
+    out = []
+    for other in sorted(os.listdir(root)):
+        if not is_review_file(root, other):
+            continue
+        same_name = other.lower() == own
+        r = parsed_file(other, os.path.join(root, other))
+        shared = [] if isinstance(r, str) else sorted(new_days & set(r.days))
+        if same_name or shared:
+            out.append({"name": other, "days": shared})
+    return out
+
+
 def file_meta(name, path):
     """交易记录文件的元信息（品种 / 交易日 / 成交手数）。"""
     r = parsed_file(name, path)

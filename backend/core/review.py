@@ -664,19 +664,16 @@ def _num(v: float):
 def merge_records(parts: list[pd.DataFrame]) -> pd.DataFrame:
     """把多个文件解析出的成交记录合并成一份（账户总览用）。
 
-    同一笔成交可能出现在多个文件里（比如先导入了一天的文件，又导入了包含这一天的整月文件），
-    所以按「时间 + 合约 + 买卖 + 开平 + 价格 + 手数 + 成交序号」去重，只保留一份。
-    成交序号缺失（NaN）时用 -1 代替参与去重，否则 NaN 之间互不相等，去不掉重。
+    只做拼接和排序，不删除任何成交行：期货里同一秒、同价、同手数、同成交序号的多笔成交是真实存在的，
+    按这些字段去重会误删合法成交，导致开平仓手数不平衡、FIFO 配对错乱。
+    多个文件覆盖同一交易日的情况由导入环节处理（见 review_service.find_overlaps：确认后删除旧文件再保存新文件），
+    这里不再兜底。
     每份 records 的 pnl / is_close 已由 analyze 在单文件内算好；盈亏配对是文件内的，合并后不再重算。
     """
     parts = [p for p in parts if p is not None and not p.empty]
     if not parts:
         return pd.DataFrame()
-    df = pd.concat(parts, ignore_index=True)
-    key = ["time", "symbol", "direction", "offset", "price", "volume", "_seq"]
-    df = df.assign(_seq=df["seq"].fillna(-1))
-    df = df.drop_duplicates(subset=key, keep="first").drop(columns=["_seq"])
-    return _sort_by_session(df)
+    return _sort_by_session(pd.concat(parts, ignore_index=True))
 
 
 def build_overview(records: pd.DataFrame, include_fee: bool = True) -> dict:

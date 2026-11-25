@@ -62,9 +62,10 @@ def _file_path_or_error(name, *, missing_hint=''):
 def review_upload():
     """上传交易记录 Excel：先解析，解析成功后保存到 review_files 文件夹，返回可选品种和数据时间范围。
 
-    文件名按“文件夹里是否已有同名文件”判断唯一性（Windows 下不区分大小写）：
-    已有同名文件且没有带 overwrite=1 时返回 409 + exists:true，什么都不做（不解析、不保存），
-    由界面弹窗让用户确认；用户确认后带 overwrite=1 重新上传，才会覆盖。
+    重复导入的判断：文件夹里已有同名文件（Windows 下不区分大小写），或已有文件包含新文件的任一交易日。
+    没有带 overwrite=1 时返回 409 + exists:true + conflicts（将被替换的旧文件及重叠的交易日），什么都不保存，
+    由界面弹窗让用户确认；用户确认后带 overwrite=1 重新上传：先保存新文件，成功后再删除这些旧文件，
+    即“把那一天的旧数据全部删除，再导入新数据”。保存新文件失败时旧文件原样保留。
     """
     f = request.files.get('file')
     if f is None or not f.filename:
@@ -78,14 +79,19 @@ def review_upload():
     if path is None:
         raise bad_request("文件名不合法")
     overwrite = request.form.get('overwrite') == '1'
-    if os.path.exists(path) and not overwrite:
-        existing = os.path.basename(path)
-        raise ApiError(f"「{existing}」已存在，是否覆盖？", 409, exists=True, name=existing)
 
     content = f.read()
-    # 解析失败会抛 ApiError：失败的文件不保存，已有的同名旧文件也不会被它覆盖
+    # 解析失败会抛 ApiError：失败的文件不保存，已有的旧文件也不会被它替换
     parsed = {}
     data = analyze_to_response(content, name, parsed=parsed).get_json()
+
+    # 与已有文件冲突（同名 / 交易日重叠）：未确认时只报告冲突，不保存。
+    # analyze_to_response 已把新文件放进内存缓存，但没有落盘，不影响文件夹里的数据
+    conflicts = svc.find_overlaps(name, parsed["result"].days)
+    if conflicts and not overwrite:
+        names = "、".join(f"「{c['name']}」" for c in conflicts)
+        raise ApiError(f"{names}已存在（同名或包含相同交易日），是否删除旧文件并导入新文件？", 409,
+                       exists=True, name=name, conflicts=conflicts)
 
     # 保存失败（磁盘只读、没有权限等）不影响本次分析，只在警告里告诉用户。
     # 先写临时文件再替换：写到一半失败时不会把原来的好文件弄坏
@@ -97,7 +103,21 @@ def review_upload():
         os.replace(tmp, path)
         svc.remember_parsed(name, path, parsed["result"])   # 已解析过，文件落盘后直接记进缓存：列表 / 总览不再读这个 Excel
         data["saved"] = True
-        data["overwritten"] = overwrite
+        data["overwritten"] = bool(conflicts)
+        # 新文件已安全落盘，再删旧文件（同名的已被上面的 os.replace 覆盖，不用再删）
+        removed, failed = [], []
+        for c in conflicts:
+            old = svc.safe_review_path(c["name"])
+            if old is None or os.path.samefile(old, path):
+                continue
+            try:
+                os.remove(old)
+                removed.append(c["name"])
+            except OSError as e:     # 被 Excel 等程序占用时 Windows 会拒绝删除
+                failed.append(f"{c['name']}（{e}）")
+        data["removed"] = removed
+        if failed:
+            data["warnings"] = list(data.get("warnings", [])) + [f"旧文件没能删除：{'、'.join(failed)}，该日数据可能重复计算，请手动删除"]
     except OSError as e:
         print(f"[Review] 保存到 {svc.review_files_dir()} 失败: {e}")
         try:

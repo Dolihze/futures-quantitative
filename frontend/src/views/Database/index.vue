@@ -694,16 +694,20 @@ async function importReviewOne(file, task) {
       res = await uploadReviewFile(file)
     } catch (error) {
       if (error?.response?.status !== 409 || !error.response.data?.exists) throw error
-      const name = error.response.data.name || file.name
+      // 重复 = 同名，或已有文件包含新文件的任一交易日。确认后后端先保存新文件，再删除这些旧文件
+      const conflicts = error.response.data.conflicts || []
+      const lines = conflicts.length
+        ? conflicts.map((c) => `「${c.name}」${c.days?.length ? `（${c.days.join('、')}）` : ''}`).join('、')
+        : `「${error.response.data.name || file.name}」`
       try {
-        await ElMessageBox.confirm(`文件重复：文件夹中已存在「${name}」，是否覆盖？`, '文件重复', {
-          confirmButtonText: '覆盖', cancelButtonText: '跳过', type: 'warning'
+        await ElMessageBox.confirm(`文件重复：${lines} 与「${file.name}」同名或包含相同交易日。是否删除旧文件并导入新文件？`, '文件重复', {
+          confirmButtonText: '删除旧文件并导入', cancelButtonText: '跳过', type: 'warning'
         })
       } catch {
         upd('skip', '已存在，已跳过')
         return
       }
-      upd('wait', '正在覆盖...')
+      upd('wait', '正在替换旧数据...')
       res = await uploadReviewFile(file, true)
     }
     const extra = res.warnings?.length ? `（${res.warnings[0]}）` : ''

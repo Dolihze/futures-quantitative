@@ -200,9 +200,71 @@ def test_upload_same_name_needs_confirmation_then_overwrites():
     assert r.status_code == 400
     with open(path, "rb") as fh:
         assert fh.read() == second
-    # 没有同名文件时带 overwrite 也只是普通保存
-    assert upload_overwrite(first, "other.xlsx").get_json()["overwritten"] is True
-    assert sorted(os.listdir(_TMP_REVIEW_DIR)) == ["other.xlsx", "records.xlsx"]
+    # 没有同名文件、也没有重叠交易日时带 overwrite 也只是普通保存
+    _clean_review_dir()
+    assert upload_overwrite(first, "other.xlsx").get_json()["overwritten"] is False
+    assert os.listdir(_TMP_REVIEW_DIR) == ["other.xlsx"]
+
+
+def test_upload_same_trading_day_replaces_old_files_after_confirmation():
+    """重复导入同一交易日（文件名不同）：确认前什么都不动；确认后先保存新文件，再删除包含这些交易日的旧文件。"""
+    from test_review import ROWS_D, make_detail_sheet
+    _reset_review_state()
+    day_a = make_xlsx(ROWS_A[:2], HEADER_A, title_rows=2)           # 只含 10-20
+    day_b = make_xlsx(ROWS_A[2:4], HEADER_A, title_rows=2)          # 只含 10-21
+    assert upload_raw(day_a, "a.xlsx").status_code == 200
+    assert upload_raw(day_b, "b.xlsx").status_code == 200           # 不同交易日：不冲突
+
+    # 新文件含 10-20 和 10-21 两天，与 a、b 都重叠；文件名不同也算重复
+    new = make_xlsx(ROWS_A[:4], HEADER_A, title_rows=2)
+    cache_before = len(review_service.REVIEW_CACHE)
+    r = upload_raw(new, "new.xlsx")
+    j = r.get_json()
+    assert r.status_code == 409 and j["exists"] is True
+    assert {(c["name"], tuple(c["days"])) for c in j["conflicts"]} == {("a.xlsx", ("2026-10-20",)), ("b.xlsx", ("2026-10-21",))}
+    assert sorted(os.listdir(_TMP_REVIEW_DIR)) == ["a.xlsx", "b.xlsx"]      # 未确认：旧文件原样保留，新文件没保存
+    assert len(review_service.REVIEW_CACHE) == cache_before
+
+    # 确认：新文件落盘，旧的两个被删除
+    r = upload_overwrite(new, "new.xlsx")
+    j = r.get_json()
+    assert r.status_code == 200 and j["saved"] is True and j["overwritten"] is True
+    assert sorted(j["removed"]) == ["a.xlsx", "b.xlsx"]
+    assert os.listdir(_TMP_REVIEW_DIR) == ["new.xlsx"]
+
+    # 与别的交易日不冲突的文件不受影响
+    other_day = make_xlsx(ROWS_A[4:6], HEADER_A, title_rows=2)      # 10-22
+    assert upload_raw(other_day, "c.xlsx").status_code == 200
+    r = upload_raw(make_xlsx(ROWS_A[:2], HEADER_A, title_rows=2), "again.xlsx")   # 再来一次 10-20
+    assert r.status_code == 409 and [c["name"] for c in r.get_json()["conflicts"]] == ["new.xlsx"]
+    assert sorted(os.listdir(_TMP_REVIEW_DIR)) == ["c.xlsx", "new.xlsx"]
+
+    # 新文件是坏的：解析失败，旧文件不会被删
+    r = upload_overwrite(b"this is not an excel file", "bad.xlsx")
+    assert r.status_code == 400
+    assert sorted(os.listdir(_TMP_REVIEW_DIR)) == ["c.xlsx", "new.xlsx"]
+    _reset_review_state()
+
+
+def test_merge_records_keeps_identical_fills_within_a_file():
+    """同一秒、同价、同手数、同成交序号的多笔成交是真实存在的（一笔委托被拆成多笔成交），合并时不能当重复删掉。"""
+    import pandas as pd
+    from backend.core import review
+    t = pd.Timestamp("2026-10-29 09:15:14")
+    rows = [
+        dict(time=t - pd.Timedelta(minutes=3), symbol="FU2701", product="FU", direction="卖", offset="开",
+             price=5476.0, volume=5, fee=0.0, pnl=0.0, seq=1.0, is_close=False),
+    ] + [
+        dict(time=t, symbol="FU2701", product="FU", direction="买", offset="平",
+             price=5487.0, volume=1, fee=0.0, pnl=-110.0, seq=2.0, is_close=True)
+        for _ in range(5)                                            # 5 笔完全相同的平仓成交
+    ]
+    df = pd.DataFrame(rows)
+    merged = review.merge_records([df])
+    assert len(merged) == 6 and merged["volume"].sum() == df["volume"].sum() == 10
+    # 开平仓手数平衡 -> 单日交易只配出 1 笔 5 手（5 笔相同成交合并），没有残留的开仓
+    trades = review.build_day_trades(merged, "2026-10-29")["symbols"][0]["trades"]
+    assert len(trades) == 1 and trades[0]["lots"] == 5 and trades[0]["closePrice"] == 5487.0
 
 
 def test_upload_filename_with_path_is_reduced_and_unsafe_rejected():
@@ -242,7 +304,8 @@ def test_delete_file():
     _clean_review_dir()
     data = make_xlsx(ROWS_A, HEADER_A, title_rows=2)
     up = upload(data, "records.xlsx").get_json()
-    upload(data, "keep.xlsx")
+    # 内容相同的文件走上传会被当成同日重复导入、顶掉 records.xlsx；这里只需要第二个文件，直接放进文件夹
+    _drop_in("keep.xlsx", data)
     r = client.delete("/api/review/files", json={"name": "records.xlsx"})
     assert r.status_code == 200 and r.get_json()["success"] is True
     assert os.listdir(_TMP_REVIEW_DIR) == ["keep.xlsx"]
@@ -538,7 +601,7 @@ def test_review_overview_numbers_unchanged_by_sharing():
     """共用同一份解析结果后，总览的数字必须和原来（每次都重新解析）完全一样。"""
     _reset_review_state()
     _drop_in("a.xlsx", make_xlsx(ROWS_A, HEADER_A, title_rows=2))
-    _drop_in("b.xlsx", make_xlsx(ROWS_A[:3], HEADER_A, title_rows=2))   # 与 a 有重复成交：合并时要去重
+    _drop_in("b.xlsx", make_xlsx(ROWS_A[:3], HEADER_A, title_rows=2))
     client.get("/api/review/files/detail")                                # 列表先解析 -> 总览走共用的结果
     shared = client.get("/api/review/overview").get_json()
     review_service._PARSED_CACHE.clear()

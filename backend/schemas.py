@@ -167,6 +167,7 @@ class ReviewOpenResult(ApiResult):
     warnings: list[str]
     saved: Optional[bool] = None
     overwritten: Optional[bool] = None
+    removed: Optional[list[str]] = None     # 同日重复导入时被删除的旧文件名
 
 
 class ReviewFile(_Model):
