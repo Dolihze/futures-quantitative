@@ -590,6 +590,13 @@
   border-bottom: 1px solid var(--border-panel);
 }
 
+/* 进度条的百分比文字放在条的右侧（不用 text-inside：百分比很小时填充条太窄，文字会被裁掉）。固定宽度避免数字变化时条抖动 */
+.db-bulk-status :deep(.el-progress__text),
+.db-migrate :deep(.el-progress__text) {
+  min-width: 44px;
+  font-size: 12px !important;
+  color: var(--text-body);
+}
 /* 历史数据迁移进度条 */
 .db-migrate {
   margin-bottom: 12px;

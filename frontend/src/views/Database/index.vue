@@ -190,7 +190,7 @@
           <!-- 固定高度的进度 / 结果区，内容多时内部滚动 -->
           <div class="db-bulk-status">
             <template v-if="imp.busy">
-              <el-progress :percentage="imp.percent" :stroke-width="14" text-inside
+              <el-progress :percentage="imp.percent" :stroke-width="14"
                            :status="undefined" :format="() => `${imp.percent}%`" />
               <div class="db-bulk-progress-text">{{ imp.stageText }}</div>
             </template>
@@ -255,7 +255,7 @@
           正在把以前导入的 CSV 迁移进行情库（{{ migration.done }} / {{ migration.total }}）。迁移期间可以导入新数据，
           但暂时不能打开或删除合约；完成后原 CSV 会被删除，之后打开合约不再需要解析 CSV。
         </div>
-        <el-progress :percentage="migrationPercent" :stroke-width="12" text-inside :format="() => `${migrationPercent}%`" />
+        <el-progress :percentage="migrationPercent" :stroke-width="12" :format="() => `${migrationPercent}%`" />
         <div class="db-migrate-cur" :title="migration.current">{{ migration.current }}</div>
       </div>
 
