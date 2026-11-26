@@ -13,7 +13,7 @@ import time
 
 from backend import config
 from backend.core import depth_market
-from backend.services import tick_cache, tick_store
+from backend.services import calendar_service, tick_cache, tick_store
 
 # 导入过的 tick 数据放在这个文件夹（位置规则同 review_files，已加入 .gitignore）；环境变量 DEPTH_FILES_DIR 可改（测试用）
 DEPTH_FILES_DIRNAME = 'depth_files'
@@ -317,11 +317,13 @@ def scan(*, migrate='background'):
     for g in groups.values():
         fs = g["files"]
         days = sorted({d for f in fs for d in f["days"]})
+        # 起止范围内「是交易日却没导入」的日期。交易日历没缓存时为 None（前端不显示缺失，也不当成"没缺"）
+        missing = calendar_service.missing_days(days)
         out.append({
             "symbol": g["symbol"], "name": g["name"],
             "fileCount": len(fs), "files": sorted(fs, key=lambda f: f["start"]),
             "tickCount": sum(f["tickCount"] for f in fs),
-            "days": days, "dayCount": len(days),
+            "days": days, "dayCount": len(days), "missingDays": missing,
             "start": min(f["start"] for f in fs), "end": max(f["end"] for f in fs),
             "hasBs": all(f["hasBs"] for f in fs),
             "mtime": max(f["mtime"] for f in fs),

@@ -334,7 +334,10 @@
                 <!-- 三级：该合约名下的文件 -->
                 <div v-if="expanded === c.symbol" class="db-files">
                   <div class="db-covered" :title="c.days.join('、')">
-                    已导入交易日（{{ c.dayCount }} 天）：{{ dayCompact(c.days) }}
+                    已导入交易日（{{ c.dayCount }} 天）：{{ dayCompact(c) }}
+                  </div>
+                  <div v-if="c.missingDays?.length" class="db-missing" :title="c.missingDays.join('、')">
+                    缺失交易日（{{ c.missingDays.length }} 天，已排除周末和法定节假日）：{{ missingCompact(c) }}
                   </div>
                   <div v-for="f in c.files" :key="f.name" class="db-file">
                     <span class="f-name" :title="f.name">🗄 {{ f.name }}</span>
@@ -526,21 +529,55 @@ function scheduleMigrationPoll() {
 onBeforeUnmount(() => clearTimeout(migrationTimer))
 
 // ---------- 「已导入」一目了然：每个合约已导入的交易日，折叠成连续区间 ----------
-// 相邻两个交易日间隔不超过 4 天（跨周末 / 小长假）视为同一段
-const dayGap = (a, b) => Math.round((new Date(`${b}T00:00:00`).getTime() - new Date(`${a}T00:00:00`).getTime()) / 86400000)
-const dayCompact = (days) => {
+// 相邻两个已导入日之间没有「缺失的交易日」就算同一段（只隔着周末 / 法定节假日，如国庆）；
+// 中间有交易日没导入就断开，缺的日子在后面单独列出。缺失信息来自后端交易日历（c.missingDays）；
+// 日历不可用（missingDays 为 null）时退回「只隔周末才算同一段」，这时漏导入的工作日也会断开，只是分不清是节假日还是漏导。
+const parseDay = (s) => new Date(`${s}T00:00:00`)
+const hasWeekdayBetween = (a, b) => {
+  const d = parseDay(a)
+  const end = parseDay(b)
+  d.setDate(d.getDate() + 1)
+  for (; d < end; d.setDate(d.getDate() + 1)) {
+    const w = d.getDay()
+    if (w !== 0 && w !== 6) return true
+  }
+  return false
+}
+const joinRanges = (days, isBreak) => {
   if (!days?.length) return ''
   const out = []
   let start = days[0]
   let prev = days[0]
   for (let i = 1; i < days.length; i++) {
-    const gap = dayGap(prev, days[i])
-    if (gap >= 1 && gap <= 4) { prev = days[i]; continue }
+    if (!isBreak(prev, days[i])) { prev = days[i]; continue }
     out.push(start === prev ? start : `${start} ~ ${prev}`)
     start = prev = days[i]
   }
   out.push(start === prev ? start : `${start} ~ ${prev}`)
   return out.join('、')
+}
+const dayCompact = (c) => {
+  const missing = c.missingDays
+  if (!missing) return joinRanges(c.days, hasWeekdayBetween)
+  // 两个已导入日之间有缺失的交易日就断开（missing 升序，二分太重，列表很短直接 some）
+  return joinRanges(c.days, (a, b) => missing.some((m) => m > a && m < b))
+}
+// 缺失的交易日折叠成区间，如 2026-10-21 ~ 2026-10-23；连续性按「已导入 + 缺失」合起来的交易日序列判断
+const missingCompact = (c) => {
+  const missing = c.missingDays
+  if (!missing?.length) return ''
+  const all = [...c.days, ...missing].sort()
+  const miss = new Set(missing)
+  const ranges = []
+  let i = 0
+  while (i < all.length) {
+    if (!miss.has(all[i])) { i++; continue }
+    let j = i
+    while (j + 1 < all.length && miss.has(all[j + 1])) j++
+    ranges.push(i === j ? all[i] : `${all[i]} ~ ${all[j]}`)
+    i = j + 1
+  }
+  return ranges.join('、')
 }
 
 // ---------- 导入（可多选，逐个处理；同名文件逐个询问是否覆盖） ----------

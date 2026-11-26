@@ -10,10 +10,11 @@ from flask import Flask
 
 
 def register_blueprints(app: Flask) -> None:
-    from backend.routes import (account_routes, backtest_routes, depth_routes,
+    from backend.routes import (account_routes, backtest_routes, calendar_routes, depth_routes,
                                 monitor_routes, review_routes, trading_routes)
 
-    for module in (account_routes, trading_routes, backtest_routes, review_routes, monitor_routes, depth_routes):
+    for module in (account_routes, trading_routes, backtest_routes, review_routes, monitor_routes, depth_routes,
+                   calendar_routes):
         app.register_blueprint(module.bp)
 
 

@@ -21,6 +21,14 @@ tmp_ret = collect_all('vnpy_ctp')
 datas += tmp_ret[0]
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
+# 交易日历（backend/services/calendar_service.py）：akshare 的 tool_trade_date_hist_sina 用 py_mini_racer 执行 JS 解码，
+# 需要它的 mini_racer.dll / icudtl.dat。akshare 的 __init__ 会导入全部子模块，所以用 collect_all 带全依赖；
+# 它在 calendar_service 里是延迟导入的，只有真联网拉日历时才会加载，不拖慢后端启动。
+for _pkg in ('akshare', 'py_mini_racer'):
+    _ret = collect_all(_pkg)
+    datas += _ret[0]
+    binaries += _ret[1]
+    hiddenimports += _ret[2]
 
 a = Analysis(
     [str(ROOT / 'backend' / 'app.py')],

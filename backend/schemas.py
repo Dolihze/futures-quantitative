@@ -369,6 +369,7 @@ class DepthContract(_Model):
     tickCount: int
     days: list[str]
     dayCount: int
+    missingDays: Optional[list[str]] = None   # 起止范围内是交易日但没导入的日期；交易日历不可用时为 null
     start: str
     end: str
     hasBs: bool
@@ -404,6 +405,16 @@ class DepthFiles(ApiResult):
     files: list[ReviewFile]   # 行情库里的数据单元（name 为单元名）
 
 
+class CalendarTradingDays(ApiResult):
+    start: str
+    end: str
+    tradingDays: list[str]
+    closedDays: list[str]     # 周末 + 法定节假日（只到 coveredTo）
+    coveredTo: str            # 交易日历数据覆盖到的最后一天
+    stale: bool               # true = 联网刷新失败，用的是过期缓存
+    fetchedAt: int            # 日历拉取时间（Unix 秒）
+
+
 # ---------------------------------------------------------------------------
 # 契约注册表：(HTTP 方法, 路由规则) -> 响应模型。
 # 未登记的接口（实盘交易、跟单等，字段由 CTP 决定、变化频繁）在 OpenAPI 里仍会出现，只是响应为通用 ApiResult。
@@ -431,4 +442,5 @@ RESPONSES: dict[tuple[str, str], type[BaseModel]] = {
     ("POST", "/api/depth/open-contract"): DepthOpenResult,
     ("GET", "/api/depth/contracts"): DepthContracts,
     ("GET", "/api/depth/files"): DepthFiles,
+    ("GET", "/api/calendar/trading-days"): CalendarTradingDays,
 }

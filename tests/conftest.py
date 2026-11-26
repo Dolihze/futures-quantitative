@@ -36,3 +36,19 @@ def _isolate_local_appdata(tmp_path_factory, monkeypatch):
     _reset_sqlite_stores()
     yield
     _reset_sqlite_stores()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_trading_calendar(tmp_path_factory, monkeypatch):
+    """交易日历：缓存文件指到临时目录，联网拉取默认直接失败（测试绝不访问网络、不写真实缓存）。
+    要用日历的测试自己 monkeypatch calendar_service._fetch 返回假数据。"""
+    from backend.services import calendar_service
+
+    def no_network():
+        raise OSError("tests must not hit the network")
+
+    monkeypatch.setenv("TRADING_CALENDAR_FILE", str(tmp_path_factory.mktemp("calendar") / "cal.json"))
+    monkeypatch.setattr(calendar_service, "_fetch", no_network)
+    calendar_service.reset_memory()
+    yield
+    calendar_service.reset_memory()

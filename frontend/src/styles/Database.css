@@ -581,6 +581,22 @@
   word-break: break-all;
 }
 
+/* 起止范围内按交易日历应有数据却没导入的日子 */
+.db-missing {
+  padding: 0 0 8px;
+  margin-top: -4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e6a23c;
+  border-bottom: 1px dashed var(--border-panel);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.db-covered:has(+ .db-missing) {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
 /* 行情库台账说明 */
 .db-ledger-tip {
   padding: 8px 14px;

@@ -257,6 +257,37 @@
         }
       }
     },
+    "/api/calendar/trading-days": {
+      "get": {
+        "operationId": "get_calendar_trading_days",
+        "summary": "[start, end] 内的交易日与休市日（周末、法定节假日）。",
+        "tags": [
+          "calendar"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarTradingDays"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/contracts": {
       "get": {
         "operationId": "get_trading_get_contracts",
@@ -2563,6 +2594,108 @@
         "title": "BrokerItem",
         "type": "object"
       },
+      "CalendarTradingDays": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "tradingDays": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tradingdays",
+            "type": "array"
+          },
+          "closedDays": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Closeddays",
+            "type": "array"
+          },
+          "coveredTo": {
+            "title": "Coveredto",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "fetchedAt": {
+            "title": "Fetchedat",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "success",
+          "start",
+          "end",
+          "tradingDays",
+          "closedDays",
+          "coveredTo",
+          "stale",
+          "fetchedAt"
+        ],
+        "title": "CalendarTradingDays",
+        "type": "object"
+      },
       "DepthArchiveItem": {
         "properties": {
           "label": {
@@ -2943,6 +3076,21 @@
           "dayCount": {
             "title": "Daycount",
             "type": "integer"
+          },
+          "missingDays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Missingdays"
           },
           "start": {
             "title": "Start",
