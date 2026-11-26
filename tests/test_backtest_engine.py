@@ -115,12 +115,70 @@ def test_reversal_strategy_runs_and_trades_only_in_windows():
     r = be.run_backtest(bars, "reversal", "FU2611", 5)
     assert r["stats"]["tradeCount"] == len(r["trades"])
     for tr in r["trades"]:
-        hh, mm = (int(x) for x in tr["entryTime"].split(" ")[1].split(":")[:2])
-        assert (hh, mm <= 15) in ((9, True), (21, True))
+        assert tr["entryTime"][11:16] in ("09:05", "13:35", "21:05")
         assert tr["entryIndex"] <= tr["exitIndex"]
     # 每个交易日的每个时段最多开一单
-    slots = [(tr["entryTime"][:10], tr["entryTime"][11:13]) for tr in r["trades"]]
+    slots = [(tr["entryTime"][:10], tr["entryTime"][11:16]) for tr in r["trades"]]
     assert len(slots) == len(set(slots))
+
+
+def _rev_run(monkeypatch, bars, red_idx=(), green_idx=()):
+    n = len(bars)
+    var9 = [1.0 if i in green_idx else 0.0 for i in range(n)]
+    var9l = [1.0 if i in red_idx else 0.0 for i in range(n)]
+    monkeypatch.setattr(be, "reversal_indicator", lambda b: (var9, var9l))
+    return be.run_backtest(bars, "reversal", "FU2611", 3)
+
+
+def test_reversal_only_opens_at_round_time_and_holds_to_close(monkeypatch):
+    # FU：1 跳 = 1，50 跳 = 50；红柱在 09:05 做多，开仓 1000，TP=1050 SL=950
+    bars = [
+        flat("2026-10-20 09:04:00", 1000),
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 10:00:00", 1000, 1040, 960, 1010),   # 未触及止盈止损
+        bar("2026-10-20 11:30:00", 1010, 1020, 1000, 1015),  # 收盘平仓
+        flat("2026-10-20 13:35:00", 1015),                   # 此轮无信号 -> 不开仓
+        flat("2026-10-20 15:00:00", 1015),
+    ]
+    r = _rev_run(monkeypatch, bars, red_idx={0, 1})  # idx0 非开仓时点（忽略）；idx1 开仓；idx4 无红柱 -> 不开仓
+    t = r["trades"]
+    assert len(t) == 1
+    assert (t[0]["side"], t[0]["entryTime"][11:16], t[0]["entryPrice"]) == ("long", "09:05", 1000)
+    assert (t[0]["reason"], t[0]["exitTime"][11:16], t[0]["exitPrice"], t[0]["profit"]) == ("收盘平仓", "11:30", 1015, 15 * 10 * 3)
+    assert (t[0]["takeProfit"], t[0]["stopLoss"]) == (1050, 950)
+
+
+def test_reversal_green_short_take_profit_and_stop_loss(monkeypatch):
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),                    # 绿柱做空 TP=950 SL=1050
+        bar("2026-10-20 09:10:00", 1000, 1010, 940, 960),     # low<=950 -> 止盈
+        flat("2026-10-20 13:35:00", 1000),                    # 绿柱做空
+        bar("2026-10-20 13:40:00", 1000, 1055, 990, 1050),    # high>=1050 -> 止损
+        flat("2026-10-20 21:05:00", 1000),                    # 红柱做多
+        bar("2026-10-20 21:10:00", 1000, 1060, 940, 1000),    # 同根触及两者 -> 止损
+    ]
+    r = _rev_run(monkeypatch, bars, red_idx={4}, green_idx={0, 2})
+    t = r["trades"]
+    assert [(x["side"], x["reason"], x["exitPrice"]) for x in t] == [
+        ("short", "止盈", 950), ("short", "止损", 1050), ("long", "止损", 950)]
+
+
+def test_reversal_one_round_only_even_after_stop_and_conflicting_signal_skipped(monkeypatch):
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:10:00", 1000, 1000, 940, 945),     # 多头止损
+        flat("2026-10-20 09:15:00", 945),                     # 非开仓时点，即使有红柱也不再开
+        flat("2026-10-20 13:35:00", 1000),                    # 红绿同时 -> 不开仓
+        flat("2026-10-20 15:00:00", 1000),
+    ]
+    r = _rev_run(monkeypatch, bars, red_idx={0, 2, 3}, green_idx={3})
+    assert len(r["trades"]) == 1 and r["trades"][0]["reason"] == "止损"
+
+
+def test_reversal_registered_as_managed_one_minute_strategy():
+    sdef = be.STRATEGIES["reversal"]
+    assert sdef.managed and sdef.period == "1"
+    assert "50 跳" in sdef.description and "11:30" in sdef.description
 
 
 def test_slice_recent_days_and_registry():

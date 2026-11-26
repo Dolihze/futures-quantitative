@@ -308,54 +308,83 @@ def sorted_strategies() -> list[StrategyDef]:
     return sorted(STRATEGIES.values(), key=lambda s: (s.created, s.id), reverse=True)
 
 
-def _session_key(time_str: str) -> Optional[str]:
-    """09:00-09:15 -> morning，21:00-21:15 -> night，其余 None。"""
-    parts = time_str.split(" ")
-    if len(parts) < 2:
-        return None
-    hh, mm = (int(x) for x in parts[1].split(":")[:2])
-    if hh == 9 and 0 <= mm <= 15:
-        return "morning"
-    if hh == 21 and 0 <= mm <= 15:
-        return "night"
-    return None
+REV_TP_SL_TICKS = 50  # 反转信号：固定止盈 / 止损（跳）
+# 开仓时点 -> 该轮的收盘平仓时点。K 线时间是结束时间，09:05 即 09:04~09:05 这根 1 分钟线
+REV_ROUNDS = {"09:05": "11:30", "13:35": "15:00", "21:05": "23:00"}
 
 
 @register(
     id="reversal",
     created="2026-11-13 03:11",
     name="反转信号",
-    description="开盘（日盘 09:00-09:15 / 夜盘 21:00-21:15）出现指标红柱做多、绿柱做空，每个时段最多开一单，固定 10 跳止盈止损。",
+    description=(
+        f"每天 09:05、13:35、21:05 各开一轮且仅开一轮：该时点出现指标红柱做多、绿柱做空，"
+        f"固定 {REV_TP_SL_TICKS} 跳止盈止损；既未止盈也未止损，则分别在 11:30、15:00、23:00 收盘全部平仓。"
+    ),
     category="反转",
-    period="5",
-    params={"开仓窗口": "09:00-09:15 / 21:00-21:15", "止盈止损": "各 10 跳", "指标": "同花顺反转指标"},
+    period="1",
+    params={
+        "开仓时点": "09:05 / 13:35 / 21:05，每轮仅一次，红柱做多、绿柱做空",
+        "止盈止损": f"各 {REV_TP_SL_TICKS} 跳",
+        "收盘平仓": "11:30 / 15:00 / 23:00 全部平仓（依次对应 09:05 / 13:35 / 21:05 的轮次）",
+        "指标": "同花顺反转指标",
+    },
+    managed=True,
 )
-def strategy_reversal(bars: list[dict], ctx: StrategyContext) -> list:
+def strategy_reversal(bars: list[dict], ctx: StrategyContext, lots: int = 1) -> list[dict]:
+    """反转信号：每轮只在开仓时点那一根 K 线检查指标，红柱做多、绿柱做空，没信号则本轮不开仓。
+
+    开仓价为该根收盘价；之后逐根检查止盈 / 止损（各 50 跳，同一根同时触及按止损，保守），
+    走到该轮收盘时点（11:30 / 15:00 / 23:00）那根 K 线按收盘价全部平仓；
+    收盘时点之前数据就结束则按最后一根收盘价强平。
+    """
     var9, var9l = reversal_indicator(bars)
-    jump = ctx.tick_size * 10
-    used: set = set()
-    signals: list = [None] * len(bars)
-    for i, b in enumerate(bars):
-        key = _session_key(b["time"])
-        if not key:
+    n = len(bars)
+    tick = ctx.tick_size
+    dist = REV_TP_SL_TICKS * tick
+    fills: list[dict] = []
+    i = 0
+    while i < n:
+        open_hhmm = _hhmm(bars[i]["time"])
+        base = bars[i]["close"]
+        if open_hhmm not in REV_ROUNDS or not base or base <= 0:
+            i += 1
             continue
-        slot = (b["time"].split(" ")[0], key)
-        if slot in used:
-            continue
+        close_hhmm = REV_ROUNDS[open_hhmm]
         # 旧前端的绿柱判据写成 var9 < -0.1，而 VAR9 恒 >= 0，导致永远不会做空；
         # 图上绿柱画的是 -VAR9，意图是 VAR9 > 0.1，这里按意图修正。
         green = not _isnan(var9[i]) and var9[i] > 0.1
         red = not _isnan(var9l[i]) and var9l[i] > 0.1
-        if green and red:
+        if green == red:  # 无信号，或红绿同时出现：本轮不开仓
+            i += 1
             continue
-        if red:
-            signals[i] = Signal("long", jump, jump, "反转信号·红柱")
-        elif green:
-            signals[i] = Signal("short", jump, jump, "反转信号·绿柱")
-        else:
-            continue
-        used.add(slot)
-    return signals
+        side = "long" if red else "short"
+        sign = 1 if side == "long" else -1
+        tp, sl = base + sign * dist, base - sign * dist
+        exit_idx, exit_price, exit_reason = n - 1, bars[n - 1]["close"], "强制平仓"
+        for j in range(i + 1, n):
+            b = bars[j]
+            # 同一根 K 线内无法判断先后，保守先判止损；跳空越过止损价按开盘价
+            if (sign > 0 and b["low"] <= sl) or (sign < 0 and b["high"] >= sl):
+                px = min(sl, b["open"]) if sign > 0 else max(sl, b["open"])
+                exit_idx, exit_price, exit_reason = j, px, "止损"
+                break
+            if (sign > 0 and b["high"] >= tp) or (sign < 0 and b["low"] <= tp):
+                px = max(tp, b["open"]) if sign > 0 else min(tp, b["open"])
+                exit_idx, exit_price, exit_reason = j, px, "止盈"
+                break
+            if _hhmm(b["time"]) == close_hhmm:
+                exit_idx, exit_price, exit_reason = j, b["close"], "收盘平仓"
+                break
+        fills.append({
+            "side": side, "entryIndex": i, "entryPrice": _snap(base, tick),
+            "exitIndex": exit_idx, "exitPrice": _snap(exit_price, tick), "lots": lots,
+            "reason": exit_reason,
+            "signal": "反转信号·红柱" if red else "反转信号·绿柱",
+            "takeProfit": _snap(tp, tick), "stopLoss": _snap(sl, tick),
+        })
+        i = exit_idx + 1  # 本轮结束后才找下一轮（各轮时段互不重叠）
+    return fills
 
 
 # ---------------------------------------------------------------------------
