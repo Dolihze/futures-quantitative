@@ -57,10 +57,26 @@ _CATALOG = [
     ("T", "10年国债", "CFFEX", 0.005, 10000), ("TF", "5年国债", "CFFEX", 0.005, 10000),
     ("TS", "2年国债", "CFFEX", 0.002, 20000), ("TL", "30年国债", "CFFEX", 0.01, 10000),
 ]
-INSTRUMENT_CONFIG: dict[str, dict] = {
-    code: {"tickSize": tick, "multiplier": mult} for code, _n, _e, tick, mult in _CATALOG
+# 交易保证金率（一般持仓），杠杆 = 1 / 保证金率。用于「按保证金收益率」触发的策略（如反马丁）。
+# 保证金率由交易所随行情和合约临近交割不断调整，没有固定值；这里是投机持仓的近期水平，
+# 回测只用它把价格涨跌换算成保证金收益率，不影响普通策略的盈亏结算。
+# 燃料油 FU 取 20%（5 倍杠杆，上期所 2026-11-03 起 FU2612 / FU2701 一般持仓 20%）。
+# 品种不在这里的走 DEFAULT_MARGIN_RATE。需要调整某个品种时改这一张表即可。
+MARGIN_RATES: dict[str, float] = {
+    "FU": 0.20,
+    "BU": 0.16, "RB": 0.12, "HC": 0.12, "SS": 0.11, "RU": 0.16, "SP": 0.12,
+    "CU": 0.14, "AL": 0.13, "ZN": 0.13, "PB": 0.13, "NI": 0.15, "SN": 0.18, "AO": 0.14,
+    "AU": 0.23, "AG": 0.25,
+    "SC": 0.23, "LU": 0.23, "NR": 0.16, "BC": 0.14,
+    "IF": 0.14, "IH": 0.14, "IC": 0.14, "IM": 0.14,
+    "TS": 0.01, "TF": 0.02, "T": 0.03, "TL": 0.045,
 }
-DEFAULT_INSTRUMENT = {"tickSize": 1, "multiplier": 10}
+DEFAULT_MARGIN_RATE = 0.11   # 大商所 / 郑商所多数品种的一般水平
+INSTRUMENT_CONFIG: dict[str, dict] = {
+    code: {"tickSize": tick, "multiplier": mult, "marginRate": MARGIN_RATES.get(code, DEFAULT_MARGIN_RATE)}
+    for code, _n, _e, tick, mult in _CATALOG
+}
+DEFAULT_INSTRUMENT = {"tickSize": 1, "multiplier": 10, "marginRate": DEFAULT_MARGIN_RATE}
 
 INITIAL_CAPITAL = 10000.0
 DEFAULT_LOTS = 5
@@ -246,6 +262,7 @@ class StrategyContext:
     symbol: str
     tick_size: float
     multiplier: float
+    margin_rate: float = DEFAULT_MARGIN_RATE   # 交易保证金率；杠杆 = 1 / margin_rate
 
 
 @dataclass
@@ -257,16 +274,21 @@ class StrategyDef:
     func: Callable[[list, StrategyContext], list]
     period: str = "5"  # 该策略设计时使用的 K 线周期（分钟）
     params: Optional[dict] = None  # 展示用的参数说明
+    # 自管仓位策略：为 True 时 func 不是返回信号，而是 func(bars, ctx, lots) -> list[dict]，
+    # 直接返回已完成的成交（字段见 _managed_trade）。用于一轮里分批加仓、一次性全平这类
+    # 「同一时刻一个仓位、固定手数」的信号撮合表达不了的策略
+    managed: bool = False
 
 
 STRATEGIES: dict[str, StrategyDef] = {}
 
 
-def register(id: str, name: str, description: str, category: str = "趋势", period: str = "5", params: Optional[dict] = None):
+def register(id: str, name: str, description: str, category: str = "趋势", period: str = "5",
+             params: Optional[dict] = None, managed: bool = False):
     """策略注册装饰器。"""
 
     def deco(fn):
-        STRATEGIES[id] = StrategyDef(id, name, description, category, fn, period, params)
+        STRATEGIES[id] = StrategyDef(id, name, description, category, fn, period, params, managed)
         return fn
 
     return deco
@@ -471,6 +493,118 @@ def strategy_trend_swing(bars: list[dict], ctx: StrategyContext) -> list:
     return signals
 
 
+# ---------------------------------------------------------------------------
+# 反马丁：顺势加仓
+# ---------------------------------------------------------------------------
+# (开仓时点, 收盘平仓时点)：K 线时间是结束时间，09:05 即 09:04~09:05 这根 1 分钟线，用它的收盘价开首单
+AM_ROUNDS = (("09:05", "11:30"), ("13:35", "15:00"), ("21:05", "23:00"))
+# 两个百分比都是「相对占用保证金」的收益率（带杠杆）：价格变动幅度 = 保证金收益率 × 保证金率。
+# 例：燃料油保证金率 20%（5 倍杠杆），保证金收益 3% = 价格涨 0.6%，保证金亏损 5% = 价格跌约 1%。
+AM_STEP_PCT = 0.03   # 保证金浮盈每增加 3%（相对首单）加 1 手
+AM_STOP_PCT = 0.05   # 总浮亏达到占用保证金的 5% 全部平仓
+
+
+def _hhmm(time_str: str) -> str:
+    """'2026-10-20 09:05:00' -> '09:05'。"""
+    return time_str[11:16]
+
+
+def _am_stop_price(entries: list[float], margin_rate: float) -> float:
+    """当前持仓（每笔 1 手）的止损价：总浮亏 = Σ(开仓价 - 价) 达到 占用保证金 × 5% 时的价格。
+    占用保证金 = Σ开仓价 × 乘数 × 保证金率；浮亏 = Σ(开仓价 - 价) × 乘数，乘数两边约掉：
+        Σ(开仓价 - 价) = 5% × 保证金率 × Σ开仓价  =>  价 = Σ开仓价 × (1 - 5% × 保证金率) / 手数"""
+    return sum(entries) * (1 - AM_STOP_PCT * margin_rate) / len(entries)
+
+
+@register(
+    id="anti_martingale",
+    name="反马丁策略",
+    description=(
+        "每天 09:05、13:35、21:05 各开一轮：以该时刻收盘价买入 1 手多单；保证金浮盈相对首单每增加 3% 就再加 1 手"
+        "（+3% 加第 2 手，+6% 加第 3 手，以此类推），越赚越加。"
+        "持仓总亏损达到占用保证金的 5% 时全部平仓止损；未止损则分别在 11:30、15:00、23:00 收盘全部平仓。"
+        "百分比按带杠杆的保证金收益率计算（如燃料油保证金率 20%，即 5 倍杠杆：价格涨约 0.6% 加仓、跌约 1% 止损）。"
+        "每轮只做一次，止损后本时段不再开仓；每笔加仓单独记一笔成交。"
+    ),
+    category="加仓",
+    period="1",
+    params={
+        "开仓时点": "09:05 / 13:35 / 21:05，各买入 1 手多",
+        "加仓规则": "保证金浮盈相对首单每增加 3% 加 1 手（价格涨幅 = 3% × 保证金率）：+3% 第 2 手、+6% 第 3 手 …",
+        "止损": "总浮亏达到占用保证金的 5%（价格跌幅 ≈ 5% × 保证金率），全部平仓",
+        "保证金率": "按品种取交易所一般持仓水平，燃料油 20%（5 倍杠杆）",
+        "收盘平仓": "11:30 / 15:00 / 23:00 全部平仓（依次对应 09:05 / 13:35 / 21:05 的轮次）",
+        "手数": "首单及每次加仓固定 1 手（不使用页面的「每笔手数」）",
+    },
+    managed=True,
+)
+def strategy_anti_martingale(bars: list[dict], ctx: StrategyContext, lots: int = 1) -> list[dict]:
+    """返回已完成的成交列表（字段见 _settle_managed）。每次加仓固定 1 手，lots 参数不参与。
+
+    3% / 5% 都是带杠杆的保证金收益率，换算成价格要乘保证金率 m = ctx.margin_rate：
+      加仓价 = 首单价 ×（1 + 3% × m × 下一级）；止损价见 _am_stop_price。
+    每一轮独立，从开仓时点那根 K 线开始，逐根往后：
+      1. 止损：先判。low 触及止损价就按止损价全部平仓（开盘已跳空到止损价下方则按开盘价）。
+      2. 加仓：high 触及加仓价就以该价加 1 手（开盘已跳空到其上方则按开盘价）；
+         一根 K 线涨过多级就连续加到位。每次加仓后止损价随持仓抬高，立刻再核对本根 K 线的 low。
+      3. 收盘：走到该轮的收盘时点（11:30 / 15:00 / 23:00）那根 K 线，以收盘价全部平仓。
+    同一根 K 线内无法判断涨跌先后，保守地先止损、再加仓；止损后本轮结束，不再重开。
+    收盘时点之前数据就结束（缺数据 / 取的区间到此为止）则按最后一根收盘价强平。
+    """
+    fills: list[dict] = []
+    n = len(bars)
+    m = ctx.margin_rate
+    close_of = dict(AM_ROUNDS)
+    i = 0
+    while i < n:
+        open_hhmm = _hhmm(bars[i]["time"])
+        base = bars[i]["close"]
+        if open_hhmm not in close_of or not base or base <= 0:
+            i += 1
+            continue
+        close_hhmm = close_of[open_hhmm]
+
+        entries: list[tuple[int, float]] = [(i, base)]   # (K 线下标, 成交价)，每笔 1 手
+        exit_idx, exit_price, exit_reason = n - 1, bars[n - 1]["close"], "强制平仓"   # 默认：数据结束强平
+        for j in range(i + 1, n):
+            b = bars[j]
+            stop = _am_stop_price([p for _, p in entries], m)
+            if b["low"] <= stop:
+                exit_idx, exit_price, exit_reason = j, min(stop, b["open"]), "止损"
+                break
+            at_close = _hhmm(b["time"]) == close_hhmm
+            stopped = False
+            while not at_close:   # 收盘那根 K 线只平仓，不再加仓（否则会在收盘价上加一手又立刻平掉）
+                # 已有 k 手时下一级是保证金浮盈 +3%×k，对应价格涨幅 3%×k×保证金率
+                trigger = base * (1 + AM_STEP_PCT * m * len(entries))
+                if b["high"] < trigger:
+                    break
+                entries.append((j, _snap(max(trigger, b["open"]), ctx.tick_size)))
+                stop = _am_stop_price([p for _, p in entries], m)
+                if b["low"] <= stop:
+                    exit_idx, exit_price, exit_reason = j, min(stop, b["open"]), "止损"
+                    stopped = True
+                    break
+            if stopped:
+                break
+            if at_close:
+                exit_idx, exit_price, exit_reason = j, b["close"], "收盘平仓"
+                break
+
+        final_stop = _snap(_am_stop_price([p for _, p in entries], m), ctx.tick_size)
+        exit_price = _snap(exit_price, ctx.tick_size)
+        for k, (idx, price) in enumerate(entries):
+            fills.append({
+                "side": "long", "entryIndex": idx, "entryPrice": price,
+                "exitIndex": exit_idx, "exitPrice": exit_price, "lots": 1,
+                "reason": exit_reason,
+                "signal": "反马丁·首单" if k == 0 else f"反马丁·第{k}次加仓",
+                "takeProfit": None, "stopLoss": final_stop,
+            })
+        i = exit_idx + 1   # 本轮结束后才找下一轮（各轮的时段互不重叠）
+    return fills
+
+
 def _snap(price: float, tick: float) -> float:
     """价格规整到最小变动价位的整数倍（去浮点尾巴）。"""
     if not tick or tick <= 0:
@@ -501,10 +635,14 @@ def run_backtest(
     sdef = STRATEGIES[strategy_id]
     cfg = get_instrument_config(symbol)
     tick_size, multiplier = cfg["tickSize"], cfg["multiplier"]
-    ctx = StrategyContext(symbol, tick_size, multiplier)
+    ctx = StrategyContext(symbol, tick_size, multiplier, cfg.get("marginRate", DEFAULT_MARGIN_RATE))
 
     if not bars:
         return _build_result(sdef, symbol, lots, initial_capital, [], [], bars)
+
+    if sdef.managed:
+        trades = _settle_managed(sdef.func(bars, ctx, lots), bars, multiplier, initial_capital)
+        return _build_result(sdef, symbol, lots, initial_capital, trades, [], bars)
 
     signals = sdef.func(bars, ctx)
     capital = initial_capital
@@ -618,6 +756,45 @@ def run_backtest(
     return _build_result(sdef, symbol, lots, initial_capital, trades, signals, bars)
 
 
+def _settle_managed(fills: list[dict], bars: list[dict], multiplier: float, initial_capital: float) -> list[dict]:
+    """把自管仓位策略返回的成交结算成标准成交明细（盈亏、账户权益、序号）。
+
+    fills 每项：{side, entryIndex, entryPrice, exitIndex, exitPrice, lots, reason, signal,
+                 takeProfit(可选), stopLoss(可选)}。
+    一轮里的多笔加仓共用同一个出场点，按平仓时间排序后逐笔累计权益，
+    这样净值曲线、胜率、盈亏比等统计与普通策略完全同一口径（每笔加仓单独计一笔）。
+    """
+    ordered = sorted(fills, key=lambda f: (f["exitIndex"], f["entryIndex"]))
+    capital = initial_capital
+    trades: list[dict] = []
+    for f in ordered:
+        diff = f["exitPrice"] - f["entryPrice"] if f["side"] == "long" else f["entryPrice"] - f["exitPrice"]
+        profit = diff * multiplier * f["lots"]
+        capital += profit
+        tp, sl = f.get("takeProfit"), f.get("stopLoss")
+        trades.append(
+            {
+                "no": len(trades) + 1,
+                "side": f["side"],
+                "entryTime": bars[f["entryIndex"]]["time"],
+                "entryIndex": f["entryIndex"],
+                "entryPrice": _round(f["entryPrice"], 4),
+                "exitTime": bars[f["exitIndex"]]["time"],
+                "exitIndex": f["exitIndex"],
+                "exitPrice": _round(f["exitPrice"], 4),
+                "lots": f["lots"],
+                "reason": f["reason"],
+                "signal": f.get("signal", ""),
+                "takeProfit": _round(tp, 4) if tp is not None else None,
+                "stopLoss": _round(sl, 4) if sl is not None else None,
+                "profit": _round(profit),
+                "capital": _round(capital),
+                "holdBars": f["exitIndex"] - f["entryIndex"],
+            }
+        )
+    return trades
+
+
 def _build_result(sdef, symbol, lots, initial_capital, trades, signals, bars) -> dict:
     stats = compute_stats(trades, initial_capital)
     equity = build_equity_curve(trades, initial_capital, bars)
@@ -633,8 +810,10 @@ def _build_result(sdef, symbol, lots, initial_capital, trades, signals, bars) ->
             "category": sdef.category,
             "period": sdef.period,
             "params": sdef.params or {},
+            "managed": sdef.managed,   # 自管仓位：手数由策略自己决定，不使用页面的「每笔手数」
         },
         "symbol": symbol,
+        "marginRate": get_instrument_config(symbol).get("marginRate", DEFAULT_MARGIN_RATE),   # 保证金率（杠杆 = 1 / 保证金率）
         "lots": lots,
         "initialCapital": initial_capital,
         "stats": stats,
@@ -731,6 +910,7 @@ def list_strategies() -> list[dict]:
             "category": s.category,
             "period": s.period,
             "params": s.params or {},
+            "managed": s.managed,
         }
         for s in STRATEGIES.values()
     ]

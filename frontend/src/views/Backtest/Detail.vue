@@ -22,7 +22,11 @@
           <h2>{{ result?.strategy.name || '--' }}</h2>
           <span class="toolbar-sub">
             {{ result?.symbolName || params.symbol }} · {{ result?.strategy.period || '-' }}分钟线 · {{ result?.stats.timeSpan || '--' }} ·
-            每笔 {{ params.lots }} 手 · 不含手续费与滑点
+            {{ result?.strategy.managed ? '首单及每次加仓各 1 手' : `每笔 ${params.lots} 手` }} ·
+            <template v-if="result?.strategy.managed && result?.marginRate">
+              保证金率 {{ (result.marginRate * 100).toFixed(0) }}%（{{ (1 / result.marginRate).toFixed(1).replace(/\.0$/, '') }} 倍杠杆） ·
+            </template>
+            不含手续费与滑点
           </span>
         </div>
         <div class="toolbar-controls">
@@ -138,8 +142,9 @@
             </el-table-column>
             <el-table-column prop="lots" label="手数" width="60" align="right" />
             <el-table-column label="止盈 / 止损价" min-width="130" align="right">
-              <template #default="{ row }">{{ row.takeProfit == null ? '无' : row.takeProfit.toFixed(2) }} / {{ row.stopLoss.toFixed(2) }}</template>
+              <template #default="{ row }">{{ row.takeProfit == null ? '无' : row.takeProfit.toFixed(2) }} / {{ row.stopLoss == null ? '无' : row.stopLoss.toFixed(2) }}</template>
             </el-table-column>
+            <el-table-column v-if="result.trades.some((t) => t.signal)" prop="signal" label="信号" min-width="120" />
             <el-table-column prop="reason" label="平仓原因" width="90" />
             <el-table-column label="持仓K线" width="80" align="right">
               <template #default="{ row }">{{ row.holdBars }}</template>

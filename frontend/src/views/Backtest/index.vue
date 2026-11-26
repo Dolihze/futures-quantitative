@@ -92,6 +92,7 @@
             <div class="card-name">{{ s.name }}</div>
             <span class="card-tag">{{ s.category }}</span>
             <span class="card-tag muted">{{ s.period }}分钟线</span>
+            <span v-if="s.managed" class="card-tag muted">每次 1 手</span>
           </div>
           <div class="card-desc">{{ s.description }}</div>
 

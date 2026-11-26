@@ -112,6 +112,7 @@ class BacktestOverviewItem(_Model):
     description: str
     category: str
     period: str
+    managed: bool = False   # 自管仓位策略：手数由策略决定，不使用页面的「每笔手数」
     stats: Optional[dict[str, Any]] = None
     equity: list[EquityPoint]
     error: Optional[str] = None
@@ -134,12 +135,14 @@ class StrategyInfo(_Model):
     category: str
     period: str
     params: dict[str, Any]
+    managed: bool = False
 
 
 class BacktestRun(ApiResult):
     strategy: StrategyInfo
     symbol: str
     symbolName: str
+    marginRate: float = 0.11   # 该品种的保证金率；杠杆 = 1 / marginRate
     lots: int
     days: int
     period: str

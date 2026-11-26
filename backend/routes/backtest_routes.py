@@ -76,7 +76,7 @@ def backtest_overview():
     items = []
     for sdef in backtest_engine.STRATEGIES.values():
         info = {'id': sdef.id, 'name': sdef.name, 'description': sdef.description,
-                'category': sdef.category, 'period': sdef.period}
+                'category': sdef.category, 'period': sdef.period, 'managed': sdef.managed}
         try:
             all_bars = backtest_service.fetch_backtest_bars(symbol, sdef.period)
             bars = backtest_engine.slice_recent_days(all_bars, days)

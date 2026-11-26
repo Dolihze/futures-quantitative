@@ -131,7 +131,8 @@ def test_slice_recent_days_and_registry():
 def test_instrument_config_by_contract_code():
     # 合约参数按品种字母取：fu2611 / SHFE.fu2611 / FU0 都是燃料油
     assert be.product_code("fu2611") == "FU" and be.product_code("SHFE.fu2611") == "FU" and be.product_code("FU0") == "FU"
-    assert be.get_instrument_config("au2612") == {"tickSize": 0.02, "multiplier": 1000}
+    au = be.get_instrument_config("au2612")
+    assert (au["tickSize"], au["multiplier"]) == (0.02, 1000)
     assert be.get_instrument_config("zz9999") == be.DEFAULT_INSTRUMENT   # 目录外品种走默认参数
     for code, cfg in be.INSTRUMENT_CONFIG.items():
         assert cfg["tickSize"] > 0 and cfg["multiplier"] > 0, code
@@ -513,6 +514,186 @@ def test_trend_swing_pending_order_does_not_survive_session_end():
 def test_trend_swing_registered_as_one_minute_strategy():
     sdef = be.STRATEGIES["trend_swing"]
     assert sdef.period == "1" and sdef.category == "趋势"
+
+
+# ----------------------------------------------------------------------------
+# 反马丁策略（FU：tickSize=1，multiplier=10，保证金率 20% = 5 倍杠杆）
+# 3% / 5% 是相对占用保证金的收益率，换成价格要乘保证金率 0.2：
+#   首单 1000：加仓价 = 1000 × (1 + 0.6% × k) -> 1006、1012、1018…；
+#   只有首单时止损价 = 1000 × (1 - 1%) = 990（浮亏 10 点 = 保证金 200 的 5%）
+# ----------------------------------------------------------------------------
+
+def am_run(bars, symbol="FU2611"):
+    return be.run_backtest(bars, "anti_martingale", symbol, lots=5)   # lots 对该策略不生效
+
+
+def flat(time, price):
+    return bar(time, price, price, price, price)
+
+
+def test_margin_rate_in_catalog():
+    # FU 5 倍杠杆 = 保证金率 20%；每个品种都有 (0, 1) 之间的保证金率；目录外品种走默认值
+    assert be.get_instrument_config("fu2611")["marginRate"] == 0.20
+    assert be.get_instrument_config("SHFE.FU2701")["marginRate"] == 0.20
+    assert be.get_instrument_config("zz9999")["marginRate"] == be.DEFAULT_MARGIN_RATE
+    for code, cfg in be.INSTRUMENT_CONFIG.items():
+        assert 0 < cfg["marginRate"] < 1, code
+
+
+def test_anti_martingale_registered_as_managed_one_minute_strategy():
+    sdef = be.STRATEGIES["anti_martingale"]
+    assert sdef.period == "1" and sdef.managed and sdef.name == "反马丁策略"
+    assert "anti_martingale" in [s["id"] for s in be.list_strategies()]
+
+
+def test_anti_martingale_adds_when_margin_profit_grows_3pct_per_level():
+    # 杠杆 5 倍：价格涨 0.6% 才是保证金 +3%。首单 1000 -> 加仓价 1006 / 1012
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),                    # 首单 1000
+        bar("2026-10-20 09:06:00", 1000, 1007, 1000, 1007),   # 触及 1006 -> 加第 2 手 @1006
+        bar("2026-10-20 09:07:00", 1007, 1013, 1007, 1012),   # 触及 1012 -> 加第 3 手 @1012
+        bar("2026-10-20 11:30:00", 1012, 1013, 1009, 1010),   # 午前收盘：1010 全部平仓
+    ]
+    r = am_run(bars)
+    t = r["trades"]
+    assert [(x["entryPrice"], x["exitPrice"], x["lots"], x["reason"]) for x in t] == [
+        (1000, 1010, 1, "收盘平仓"), (1006, 1010, 1, "收盘平仓"), (1012, 1010, 1, "收盘平仓")]
+    assert [x["profit"] for x in t] == [100.0, 40.0, -20.0]      # 价差 × 乘数 10 × 1 手
+    assert [x["signal"] for x in t] == ["反马丁·首单", "反马丁·第1次加仓", "反马丁·第2次加仓"]
+    assert all(x["side"] == "long" and x["exitTime"] == "2026-10-20 11:30:00" for x in t)
+    assert r["stats"]["tradeCount"] == 3 and r["stats"]["totalProfit"] == 120.0
+    assert r["equity"][-1]["equity"] == be.INITIAL_CAPITAL + 120.0
+
+
+def test_anti_martingale_does_not_add_at_unlevered_3pct():
+    # 旧的「价格涨 3%」口径下 1030 才加仓；带杠杆后价格涨 0.6% 就该加了，不能等到 3%
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1010, 1000, 1010),   # 只涨 1%：已是保证金 +5%，应当已加 1 手
+        flat("2026-10-20 11:30:00", 1010),
+    ]
+    assert [x["entryPrice"] for x in am_run(bars)["trades"]] == [1000, 1006]
+
+
+def test_anti_martingale_stops_out_when_total_loss_reaches_5pct_of_margin():
+    # 首单 1000：占用保证金 = 1000 × 10 × 20% = 2000，5% = 100 元 = 价格跌 10 点 -> 止损价 990
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1000, 992, 992),     # low 992 > 990：未触发止损
+        bar("2026-10-20 09:07:00", 992, 992, 985, 986),       # low 985 <= 990：按 990 全部止损
+        bar("2026-10-20 11:30:00", 986, 1100, 986, 1100),     # 止损后本轮结束，不会重开 / 加仓
+    ]
+    t = am_run(bars)["trades"]
+    assert len(t) == 1
+    assert (t[0]["entryPrice"], t[0]["exitPrice"], t[0]["reason"], t[0]["profit"]) == (1000, 990, "止损", -100.0)
+    assert t[0]["stopLoss"] == 990 and t[0]["takeProfit"] is None
+    # 亏损 100 元正好是占用保证金 2000 元的 5%
+    assert -t[0]["profit"] == 0.05 * 1000 * 10 * 0.20
+
+
+def test_anti_martingale_stop_price_rises_after_adding():
+    # 持仓 [1000, 1006]：占用保证金 = 2006 × 10 × 20%，止损价 = 2006 × (1 - 1%) / 2 = 992.97 -> 规整到 993
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1007, 1000, 1007),   # 加仓 @1006
+        bar("2026-10-20 09:07:00", 1007, 1007, 990, 992),     # low 990 <= 992.97：止损
+    ]
+    t = am_run(bars)["trades"]
+    assert [(x["entryPrice"], x["exitPrice"], x["reason"]) for x in t] == [(1000, 993, "止损"), (1006, 993, "止损")]
+    assert [x["profit"] for x in t] == [-70.0, -130.0]
+    assert t[0]["stopLoss"] == 993
+
+
+def test_anti_martingale_stop_checked_before_add_on_same_bar():
+    # 同一根 K 线既触及加仓价 1006 又击穿止损价 990：无法判断先后，保守先止损，这根里的加仓不计
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1010, 985, 1000),
+    ]
+    t = am_run(bars)["trades"]
+    assert len(t) == 1 and t[0]["reason"] == "止损" and t[0]["exitPrice"] == 990
+
+
+def test_anti_martingale_multiple_levels_in_one_bar_and_gap_fills_at_open():
+    # 开盘 1015 已越过加仓价 1006 / 1012：这两级按开盘价 1015 成交；
+    # high 1020 也触及第 3 级 1018，按 max(1018, 开盘 1015) = 1018 成交；第 4 级 1024 未触及
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1015, 1020, 1015, 1019),
+        flat("2026-10-20 11:30:00", 1019),
+    ]
+    t = am_run(bars)["trades"]
+    assert [x["entryPrice"] for x in t] == [1000, 1015, 1015, 1018]
+
+
+def test_anti_martingale_uses_each_products_margin_rate():
+    # 同样的价格走势，保证金率越低（杠杆越高）加仓价越近：RB 12%，加仓价 = 1000 × (1 + 3% × 0.12) = 1003.6 -> 1004
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1004, 1000, 1004),
+        flat("2026-10-20 11:30:00", 1004),
+    ]
+    assert [x["entryPrice"] for x in am_run(bars, "RB2610")["trades"]] == [1000, 1004]
+    # FU 20%：加仓价 1006，同样走势到 1004 还没触发
+    assert [x["entryPrice"] for x in am_run(bars, "FU2611")["trades"]] == [1000]
+
+
+def test_anti_martingale_runs_three_rounds_a_day_each_closing_at_its_own_time():
+    bars = [
+        flat("2026-10-20 09:05:00", 1000), flat("2026-10-20 11:30:00", 1004),   # 午前轮：+4 -> +40 元
+        flat("2026-10-20 13:35:00", 1005), flat("2026-10-20 15:00:00", 1000),   # 午后轮：-5 -> -50 元
+        flat("2026-10-20 21:05:00", 990), flat("2026-10-20 23:00:00", 995),     # 夜盘轮：+5 -> +50 元
+    ]
+    t = am_run(bars)["trades"]
+    assert [(x["entryTime"][11:16], x["exitTime"][11:16], x["profit"]) for x in t] == [
+        ("09:05", "11:30", 40.0), ("13:35", "15:00", -50.0), ("21:05", "23:00", 50.0)]
+
+
+def test_anti_martingale_one_round_per_slot_even_after_stop_out():
+    # 09:05 的轮次止损后，到 13:35 才会开下一轮；同一天同一时点只开一次
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1000, 900, 900),     # 止损
+        flat("2026-10-20 11:30:00", 920),
+        flat("2026-10-20 13:35:00", 920), flat("2026-10-20 15:00:00", 930),
+    ]
+    t = am_run(bars)["trades"]
+    assert [(x["entryTime"][11:16], x["reason"]) for x in t] == [("09:05", "止损"), ("13:35", "收盘平仓")]
+
+
+def test_anti_martingale_does_not_add_on_the_session_close_bar():
+    # 收盘那根 K 线 high 触及加仓价也不加仓：只在收盘价平掉已有持仓（否则会加一手又立刻平掉）
+    bars = [
+        flat("2026-10-20 13:35:00", 920),
+        bar("2026-10-20 15:00:00", 920, 940, 920, 930),   # high 940 >= 加仓价 925.5，但这是收盘根
+    ]
+    t = am_run(bars)["trades"]
+    assert len(t) == 1 and t[0]["reason"] == "收盘平仓" and t[0]["exitPrice"] == 930
+
+
+def test_anti_martingale_force_closes_if_data_ends_before_session_close():
+    bars = [flat("2026-10-20 09:05:00", 1000), flat("2026-10-20 09:20:00", 1004)]
+    t = am_run(bars)["trades"]
+    assert len(t) == 1 and t[0]["reason"] == "强制平仓" and t[0]["exitPrice"] == 1004
+
+
+def test_anti_martingale_ignores_other_times_and_empty_data():
+    bars = [flat("2026-10-20 09:06:00", 1000), flat("2026-10-20 10:00:00", 1010)]   # 没有任何开仓时点
+    assert am_run(bars)["trades"] == []
+    assert am_run([])["stats"]["tradeCount"] == 0
+
+
+def test_anti_martingale_each_leg_is_one_trade_in_stats_and_equity():
+    # 一轮里每笔加仓单独计一笔：交易笔数 = 首单 + 加仓次数，统计 / 净值曲线与普通策略同口径
+    bars = [
+        flat("2026-10-20 09:05:00", 1000),
+        bar("2026-10-20 09:06:00", 1000, 1007, 1000, 1007),
+        flat("2026-10-20 11:30:00", 1007),
+    ]
+    r = am_run(bars)
+    assert r["stats"]["tradeCount"] == 2
+    assert [p["tradeNo"] for p in r["equity"]] == [0, 1, 2]
+    assert r["strategy"]["id"] == "anti_martingale"
 
 
 if __name__ == "__main__":
