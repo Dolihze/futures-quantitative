@@ -22,6 +22,7 @@
 
 /** @typedef {Schemas['BacktestContracts']} BacktestContracts */
 /** @typedef {Schemas['BacktestContract']} BacktestContract */
+/** @typedef {Schemas['BacktestRecentSymbol']} BacktestRecentSymbol */
 /** @typedef {Schemas['BacktestKline']} BacktestKline */
 /** @typedef {Schemas['KlineBar']} BacktestKlineBar */
 /** @typedef {Schemas['BacktestCoverage']} BacktestCoverage */

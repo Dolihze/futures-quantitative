@@ -5,7 +5,7 @@
 """
 from flask import Blueprint, jsonify, request
 
-from backend.core import backtest_engine
+from backend.core import backtest_engine, recent_store
 from backend.errors import bad_request, not_found, wrap_errors
 from backend.services import backtest_service, kline_store
 
@@ -31,13 +31,43 @@ def _backtest_params():
     return symbol, days, lots
 
 
+def _recent_symbols(data):
+    """最近手动选过的合约（最新在前，最多 3 个），只保留现在库里还在的：合约被删后不能再出现在下拉里。"""
+    existing = {c['symbol'] for c in data}
+    return [s for s in recent_store.recent(recent_store.KIND_BACKTEST_SYMBOL) if s in existing]
+
+
 @bp.route('/api/backtest/contracts')
 def backtest_contracts():
-    """可回测的合约：本地历史行情库里已导入的合约，附带数据覆盖的交易日范围。"""
+    """可回测的合约：本地历史行情库里已导入的合约，附带数据覆盖的交易日范围。
+
+    recent：最近手动选过的合约（最新在前，最多 3 个，入库保存）。
+    default：进页面时默认加载的合约 = 最近使用的第一个；没有使用记录（或都已被删除）时退回库里的第一个。
+    """
     data = kline_store.list_contracts()
     for c in data:
         c['label'] = backtest_engine.contract_name(c['symbol'])
-    return jsonify({'success': True, 'default': data[0]['symbol'] if data else '', 'data': data})
+    recent = _recent_symbols(data)
+    default = recent[0] if recent else (data[0]['symbol'] if data else '')
+    return jsonify({'success': True, 'default': default, 'recent': recent, 'data': data})
+
+
+@bp.route('/api/backtest/recent-symbol', methods=['POST'])
+def backtest_recent_symbol():
+    """记一次「手动选择合约」：把它放到最近使用的最前面（最多保留 3 个），返回最新的列表。
+
+    只接受本地库里存在的合约；记录失败（数据库异常）不算错误，只是这次没记上，不影响回测。
+    """
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get('symbol') or '').strip()
+    if not symbol:
+        raise bad_request('参数错误：缺少合约 symbol')
+    data = kline_store.list_contracts()
+    match = next((c['symbol'] for c in data if c['symbol'].lower() == symbol.lower()), None)
+    if match is None:
+        raise not_found(f'本地行情库里没有合约「{symbol}」', fileMissing=True)
+    recent_store.touch(recent_store.KIND_BACKTEST_SYMBOL, match)
+    return jsonify({'success': True, 'recent': _recent_symbols(data)})
 
 
 @bp.route('/api/backtest/kline')

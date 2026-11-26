@@ -71,8 +71,13 @@ class BacktestContract(_Model):
 
 
 class BacktestContracts(ApiResult):
-    default: str
+    default: str                 # 进页面默认加载的合约：最近使用的第一个，没有记录时是库里第一个
+    recent: list[str] = []       # 最近手动选过的合约，最新在前，最多 3 个
     data: list[BacktestContract]
+
+
+class BacktestRecentSymbol(ApiResult):
+    recent: list[str] = []       # 记录后的最新列表，最新在前
 
 
 class KlineBar(_Model):
@@ -406,6 +411,7 @@ RESPONSES: dict[tuple[str, str], type[BaseModel]] = {
     ("GET", "/api/credentials"): SavedCredentials,
     ("POST", "/api/login"): LoginResult,
     ("GET", "/api/backtest/contracts"): BacktestContracts,
+    ("POST", "/api/backtest/recent-symbol"): BacktestRecentSymbol,
     ("GET", "/api/backtest/kline"): BacktestKline,
     ("GET", "/api/backtest/overview"): BacktestOverview,
     ("GET", "/api/backtest/run"): BacktestRun,

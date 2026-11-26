@@ -99,7 +99,12 @@ def test_backtest_contracts(monkeypatch):
     csv = _tick_csv("fu2611", [("20261020090010", 100, 10), ("20261020090120", 101, 20)])
     assert _upload("/api/depth/upload", csv, "fu2611.csv").status_code == 200
     cs = _validate(schemas.BacktestContracts, client.get("/api/backtest/contracts").get_json())
-    assert [c.symbol for c in cs.data] == ["fu2611"] and cs.default == "fu2611"
+    assert [c.symbol for c in cs.data] == ["fu2611"] and cs.default == "fu2611" and cs.recent == []
+    rec = _validate(schemas.BacktestRecentSymbol,
+                    client.post("/api/backtest/recent-symbol", json={"symbol": "fu2611"}).get_json())
+    assert rec.recent == ["fu2611"]
+    cs = _validate(schemas.BacktestContracts, client.get("/api/backtest/contracts").get_json())
+    assert cs.recent == ["fu2611"] and cs.default == "fu2611"
     _validate(schemas.BacktestKline, client.get("/api/backtest/kline?symbol=fu2611&period=5&days=30").get_json())
     ov = _validate(schemas.BacktestOverview, client.get("/api/backtest/overview?symbol=fu2611&days=30").get_json())
     assert ov.data, "至少应有一个策略"

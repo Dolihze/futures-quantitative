@@ -61,12 +61,28 @@ export function logout() {
   })
 }
 
-// 量化回测：可回测的合约 = 「数据库管理 → 历史行情数据管理」里已导入的合约
-/** @returns {Promise<ApiResult & { default: string, data: import('./types').BacktestContract[] }>} */
+// 量化回测：可回测的合约 = 「数据库管理 → 历史行情数据管理」里已导入的合约。
+// recent = 最近手动选过的合约（最新在前，最多 3 个）；default = 进页面默认加载的合约（最近使用的第一个）
+/** @returns {Promise<import('./types').BacktestContracts>} */
 export function getBacktestContracts() {
   return http({
     url: '/api/backtest/contracts',
     method: 'get',
+    silent: true
+  })
+}
+
+// 记一次「手动选择合约」，放到最近使用的最前面（入库）；返回最新的 recent 列表。
+// 只是辅助体验，失败由调用方吞掉，不弹全局提示、不影响回测
+/**
+ * @param {string} symbol
+ * @returns {Promise<import('./types').BacktestRecentSymbol>}
+ */
+export function recordBacktestSymbol(symbol) {
+  return http({
+    url: '/api/backtest/recent-symbol',
+    method: 'post',
+    data: { symbol },
     silent: true
   })
 }

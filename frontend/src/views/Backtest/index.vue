@@ -31,9 +31,22 @@
             filterable
             placeholder="选择合约（来自数据库管理）"
             :disabled="loading || !contracts.length"
-            @change="load"
+            @change="onSymbolChange"
           >
-            <el-option v-for="c in contracts" :key="c.symbol" :label="c.label" :value="c.symbol" />
+            <!-- 有最近记录：「最近使用」（最多 3 个，最新在最上）+「全部合约」；没有记录时直接平铺，
+                 不能用空标题的分组（el-option-group 无论 label 是否为空都会渲染一行标题）。
+                 最近使用里的合约不在「全部合约」里重复出现：同一个 value 出现两次会让选中态 / 键盘导航错乱 -->
+            <template v-if="recentContracts.length">
+              <el-option-group label="最近使用">
+                <el-option v-for="c in recentContracts" :key="c.symbol" :label="c.label" :value="c.symbol" />
+              </el-option-group>
+              <el-option-group label="全部合约">
+                <el-option v-for="c in otherContracts" :key="c.symbol" :label="c.label" :value="c.symbol" />
+              </el-option-group>
+            </template>
+            <template v-else>
+              <el-option v-for="c in contracts" :key="c.symbol" :label="c.label" :value="c.symbol" />
+            </template>
           </el-select>
           <el-radio-group v-model="params.days" :disabled="loading" @change="load">
             <el-radio-button v-for="o in dayOptions" :key="o.value" :value="o.value">{{ o.label }}</el-radio-button>
@@ -141,7 +154,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getBacktestOverview, getBacktestContracts } from '@/api'
+import { getBacktestOverview, getBacktestContracts, recordBacktestSymbol } from '@/api'
 import { chartColors, onThemeChange } from '@/utils/chartTheme'
 import { fmtMoney, fmtRatio, pnlClass } from './format'
 import { buildDayOptions, clampDays } from './range'
@@ -154,6 +167,16 @@ const strategies = ref([])
 // 回测对象是「数据库管理」里已导入的具体合约（如 fu2611），下拉框选择，默认库里的第一个合约
 const contracts = ref([])
 const contractsLoaded = ref(false)
+// 最近手动选过的合约代码（最新在前，最多 3 个，入库保存）；下拉框顶部据此展示「最近使用」
+const recentSymbols = ref([])
+const recentContracts = computed(() =>
+  recentSymbols.value.map((s) => contracts.value.find((c) => c.symbol === s)).filter(Boolean)
+)
+// 「全部合约」分组：去掉已在「最近使用」里的，避免同一合约出现两次
+const otherContracts = computed(() => {
+  const recent = new Set(recentContracts.value.map((c) => c.symbol))
+  return contracts.value.filter((c) => !recent.has(c.symbol))
+})
 const params = reactive({
   symbol: String(route.query.symbol || ''),
   days: Number(route.query.days) || 30,
@@ -173,12 +196,15 @@ const coverageNotice = computed(() => {
   return `所选 ${requestedDays.value} 天超出了本地行情库的数据范围，已使用全部可得数据：${detail}。需要更长区间请到「数据库管理」导入更多交易日的 tick 数据。`
 })
 
-// 读取本地行情库里已导入的合约；URL 里带了已不存在的合约时回退到库里的第一个
+// 读取本地行情库里已导入的合约和「最近使用」。
+// 进页面默认合约：URL 里带了且库里还有就用 URL 的（从详情页返回要保持刚才的选择）；
+// 否则用后端给的 default = 最近使用的第一个（没有记录时是库里第一个）
 async function loadContracts() {
   try {
     const res = await getBacktestContracts()
     if (res.success) {
       contracts.value = res.data
+      recentSymbols.value = res.recent || []
       if (!contracts.value.some((c) => c.symbol === params.symbol)) params.symbol = res.default || ''
     }
   } catch (e) {
@@ -186,6 +212,20 @@ async function loadContracts() {
   } finally {
     contractsLoaded.value = true
   }
+}
+
+// 用户在下拉框里手动选了合约：先回测，再记入「最近使用」（放到最前面）。
+// 只有手动选择才记录——进页面自动载入的合约不记，否则每次进页面都会改变顺序。
+// 记录失败只打日志：它只是辅助体验，不能影响回测
+async function onSymbolChange(symbol) {
+  const done = load()
+  try {
+    const res = await recordBacktestSymbol(symbol)
+    if (res?.success) recentSymbols.value = res.recent || []
+  } catch (e) {
+    console.warn('记录最近使用的合约失败', e)
+  }
+  return done
 }
 
 // ---------- 数据 ----------

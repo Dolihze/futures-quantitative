@@ -130,6 +130,37 @@
         }
       }
     },
+    "/api/backtest/recent-symbol": {
+      "post": {
+        "operationId": "post_backtest_backtest_recent_symbol",
+        "summary": "记一次「手动选择合约」：把它放到最近使用的最前面（最多保留 3 个），返回最新的列表。",
+        "tags": [
+          "backtest"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestRecentSymbol"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "失败：success=false + message（HTTP 4xx/5xx）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backtest/run": {
       "get": {
         "operationId": "get_backtest_backtest_run",
@@ -1936,6 +1967,14 @@
             "type": "string",
             "title": "Default"
           },
+          "recent": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/BacktestContract"
@@ -2262,6 +2301,75 @@
           "equity"
         ],
         "title": "BacktestOverviewItem",
+        "type": "object"
+      },
+      "BacktestRecentSymbol": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "expired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expired"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exists"
+          },
+          "fileMissing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filemissing"
+          },
+          "recent": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recent",
+            "type": "array"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "BacktestRecentSymbol",
         "type": "object"
       },
       "BacktestRun": {

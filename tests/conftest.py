@@ -14,24 +14,25 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from backend.core import log_store  # noqa: E402
+from backend.core import log_store, recent_store  # noqa: E402
 
 
-def _reset_log_store():
-    """关闭并丢弃 log_store 缓存的连接，下次使用时按当前 LOCALAPPDATA 重新建立。"""
-    with log_store._lock:
-        if log_store._conn is not None:
-            try:
-                log_store._conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-        log_store._conn = None
-        log_store._conn_path = None
+def _reset_sqlite_stores():
+    """关闭并丢弃各 SQLite 存储缓存的模块级连接，下次使用时按当前 LOCALAPPDATA 重新建立。"""
+    for store in (log_store, recent_store):
+        with store._lock:
+            if store._conn is not None:
+                try:
+                    store._conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            store._conn = None
+            store._conn_path = None
 
 
 @pytest.fixture(autouse=True)
 def _isolate_local_appdata(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path_factory.mktemp("localappdata")))
-    _reset_log_store()
+    _reset_sqlite_stores()
     yield
-    _reset_log_store()
+    _reset_sqlite_stores()
