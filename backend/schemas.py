@@ -118,6 +118,7 @@ class BacktestOverviewItem(_Model):
     category: str
     period: str
     managed: bool = False   # 自管仓位策略：手数由策略决定，不使用页面的「每笔手数」
+    created: str = ""       # 策略创建日期 'YYYY-MM-DD HH:MM'，总览按它由新到旧排序
     stats: Optional[dict[str, Any]] = None
     equity: list[EquityPoint]
     error: Optional[str] = None
@@ -141,6 +142,7 @@ class StrategyInfo(_Model):
     period: str
     params: dict[str, Any]
     managed: bool = False
+    created: str = ""
 
 
 class BacktestRun(ApiResult):

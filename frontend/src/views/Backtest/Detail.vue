@@ -22,11 +22,7 @@
           <h2>{{ result?.strategy.name || '--' }}</h2>
           <span class="toolbar-sub">
             {{ result?.symbolName || params.symbol }} · {{ result?.strategy.period || '-' }}分钟线 · {{ result?.stats.timeSpan || '--' }} ·
-            {{ result?.strategy.managed ? '首单及每次加仓各 1 手' : `每笔 ${params.lots} 手` }} ·
-            <template v-if="result?.strategy.managed && result?.marginRate">
-              保证金率 {{ (result.marginRate * 100).toFixed(0) }}%（{{ (1 / result.marginRate).toFixed(1).replace(/\.0$/, '') }} 倍杠杆） ·
-            </template>
-            不含手续费与滑点
+            {{ result?.strategy.managed ? '首单及每次加仓各 1 手' : `每笔 ${params.lots} 手` }} · 不含手续费与滑点
           </span>
         </div>
         <div class="toolbar-controls">

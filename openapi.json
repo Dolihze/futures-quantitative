@@ -2248,6 +2248,11 @@
             "title": "Managed",
             "type": "boolean"
           },
+          "created": {
+            "default": "",
+            "title": "Created",
+            "type": "string"
+          },
           "stats": {
             "anyOf": [
               {
@@ -4679,6 +4684,11 @@
             "default": false,
             "title": "Managed",
             "type": "boolean"
+          },
+          "created": {
+            "default": "",
+            "title": "Created",
+            "type": "string"
           }
         },
         "required": [

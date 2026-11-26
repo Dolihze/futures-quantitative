@@ -104,9 +104,10 @@ def backtest_overview():
     backtest_service.fetch_backtest_bars(symbol, backtest_service.BACKTEST_PERIODS[0])
 
     items = []
-    for sdef in backtest_engine.STRATEGIES.values():
+    for sdef in backtest_engine.sorted_strategies():   # 新创建的策略排最前（按创建日期由新到旧）
         info = {'id': sdef.id, 'name': sdef.name, 'description': sdef.description,
-                'category': sdef.category, 'period': sdef.period, 'managed': sdef.managed}
+                'category': sdef.category, 'period': sdef.period, 'managed': sdef.managed,
+                'created': sdef.created}
         try:
             all_bars = backtest_service.fetch_backtest_bars(symbol, sdef.period)
             bars = backtest_engine.slice_recent_days(all_bars, days)
